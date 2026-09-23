@@ -1,6 +1,6 @@
 // ── Memory browse: 我的情况 as a feed/card (profile + periodic + topic memory)
 
-import { ItemView, WorkspaceLeaf, MarkdownRenderer, TFile, setIcon } from "obsidian";
+import { ItemView, WorkspaceLeaf, MarkdownRenderer, TFile, setIcon, Component } from "obsidian";
 import type TopmindPlugin from "../main";
 import { t } from "../i18n";
 import { VIEW_TYPE_MEMORY_BROWSE } from "../constants";
@@ -9,7 +9,6 @@ import {
   filterMemoryFeedByLayer,
   isMemoryFeedLayer,
   type MemoryFeedItem,
-  type MemoryFeedKind,
   type MemoryFeedLayer,
 } from "../utils";
 
@@ -17,6 +16,8 @@ export class MemoryBrowseView extends ItemView {
   plugin: TopmindPlugin;
   /** Selected layer chip — survives re-render. */
   private layer: MemoryFeedLayer = "all";
+  /** Markdown subcomponents for the current paint — unloaded on each re-render. */
+  private renderComp = new Component();
 
   constructor(leaf: WorkspaceLeaf, plugin: TopmindPlugin) {
     super(leaf);
@@ -40,7 +41,7 @@ export class MemoryBrowseView extends ItemView {
   }
 
   async onClose(): Promise<void> {
-    /* no-op */
+    this.renderComp.unload();
   }
 
   async refresh(): Promise<void> {
@@ -125,6 +126,9 @@ export class MemoryBrowseView extends ItemView {
 
   private async render(): Promise<void> {
     const { contentEl } = this;
+    this.renderComp.unload();
+    this.renderComp = new Component();
+    this.renderComp.load();
     contentEl.empty();
     contentEl.addClass("tm-memory-browse");
     const layout = this.plugin.settings.feedLayout === "card" ? "card" : "list";
@@ -259,7 +263,7 @@ export class MemoryBrowseView extends ItemView {
     const md = String(item.body || "").trim() || item.preview;
     if (md) {
       try {
-        await MarkdownRenderer.render(this.app, md.slice(0, 1600), body, item.path, this);
+        await MarkdownRenderer.render(this.app, md.slice(0, 1600), body, item.path, this.renderComp);
       } catch {
         body.textContent = md;
       }

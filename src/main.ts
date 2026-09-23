@@ -135,6 +135,7 @@ export default class TopmindPlugin extends Plugin {
   kernelService!: KernelService;
   private statusBarEl: HTMLElement | null = null;
   private aiTaskUnsub: (() => void) | null = null;
+  private settingTab: TopmindSettingTab | null = null;
 
   async onload(): Promise<void> {
     try {
@@ -243,7 +244,8 @@ export default class TopmindPlugin extends Plugin {
     });
 
     // ── Settings tab ──
-    this.addSettingTab(new TopmindSettingTab(this.app, this));
+    this.settingTab = new TopmindSettingTab(this.app, this);
+    this.addSettingTab(this.settingTab);
 
     // ── Status bar entry — AI task state + one-click copilot open ──
     this.initStatusBarItem();
@@ -267,6 +269,9 @@ export default class TopmindPlugin extends Plugin {
   }
 
   onunload(): void {
+    // Flush any debounced settings keystrokes before tearing down.
+    this.settingTab?.flushPending();
+    this.settingTab = null;
     this.aiTaskUnsub?.();
     this.aiTaskUnsub = null;
     this.kernelService?.dispose();

@@ -364,7 +364,7 @@ export const enUS: typeof zhCN = {
   settings_ai_test_no_key: "Please configure at least one AI provider first",
 
   // ── Security note ──
-  settings_security_note: "API Key is stored in Obsidian plugin data.json (plaintext). Do not use in shared vaults.",
+  settings_security_note: "API Key is stored in Obsidian plugin data.json and .topmind/ai-keys-backup.json (plaintext). Do not use in shared vaults.",
 
   // ── Chat model switching ──
   chat_model: "Model",

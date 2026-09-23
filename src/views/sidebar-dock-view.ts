@@ -16,7 +16,7 @@
 // - Chat send: icon-only with send icon
 // - All loading states use spinners
 
-import { ItemView, WorkspaceLeaf, Notice, MarkdownRenderer, setIcon, Menu } from "obsidian";
+import { ItemView, WorkspaceLeaf, Notice, MarkdownRenderer, setIcon, Menu, Component } from "obsidian";
 import type TopmindPlugin from "../main";
 import { t } from "../i18n";
 import { VIEW_TYPE_SIDEBAR_DOCK, VIEW_TYPE_STREAM_WORKBENCH } from "../constants";
@@ -69,6 +69,8 @@ export class SidebarDockView extends ItemView {
   private chatModelOverride = "";
   /** Unsent chat draft preserved across full re-renders (settings refresh). */
   private pendingChatDraft = "";
+  /** Markdown children for the current tab paint — unloaded before each rebuild. */
+  private renderComp = new Component();
 
   constructor(leaf: WorkspaceLeaf, plugin: TopmindPlugin) {
     super(leaf);
@@ -129,6 +131,7 @@ export class SidebarDockView extends ItemView {
   async onClose(): Promise<void> {
     if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
     this.taskUnsub?.();
+    this.renderComp.unload();
   }
 
   // ── Chat History Persistence ──────────────────────────────────────────
@@ -394,6 +397,11 @@ export class SidebarDockView extends ItemView {
     if (existingChatInput && existingChatInput.value && !this.pendingChatDraft) {
       this.pendingChatDraft = existingChatInput.value;
     }
+    // Drop previous MarkdownRenderer children before wiping the DOM — progress
+    // ticks re-render the chat tab often, and those children attach to us.
+    this.renderComp.unload();
+    this.renderComp = new Component();
+    this.renderComp.load();
     this.contentContainer.empty();
 
     switch (this.activeTab) {
@@ -1050,7 +1058,7 @@ export class SidebarDockView extends ItemView {
 
     if (msg.role === "assistant" && !msg.isError) {
       // Render markdown for AI responses (answer only)
-      void MarkdownRenderer.render(this.app, msg.content, bodyEl, "", this);
+      void MarkdownRenderer.render(this.app, msg.content, bodyEl, "", this.renderComp);
       // Add action buttons for AI messages (icon-only with tooltips)
       const actionsEl = msgEl.createDiv({ cls: "tm-chat-msg-actions" });
 

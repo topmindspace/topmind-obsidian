@@ -183,7 +183,7 @@ Obsidian Vault (Plain Filesystem = Single Source of Truth)
 
 - **Local-First Storage**: All notes and metadata reside in standard Markdown files on your disk.
 - **Zero Telemetry**: Topmind does not track, collect, or send your usage data to external servers.
-- **API Key Security**: API Keys are stored locally in the plugin's `data.json` inside your vault's `.obsidian` directory.
+- **API Key Security**: API Keys are stored locally in the plugin's `data.json` and backed up to `.topmind/ai-keys-backup.json` (both plaintext — avoid shared vaults).
 - **Writeback Protection**: All AI-driven file changes pass through `writeback-engine` (`open`/`locked`). Backups/receipts only for locked overwrite and locked/core delete-archive — not every write.
 
 ---

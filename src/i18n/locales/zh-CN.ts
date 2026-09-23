@@ -362,7 +362,7 @@ export const zhCN = {
   settings_ai_test_no_key: "请先配置至少一个 AI 服务商",
 
   // ── Security note ──
-  settings_security_note: "API Key 存储在 Obsidian 插件 data.json 中（明文）。请勿在共享 Vault 中使用。",
+  settings_security_note: "API Key 存储在 Obsidian 插件 data.json 与 .topmind/ai-keys-backup.json（明文）。请勿在共享 Vault 中使用。",
 
   // ── Chat model switching ──
   chat_model: "模型",

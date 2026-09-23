@@ -857,13 +857,18 @@ export class TopmindSettingTab extends PluginSettingTab {
   private async save(): Promise<void> {
     // In-memory + kernel apply immediately (keeps the AI test button coherent);
     // disk write + view refresh are debounced — API-key fields fire onChange
-    // per keystroke. Flushed on hide().
+    // per keystroke. Flushed on hide() and plugin unload.
     this.plugin.kernelService.updateSettings(this.plugin.settings);
     if (this.saveTimer) window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
       this.saveTimer = null;
       void this.flushSave();
     }, 400);
+  }
+
+  /** Public flush — plugin onunload calls this so a pending keystroke is not lost. */
+  flushPending(): void {
+    if (this.saveTimer !== null) void this.flushSave();
   }
 
   private async flushSave(): Promise<void> {

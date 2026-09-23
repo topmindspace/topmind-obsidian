@@ -178,7 +178,7 @@ Obsidian Vault (纯文件系统 = 唯一内容真源)
 
 - **本地优先存储**：所有笔记和元数据均以标准 Markdown 文件存储在你的磁盘上。
 - **零遥测**：topmind 不追踪、不收集、不向外部服务器发送你的使用数据。
-- **API Key 安全**：API 密钥存储在 Vault 的 `.obsidian` 目录下插件的 `data.json` 中。
+- **API Key 安全**：API 密钥存储在 Vault 的 `.obsidian` 目录下插件的 `data.json`，并备份到 `.topmind/ai-keys-backup.json`（均为明文，请勿用于共享 Vault）。
 - **写回保护**：所有 AI 驱动的文件变更通过 `writeback-engine`（`open`/`locked`）。备份/回执仅高影响（锁定覆盖、锁定/核心笔记删除归档），普通开放更新不造归档副本。
 
 ---

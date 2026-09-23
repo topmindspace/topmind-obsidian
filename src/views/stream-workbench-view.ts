@@ -56,7 +56,6 @@ export class StreamWorkbenchView extends ItemView {
   private taskPanelEl: HTMLElement | null = null;
   private taskPanelOpen = false;
   private currentEntries: StreamEntry[] = [];
-  private refreshTimer: number | null = null;
   private streamRefreshTimer: number | null = null;
   private suggestionInFlight = false;
   private streamLoading = false;
@@ -131,9 +130,7 @@ export class StreamWorkbenchView extends ItemView {
   }
 
   async onClose(): Promise<void> {
-    if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
     if (this.streamRefreshTimer) window.clearTimeout(this.streamRefreshTimer);
-    this.refreshTimer = null;
     this.streamRefreshTimer = null;
     this.suggestionInFlight = false;
     this.taskUnsub?.();
@@ -481,11 +478,6 @@ export class StreamWorkbenchView extends ItemView {
   }
 
   // ── Refresh ────────────────────────────────────────────────────────────
-
-  private scheduleRefresh(delay: number): void {
-    if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
-    this.refreshTimer = window.setTimeout(() => this.refreshAll(), delay);
-  }
 
   /**
    * Vault-edit refresh: stream list only. Suggestion generation is the
