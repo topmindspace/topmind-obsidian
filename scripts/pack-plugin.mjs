@@ -205,8 +205,27 @@ async function main() {
     if (existsSync(src)) await copyFile(src, path.join(outputDist, name));
   }
 
+  // versions.json — community plugin / BRAT requirement (version → minAppVersion)
+  const minApp = String(manifest.minAppVersion || "1.5.0");
+  /** @type {Record<string, string>} */
+  let versionsMap = {};
+  const versionsPath = path.join(root, "versions.json");
+  try {
+    if (existsSync(versionsPath)) {
+      versionsMap = JSON.parse(readFileSync(versionsPath, "utf-8"));
+    }
+  } catch {
+    versionsMap = {};
+  }
+  versionsMap[version] = minApp;
+  const versionsBody = `${JSON.stringify(versionsMap, null, 2)}\n`;
+  await writeFile(versionsPath, versionsBody, "utf-8");
+  await writeFile(path.join(releaseDir, "versions.json"), versionsBody, "utf-8");
+  await writeFile(path.join(outputDist, "versions.json"), versionsBody, "utf-8");
+
   console.log(`[pack] ✓ Created ${outputPath}`);
   console.log(`[pack] ✓ Copied to dist/`);
+  console.log(`[pack] ✓ versions.json ${version} → ${minApp}`);
   console.log(`[pack] Size: ${Math.ceil(zipBuffer.length / 1024)}KB`);
   console.log(`[pack] Install: unzip into <vault>/.obsidian/plugins/topmind-stream/`);
 }

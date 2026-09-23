@@ -56,6 +56,23 @@ if (existsSync(manifestPath)) {
 // ── styles.css ──
 check("dist/styles.css exists", existsSync(path.join(distDir, "styles.css")));
 
+// versions.json — community plugin / BRAT requirement
+const versionsPath = path.join(__dirname, "..", "versions.json");
+check("versions.json exists at repo root", existsSync(versionsPath));
+if (existsSync(versionsPath) && existsSync(manifestPath)) {
+  try {
+    const versions = JSON.parse(readFileSync(versionsPath, "utf-8"));
+    const mver = JSON.parse(readFileSync(manifestPath, "utf-8")).version;
+    check(
+      `versions.json maps ${mver}`,
+      typeof versions[mver] === "string",
+      `got ${JSON.stringify(versions[mver] ?? null)}`,
+    );
+  } catch (e) {
+    check("versions.json is valid JSON", false, String(e));
+  }
+}
+
 // ── templates ──
 const templatesDir = path.join(distDir, "templates");
 check("dist/templates/ exists", existsSync(templatesDir));

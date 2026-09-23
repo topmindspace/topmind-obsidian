@@ -1,7 +1,7 @@
 # topmind Obsidian Plugin — 架构
 
-> **用户文档**：[English](README.md) · [简体中文](README.zh-CN.md) · **边界**：`../PRODUCT-BOUNDARIES.md` · **内容约定**：`../PROJECT-MODEL.md`  
-> **版本真源**：`obsidian-plugin/manifest.json`  
+> **用户文档**：[简体中文](README.md) · [English](README.en.md) · **边界**：`../PRODUCT-BOUNDARIES.md` · **内容约定**：`../PROJECT-MODEL.md`  
+> **版本真源**：本仓根 [`manifest.json`](./manifest.json)  
 > **Desktop-only**：工具与日志面板（⌘⇧L）、ops journal、workspace stats 仅 Desktop；Obsidian 无 ops journal 对等物（非缺口）。恢复仍用 Kernel 高影响 receipts。
 
 ---
@@ -129,8 +129,9 @@ npm run obsidian:pack
 ## 3. 模块结构
 
 ```text
-obsidian-plugin/
+topmind-obsidian/              # 本仓根（社区插件仓）
 ├── manifest.json              # Obsidian 插件清单（版本真源）
+├── versions.json              # version → minAppVersion（社区/BRAT）
 ├── package.json               # 依赖与脚本
 ├── tsconfig.json              # TypeScript 配置
 ├── esbuild.config.mjs         # 构建配置（含 kernel shims）
@@ -538,7 +539,7 @@ npm run obsidian:test      # 仅测试
 
 ## 10. 版本管理
 
-版本真源：`obsidian-plugin/manifest.json` 的 `version` 字段。
+版本真源：本仓根 `manifest.json` 的 `version` 字段。
 
 独立版本策略（遵循 `AGENTS.md` §版本层）：
 - 大版本对齐（与其他表面共享 3.x）
@@ -549,7 +550,7 @@ npm run obsidian:test      # 仅测试
 
 ## 11. 边界约束
 
-- ❌ 不把用户数据放进 `obsidian-plugin/` 源码目录
+- ❌ 不把用户数据放进本仓 `src/` 源码目录
 - ❌ 不让插件 runtime state 成为内容真源
 - ❌ 不平行实现 Kernel 业务语义（落点/保护/提升/生命周期/流追加）
 - ❌ 不重建 Obsidian 已有的能力（编辑器、文件树、命令面板）
