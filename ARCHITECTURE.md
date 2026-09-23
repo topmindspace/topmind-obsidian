@@ -286,7 +286,7 @@ AI 操作的任务管理器，提供多任务队列、进度追踪和中止能�
 **UI 集成**：
 - 动态页签工具栏：AI 任务进度徽章 + 中止按钮
 - 侧边栏头部：AI 任务进度徽章
-- 侧边栏标签页：清单 | 建议 | 对话 | 动态 | **任务历史**
+- 侧边栏标签页：清单 | 建议 | 对话 | **历史**（动态流的家在主区，不进 Dock）
 - 底部操作：AI 操作按钮经任务管理器入队
 
 ### 4.3 Pure Ops Layer (`services/kernel-workspace-ops.ts`)
@@ -395,7 +395,7 @@ export class StreamWorkbenchView extends ItemView {
 
 ```typescript
 export class SidebarDockView extends ItemView {
-  // 标签式布局：清单 | 建议 | 对话 | 动态
+  // 标签式布局：清单 | 建议 | 对话 | 历史（动态在主区）
   // 头部：AI 状态 + 模型徽章 + [⚙ 设置]
   // 底部：[⚡记一下] [🔄整理] [📋清单] [🏷️分类] [🧠整理我的情况] [🖥动态]
   // 

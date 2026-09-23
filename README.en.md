@@ -37,7 +37,7 @@ Capture Instantly  ->  AI Proposes in Background  ->  You Review & Confirm  ->  
 
 - **Note it**: Open the capture modal (bind a hotkey in Obsidian Settings → Hotkeys). Destinations: this week's stream or Inbox.
 - **Stream view**: A tab in the Obsidian main area with a compose box (**Log it** into the period note), a timeline of cards, and AI suggestions.
-- **AI Copilot Panel** (Sidebar): A tabbed right sidebar unifying all AI capabilities — **Todos**, **Suggestions**, **Chat**, and **Stream** — in one place. Includes a model badge showing the active AI provider + model.
+- **AI Copilot Panel** (Sidebar): A tabbed right sidebar unifying all AI capabilities — **Todos**, **Suggestions**, **Chat**, and **History** — in one place. Header is status + task badge only; model switching lives in Chat and Settings.
 - **AI Chat**: Converse with AI about your notes, todos, and stream entries. The chat is context-aware — it automatically injects your recent stream entries, current todos, and personal profile.
 - **Weekly Reconciliation**: Reconcile your weekly logs, extract pending action items, and refresh suggestions with one click.
 - **Background AI Copilot**: Automatically extract todos (`memory/todo.md`), suggest emergent topics, and maintain your personal context profile (`memory/profile.md`).
