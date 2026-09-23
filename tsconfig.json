@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "outDir": "./dist-types",
+    "noEmit": true,
+    "allowSyntheticDefaultImports": true,
+    "paths": {
+      "#kernel/*": ["./lib/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "lib/model-catalog.d.ts", "lib/memory-feed.d.mts", "lib/*.d.mts"],
+  "exclude": ["node_modules", "dist", "tests"]
+}

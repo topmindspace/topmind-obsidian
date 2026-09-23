@@ -1,0 +1,1092 @@
+// ── Stream Workbench View: main workbench in Obsidian center area ──────────
+//
+// Design principles:
+// - Dense, information-rich layout (feed column ~44rem, tighter spacing)
+// - Quick input bar at top (always visible, always focused-ready)
+// - Toolbar with quick access to sidebar + settings + model info + AI task progress
+// - Stream section: period selector + day-grouped entry cards with append
+// - Suggest entry: count-only strip → AI Dock 建议 tab (single confirm home)
+// - All states (loading / empty / error / ready) are visually polished
+// - Day grouping: entries grouped by ## day headings within period notes
+// - Multi-task progress: AI operations show inline progress badge in toolbar
+//
+// UIUX (2026-08-11 refactor):
+// - Toolbar buttons: icon + text labels (with responsive hide on narrow)
+// - Card actions: icon-only with tooltips (compact, no overflow)
+// - Suggestion refresh: icon-only
+// - Loading states: spinner instead of "..." text
+// - Organize button: icon + text (secondary button with refresh-cw icon)
+// - Shared renderLayout() eliminates onOpen/refresh duplication
+
+import { ItemView, WorkspaceLeaf, Notice, MarkdownRenderer, setIcon, Component } from "obsidian";
+import type TopmindPlugin from "../main";
+import { t } from "../i18n";
+import { VIEW_TYPE_STREAM_WORKBENCH, VIEW_TYPE_SIDEBAR_DOCK } from "../constants";
+import type { StreamEntry, SuggestionCard } from "../types";
+import {
+  extractTags,
+  isLoneUrlCapture,
+  prepareStreamEntryTextForDisplay,
+  splitStreamPreviewParts,
+} from "../utils";
+import { hasConfiguredProvider } from "../types";
+import { aiTaskManager, type TaskProgress } from "../services/ai-task-manager";
+
+/** Format entry count for display (uses i18n, kept in view layer). */
+function formatEntryCount(count: number): string {
+  return t("stream_entry_count", { count });
+}
+
+/** Day group for rendering. */
+interface DayGroup {
+  label: string;
+  entries: StreamEntry[];
+}
+
+export class StreamWorkbenchView extends ItemView {
+  plugin: TopmindPlugin;
+  private inputEl!: HTMLTextAreaElement;
+  private submitBtn!: HTMLButtonElement;
+  private streamContainer!: HTMLElement;
+  private suggestionContainer!: HTMLElement;
+  private periodSelect!: HTMLSelectElement;
+  private entryCountEl!: HTMLElement;
+  private organizeBtn!: HTMLButtonElement;
+  private taskBadgeEl: HTMLElement | null = null;
+  private taskPanelEl: HTMLElement | null = null;
+  private taskPanelOpen = false;
+  private currentEntries: StreamEntry[] = [];
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private streamRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private suggestionInFlight = false;
+  private streamLoading = false;
+  private organizing = false;
+  private taskUnsub: (() => void) | null = null;
+  private urlHintEl: HTMLElement | null = null;
+  private cardComponents: Component[] = [];
+
+  private clearCardComponents(): void {
+    for (const c of this.cardComponents) {
+      try { c.unload(); } catch { /* ignore */ }
+    }
+    this.cardComponents = [];
+  }
+
+  constructor(leaf: WorkspaceLeaf, plugin: TopmindPlugin) {
+    super(leaf);
+    this.plugin = plugin;
+  }
+
+  getViewType(): string {
+    return VIEW_TYPE_STREAM_WORKBENCH;
+  }
+
+  getDisplayText(): string {
+    return t("stream_workbench_title");
+  }
+
+  getIcon(): string {
+    return "waves";
+  }
+
+  async onOpen(): Promise<void> {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("tm-stream-workbench");
+
+    // Render layout (shared between onOpen and refresh)
+    this.renderLayout(contentEl);
+
+    // Initial load
+    await this.refreshAll();
+
+    // Vault change listener (filtered to stream/todo paths)
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        if (file.path === "topmind.yaml") {
+          this.plugin.kernelService.invalidateCache();
+        }
+        if (this.plugin.kernelService.isStreamRelevantPath(file.path) || file.path === "topmind.yaml") {
+          this.scheduleStreamRefresh(450);
+        }
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("create", (file) => {
+        if (this.plugin.kernelService.isStreamRelevantPath(file.path)) {
+          this.scheduleStreamRefresh(450);
+        }
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        if (this.plugin.kernelService.isStreamRelevantPath(file.path)) {
+          this.scheduleStreamRefresh(450);
+        }
+      }),
+    );
+
+    // Subscribe to AI task progress
+    this.taskUnsub = aiTaskManager.subscribe((progress) => this.updateTaskBadge(progress));
+  }
+
+  async onClose(): Promise<void> {
+    if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    if (this.streamRefreshTimer) clearTimeout(this.streamRefreshTimer);
+    this.refreshTimer = null;
+    this.streamRefreshTimer = null;
+    this.suggestionInFlight = false;
+    this.taskUnsub?.();
+    this.clearCardComponents();
+  }
+
+  // ── Layout (shared between onOpen and refresh) ──────────────────────
+
+  /** Render the full layout: toolbar + input bar + stream section + suggestions section */
+  private renderLayout(contentEl: HTMLElement): void {
+    // ── Toolbar ──
+    this.renderToolbar(contentEl);
+
+    // Shared compose + stream column (not the far toolbar)
+    const feedColumn = contentEl.createDiv({ cls: "tm-feed-column" });
+    feedColumn.setAttr("data-stream-column", "true");
+
+    // ── Quick Input Bar ──
+    const inputBar = feedColumn.createDiv({ cls: "tm-input-bar" });
+    const inputWrap = inputBar.createDiv({ cls: "tm-input-wrap" });
+    this.inputEl = inputWrap.createEl("textarea", {
+      cls: "tm-input-field",
+      attr: {
+        placeholder: t("quick_capture_placeholder"),
+        rows: "1",
+        "aria-label": t("quick_capture_log_it"),
+      },
+    });
+
+    // URL detection hint (visual feedback when typing a lone URL)
+    this.urlHintEl = inputWrap.createDiv({ cls: "tm-url-hint tm-url-hint-hidden" });
+    const urlHintIcon = this.urlHintEl.createSpan({ cls: "tm-url-hint-icon" });
+    setIcon(urlHintIcon, "link");
+    this.urlHintEl.createSpan({ text: t("compose_url_hint") });
+
+    // AI polish button
+    const polishBtn = inputBar.createEl("button", {
+      cls: "tm-btn-secondary tm-btn-icon-only tm-btn-polish",
+      attr: { "aria-label": t("stream_btn_polish"), title: t("stream_btn_polish") },
+    });
+    setIcon(polishBtn, "sparkles");
+    polishBtn.addEventListener("click", async () => {
+      const val = this.inputEl.value.trim();
+      if (!val) return;
+      polishBtn.addClass("tm-btn-spinning");
+      try {
+        const polished = await this.plugin.kernelService.polishText(val);
+        if (polished) {
+          this.inputEl.value = polished;
+          this.autoGrowTextarea(this.inputEl);
+          new Notice(t("stream_polish_success"));
+        }
+      } finally {
+        polishBtn.removeClass("tm-btn-spinning");
+      }
+    });
+
+    this.submitBtn = inputBar.createEl("button", {
+      text: t("quick_capture_log_it"),
+      cls: "tm-submit-btn",
+    });
+    this.submitBtn.setAttribute("aria-label", t("quick_capture_log_it"));
+
+    // Interactions
+    this.inputEl.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        this.submitInput();
+      }
+    });
+    this.inputEl.addEventListener("input", () => {
+      this.autoGrowTextarea(this.inputEl);
+      this.updateUrlHint();
+    });
+    this.submitBtn.addEventListener("click", () => this.submitInput());
+
+    // ── Stream Section ──
+    const streamHeader = feedColumn.createDiv({ cls: "tm-section-header" });
+    const streamTitleDiv = streamHeader.createDiv({ cls: "tm-section-title" });
+    streamTitleDiv.createSpan({ text: t("stream_this_week") });
+    this.entryCountEl = streamTitleDiv.createSpan({ cls: "tm-entry-count" });
+
+    const streamControls = streamHeader.createDiv({ cls: "tm-section-controls" });
+
+    // Manual refresh button — reloads stream content from vault
+    const refreshStreamBtn = streamControls.createEl("button", {
+      cls: "tm-btn-secondary tm-btn-icon-only",
+    });
+    setIcon(refreshStreamBtn, "refresh-cw");
+    refreshStreamBtn.setAttribute("aria-label", t("toolbar_btn_refresh"));
+    refreshStreamBtn.setAttribute("title", t("toolbar_btn_refresh"));
+    refreshStreamBtn.addEventListener("click", () => {
+      refreshStreamBtn.addClass("tm-btn-spinning");
+      this.refreshStream().finally(() => {
+        refreshStreamBtn.removeClass("tm-btn-spinning");
+      });
+    });
+
+    this.periodSelect = streamControls.createEl("select", {
+      cls: "tm-period-select",
+    });
+    this.periodSelect.setAttribute("aria-label", t("stream_switch_period"));
+    this.periodSelect.addEventListener("change", () => this.refreshStream());
+
+    this.organizeBtn = streamControls.createEl("button", {
+      cls: "tm-btn-secondary",
+    });
+    // wand-2 = 整理（Desktop RiMagicLine）；list-checks 留给「清单」
+    setIcon(this.organizeBtn, "wand-2");
+    this.organizeBtn.createSpan({ text: t("stream_organize") });
+    this.organizeBtn.setAttribute("aria-label", t("stream_organize"));
+    this.organizeBtn.addEventListener("click", () => this.organizePeriod());
+
+    this.renderLayoutToggle(streamControls);
+
+    const memoryBtn = streamControls.createEl("button", {
+      cls: "tm-btn-secondary tm-toolbar-btn-labeled",
+    });
+    setIcon(memoryBtn, "user");
+    memoryBtn.createSpan({ text: t("toolbar_btn_profile"), cls: "tm-toolbar-btn-label" });
+    memoryBtn.setAttribute("aria-label", t("toolbar_btn_profile"));
+    memoryBtn.setAttribute("title", t("toolbar_btn_profile"));
+    memoryBtn.setAttribute("data-stream-open-memory", "true");
+    memoryBtn.addEventListener("click", () => void this.plugin.openMemoryBrowse());
+
+    this.streamContainer = feedColumn.createDiv({ cls: "tm-stream-container" });
+    this.applyFeedLayout();
+
+    // ── Suggest entry strip（非完整确认面）──
+    // 唯一确认面在 AI Dock「建议」tab；此处只在 count>0 时露出计数入口。
+    this.suggestionContainer = contentEl.createDiv({ cls: "tm-suggest-entry" });
+  }
+
+  // ── Toolbar ────────────────────────────────────────────────────────────
+
+  private renderToolbar(container: HTMLElement): void {
+    const toolbar = container.createDiv({ cls: "tm-toolbar" });
+
+    // Left: workspace status badge
+    const aiReady = hasConfiguredProvider(this.plugin.settings.ai);
+    const statusBadge = toolbar.createDiv({ cls: "tm-toolbar-status" });
+    const dot = statusBadge.createSpan({ cls: `tm-status-dot ${aiReady ? "tm-dot-ok" : "tm-dot-off"}` });
+    dot.setAttribute("aria-hidden", "true");
+    statusBadge.createSpan({
+      text: aiReady ? t("sidebar_ai_ready") : t("sidebar_ai_off"),
+      cls: "tm-toolbar-status-label",
+    });
+
+    // Model badge (if AI configured) — clickable to open settings for model switch
+    if (aiReady) {
+      const modelLabel = this.plugin.kernelService.getActiveModelLabel();
+      if (modelLabel) {
+        const modelBadge = toolbar.createDiv({ cls: "tm-toolbar-model", text: modelLabel });
+        modelBadge.setAttribute("role", "button");
+        modelBadge.setAttribute("tabindex", "0");
+        modelBadge.setAttribute("title", t("chat_model_switch"));
+        modelBadge.addEventListener("click", () => this.openSettings());
+        modelBadge.addEventListener("keydown", (e: KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            modelBadge.click();
+          }
+        });
+      }
+    }
+
+    // AI Task progress badge (updated by subscribe) — click opens history panel
+    this.taskBadgeEl = toolbar.createDiv({ cls: "tm-task-badge tm-task-badge-hidden" });
+    this.taskBadgeEl.setAttribute("role", "button");
+    this.taskBadgeEl.setAttribute("tabindex", "0");
+    this.taskBadgeEl.addEventListener("click", () => {
+      this.taskPanelOpen = !this.taskPanelOpen;
+      this.renderTaskPanel(aiTaskManager.getProgress());
+    });
+    this.taskBadgeEl.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        this.taskBadgeEl?.click();
+      }
+    });
+
+    this.taskPanelEl = container.createDiv({ cls: "tm-task-panel" });
+    this.taskPanelEl.hidden = true;
+
+    // Right: quick action buttons (icon-only with tooltips — no text overflow)
+    const actionsDiv = toolbar.createDiv({ cls: "tm-toolbar-actions" });
+
+    // Open sidebar button
+    const sidebarBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn tm-toolbar-btn-labeled" });
+    setIcon(sidebarBtn, "panel-right");
+    sidebarBtn.createSpan({ text: t("toolbar_btn_sidebar"), cls: "tm-toolbar-btn-label" });
+    sidebarBtn.setAttribute("aria-label", t("sidebar_open_sidebar"));
+    sidebarBtn.setAttribute("title", t("sidebar_open_sidebar"));
+    sidebarBtn.addEventListener("click", () => this.openSidebar());
+
+    // Settings button
+    const settingsBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn tm-toolbar-btn-labeled" });
+    setIcon(settingsBtn, "settings");
+    settingsBtn.createSpan({ text: t("toolbar_btn_settings"), cls: "tm-toolbar-btn-label" });
+    settingsBtn.setAttribute("aria-label", t("sidebar_open_settings"));
+    settingsBtn.setAttribute("title", t("sidebar_open_settings"));
+    settingsBtn.addEventListener("click", () => this.openSettings());
+
+    // New Note button — creates a new note in the inbox directory
+    const newNoteBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn tm-toolbar-btn-labeled" });
+    setIcon(newNoteBtn, "file-plus");
+    newNoteBtn.createSpan({ text: t("toolbar_btn_new_note"), cls: "tm-toolbar-btn-label" });
+    newNoteBtn.setAttribute("aria-label", t("toolbar_btn_new_note"));
+    newNoteBtn.setAttribute("title", t("toolbar_btn_new_note"));
+    newNoteBtn.addEventListener("click", () => this.createNewNote());
+
+    // Profile button
+    const profileBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn tm-toolbar-btn-labeled" });
+    setIcon(profileBtn, "user");
+    profileBtn.createSpan({ text: t("toolbar_btn_profile"), cls: "tm-toolbar-btn-label" });
+    profileBtn.setAttribute("aria-label", t("cmd_open_profile"));
+    profileBtn.setAttribute("title", t("cmd_open_profile"));
+    profileBtn.addEventListener("click", () => void this.plugin.openMemoryBrowse());
+  }
+
+  private currentFeedLayout(): "list" | "card" {
+    return this.plugin.settings.feedLayout === "card" ? "card" : "list";
+  }
+
+  private applyFeedLayout(): void {
+    if (!this.streamContainer) return;
+    const layout = this.currentFeedLayout();
+    this.streamContainer.setAttr("data-layout", layout);
+    this.streamContainer.setAttr("data-stream-feed", "true");
+  }
+
+  private renderLayoutToggle(parent: HTMLElement): void {
+    const wrap = parent.createDiv({ cls: "tm-feed-layout-toggle" });
+    wrap.setAttr("data-feed-layout-toggle", "true");
+    wrap.setAttr("role", "group");
+    wrap.setAttr("aria-label", t("feed_layout_toggle"));
+    const current = this.currentFeedLayout();
+    for (const id of ["list", "card"] as const) {
+      const btn = wrap.createEl("button", {
+        cls: "tm-btn-secondary tm-feed-layout-btn",
+        text: id === "list" ? t("feed_layout_list") : t("feed_layout_card"),
+      });
+      btn.setAttr("data-layout-option", id);
+      if (current === id) btn.setAttr("data-active", "true");
+      btn.addEventListener("click", async () => {
+        this.plugin.settings.feedLayout = id;
+        await this.plugin.saveSettings();
+        this.applyFeedLayout();
+        for (const b of wrap.querySelectorAll("[data-layout-option]")) {
+          if ((b as HTMLElement).getAttribute("data-layout-option") === id) {
+            (b as HTMLElement).setAttr("data-active", "true");
+          } else {
+            (b as HTMLElement).removeAttribute("data-active");
+          }
+        }
+      });
+    }
+  }
+
+  /** Open plugin settings tab */
+  private openSettings(): void {
+    const setting = (this.app as unknown as { setting: { open: () => void; openTabById: (id: string) => void } }).setting;
+    setting?.open();
+    setting?.openTabById("topmind-stream");
+  }
+
+  /** Update AI task progress badge in toolbar */
+  private updateTaskBadge(progress: TaskProgress): void {
+    if (!this.taskBadgeEl) return;
+
+    this.taskBadgeEl.empty();
+    this.taskBadgeEl.setAttribute("title", t("task_recent"));
+    this.taskBadgeEl.setAttribute("aria-label", t("task_recent"));
+
+    const active = progress.active;
+    if (progress.multiActive === 0 && !this.taskPanelOpen) {
+      this.taskBadgeEl.addClass("tm-task-badge-hidden");
+      this.taskBadgeEl.removeClass("tm-task-badge-active");
+      const idle = this.taskBadgeEl.createSpan({ cls: "tm-task-badge-label" });
+      idle.textContent = t("task_recent");
+    } else {
+      this.taskBadgeEl.removeClass("tm-task-badge-hidden");
+      if (active) {
+        const label = this.taskBadgeEl.createSpan({ cls: "tm-task-badge-label" });
+        label.textContent = active.label;
+        const statusDot = this.taskBadgeEl.createSpan({ cls: "tm-task-badge-dot" });
+        statusDot.setAttribute("aria-hidden", "true");
+        this.taskBadgeEl.addClass("tm-task-badge-active");
+
+        const abortBtn = this.taskBadgeEl.createEl("button", { cls: "tm-task-badge-abort" });
+        setIcon(abortBtn, "x");
+        abortBtn.setAttribute("aria-label", t("task_abort"));
+        abortBtn.setAttribute("title", t("task_abort"));
+        abortBtn.addEventListener("click", (e: MouseEvent) => {
+          e.stopPropagation();
+          aiTaskManager.abort();
+        });
+      } else if (progress.queued.length > 0) {
+        this.taskBadgeEl.removeClass("tm-task-badge-active");
+        this.taskBadgeEl.createSpan({
+          text: t("task_queued_count", { count: progress.queued.length }),
+          cls: "tm-task-badge-label",
+        });
+      } else {
+        this.taskBadgeEl.removeClass("tm-task-badge-active");
+        this.taskBadgeEl.createSpan({ cls: "tm-task-badge-label", text: t("task_recent") });
+      }
+    }
+    if (this.taskPanelOpen) this.renderTaskPanel(progress);
+  }
+
+  private renderTaskPanel(progress: TaskProgress): void {
+    if (!this.taskPanelEl) return;
+    this.taskPanelEl.hidden = !this.taskPanelOpen;
+    if (!this.taskPanelOpen) return;
+    this.taskPanelEl.empty();
+    this.taskPanelEl.createDiv({ cls: "tm-task-panel-title", text: t("task_recent") });
+    const rows: Array<{ title: string; summary: string }> = [];
+    if (progress.active) {
+      rows.push({
+        title: `${progress.active.label} · ${t("task_running")}`,
+        summary: progress.active.result?.summary || "",
+      });
+    }
+    for (const q of progress.queued) {
+      rows.push({ title: `${q.label} · ${t("task_pending")}`, summary: "" });
+    }
+    for (const h of [...progress.recent].reverse().slice(0, 8)) {
+      const status =
+        h.status === "done"
+          ? t("task_done")
+          : h.status === "error"
+            ? t("task_error")
+            : h.status === "aborted"
+              ? t("task_aborted")
+              : h.status;
+      rows.push({
+        title: `${h.label} · ${status}`,
+        summary: h.result?.summary || h.error || "",
+      });
+    }
+    if (rows.length === 0) {
+      this.taskPanelEl.createDiv({ cls: "tm-task-panel-empty", text: t("task_no_history") });
+      return;
+    }
+    for (const row of rows) {
+      const el = this.taskPanelEl.createDiv({ cls: "tm-task-panel-row" });
+      el.createDiv({ cls: "tm-task-panel-row-title", text: row.title });
+      if (row.summary) el.createDiv({ cls: "tm-task-panel-row-summary", text: row.summary });
+    }
+  }
+
+  private async openSidebar(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_SIDEBAR_DOCK);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (!leaf) return;
+    await leaf.setViewState({ type: VIEW_TYPE_SIDEBAR_DOCK, active: true });
+  }
+
+  /** Create a new untitled inbox note via Kernel writeback, then open it. */
+  private async createNewNote(): Promise<void> {
+    if (!this.plugin.kernelService.isWorkspaceReady()) {
+      new Notice(t("notice_workspace_not_ready"));
+      return;
+    }
+
+    try {
+      const created = this.plugin.kernelService.createInboxNote();
+      if (!created.ok || !created.path) return;
+
+      await this.app.workspace.openLinkText(created.path, "", false);
+      new Notice(t("notice_new_note_created"));
+    } catch (err) {
+      console.error("[topmind] createNewNote failed:", err);
+      new Notice(t("notice_new_note_failed"));
+    }
+  }
+
+  // ── Refresh ────────────────────────────────────────────────────────────
+
+  private scheduleRefresh(delay: number): void {
+    if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    this.refreshTimer = setTimeout(() => this.refreshAll(), delay);
+  }
+
+  /**
+   * Vault-edit refresh: stream list only. Suggestion generation is the
+   * sidebar confirm surface's job (kernel fingerprints guard the AI pass) —
+   * re-running it on every keystroke save would burn tokens for churn.
+   */
+  private scheduleStreamRefresh(delay: number): void {
+    if (this.streamRefreshTimer) clearTimeout(this.streamRefreshTimer);
+    this.streamRefreshTimer = setTimeout(() => this.refreshStream(), delay);
+  }
+
+  private autoGrowTextarea(el: HTMLTextAreaElement): void {
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+  }
+
+  private updateUrlHint(): void {
+    if (!this.urlHintEl) return;
+    const text = this.inputEl.value.trim();
+    const isUrl = isLoneUrlCapture(text);
+    if (isUrl) {
+      this.urlHintEl.removeClass("tm-url-hint-hidden");
+    } else {
+      this.urlHintEl.addClass("tm-url-hint-hidden");
+    }
+  }
+
+  async refreshAll(): Promise<void> {
+    await this.refreshStream();
+    await this.refreshSuggestions();
+  }
+
+  /** Full re-render (toolbar + content) — called after settings changes */
+  async refresh(): Promise<void> {
+    // Preserve unsent draft across settings-driven re-renders.
+    const draft = this.inputEl?.value ?? "";
+    const selStart = this.inputEl?.selectionStart ?? null;
+    const selEnd = this.inputEl?.selectionEnd ?? null;
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("tm-stream-workbench");
+    this.renderLayout(contentEl);
+    if (draft && this.inputEl) {
+      this.inputEl.value = draft;
+      this.autoGrowTextarea(this.inputEl);
+      this.updateUrlHint();
+      if (selStart !== null && selEnd !== null) {
+        try { this.inputEl.setSelectionRange(selStart, selEnd); } catch { /* ignore */ }
+      }
+    }
+    await this.refreshAll();
+  }
+
+  async refreshStream(): Promise<void> {
+    const { streamContainer } = this;
+    const scrollParent = (this.contentEl.closest(".view-content") as HTMLElement) || this.contentEl;
+    const savedScroll = scrollParent.scrollTop;
+
+    const isFirstLoad = streamContainer.childElementCount === 0;
+    if (isFirstLoad && !this.streamLoading) {
+      this.streamLoading = true;
+      streamContainer.empty();
+      streamContainer.createDiv({
+        cls: "tm-loading tm-loading-spinner",
+        text: t("stream_loading"),
+      });
+    }
+
+    if (!this.plugin.kernelService.isWorkspaceReady()) {
+      this.streamLoading = false;
+      streamContainer.empty();
+      this.renderWorkspaceInit(streamContainer);
+      return;
+    }
+
+    try {
+      const ctx = await this.plugin.kernelService.getStreamContext();
+
+      const prevSelected = this.periodSelect.value;
+
+      while (this.periodSelect.firstChild) {
+        this.periodSelect.removeChild(this.periodSelect.firstChild);
+      }
+      for (const p of ctx.periods) {
+        this.periodSelect.createEl("option", {
+          value: p.relPath,
+          text: p.reconciled === false
+            ? `${p.title} · ${t("stream_unreconciled")}`
+            : p.title,
+        });
+      }
+
+      if (prevSelected && ctx.periods.some((p) => p.relPath === prevSelected)) {
+        this.periodSelect.value = prevSelected;
+      } else if (ctx.current?.relPath) {
+        this.periodSelect.value = ctx.current.relPath;
+      }
+
+      const selectedPath = this.periodSelect.value || ctx.current?.relPath;
+      if (!selectedPath) {
+        this.streamLoading = false;
+        streamContainer.empty();
+        this.renderEmptyStream(streamContainer);
+        this.updateEntryCount(0);
+        return;
+      }
+
+      const { content, entries } = await this.plugin.kernelService.readPeriodNoteAsync(selectedPath);
+      this.currentEntries = entries;
+
+      this.streamLoading = false;
+      streamContainer.empty();
+
+      if (this.currentEntries.length === 0) {
+        this.renderEmptyStream(streamContainer);
+        this.updateEntryCount(0);
+        return;
+      }
+
+      this.updateEntryCount(this.currentEntries.length);
+
+      // Render entries with day grouping (parse from period note content)
+      this.renderStreamEntries(streamContainer, this.currentEntries, selectedPath, content);
+
+      // Restore scroll position after rendering to eliminate jumping
+      if (savedScroll > 0) {
+        scrollParent.scrollTop = savedScroll;
+        requestAnimationFrame(() => {
+          scrollParent.scrollTop = savedScroll;
+        });
+      }
+    } catch (err) {
+      this.streamLoading = false;
+      streamContainer.empty();
+      const errBox = streamContainer.createDiv({ cls: "tm-empty-state" });
+      errBox.createDiv({ text: t("error") });
+      errBox.createDiv({
+        cls: "tm-empty-hint",
+        text: err instanceof Error ? err.message : String(err),
+      });
+      console.error("[topmind] refreshStream failed:", err);
+    }
+  }
+
+  private renderWorkspaceInit(container: HTMLElement): void {
+    const emptyDiv = container.createDiv({ cls: "tm-empty-state tm-workspace-init" });
+    emptyDiv.createDiv({ text: t("init_workspace_desc"), cls: "tm-init-desc" });
+    const initBtn = emptyDiv.createEl("button", {
+      cls: "tm-btn-init-workspace",
+      text: t("init_workspace"),
+    });
+    initBtn.setAttribute("aria-label", t("init_workspace"));
+    initBtn.addEventListener("click", () => {
+      const result = this.plugin.kernelService.initWorkspace("stream");
+      if (result.ok) {
+        new Notice(t("init_workspace_success"));
+        this.refreshAll();
+      } else {
+        new Notice(`${t("init_workspace_failed")}: ${result.error || ""}`);
+      }
+    });
+  }
+
+  private renderEmptyStream(container: HTMLElement): void {
+    const emptyDiv = container.createDiv({ cls: "tm-empty-state tm-stream-empty" });
+    const iconDiv = emptyDiv.createDiv({ cls: "tm-empty-icon" });
+    setIcon(iconDiv, "waves");
+    emptyDiv.createDiv({ text: t("stream_empty"), cls: "tm-empty-title" });
+    emptyDiv.createDiv({ text: t("stream_empty_hint"), cls: "tm-empty-hint" });
+  }
+
+  /**
+   * Group entries by day heading. The period note may contain `## ` or `### `
+   * headings that separate days. We parse these from the raw content to
+   * create day groups. If no day headings found, entries are grouped by
+   * their time prefix.
+   */
+  private groupByDayHeading(entries: StreamEntry[], fullContent: string): DayGroup[] {
+    if (entries.length === 0) return [];
+
+    // Try to extract ## day headings from content
+    // Use match() per line to avoid stateful regex lastIndex bug with exec()
+    const headings: { title: string; lineOffset: number }[] = [];
+    const lines = fullContent.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const match = lines[i].match(/^#{2,3}\s+(.+)$/u);
+      if (match) {
+        headings.push({ title: match[1].trim(), lineOffset: i });
+      }
+    }
+
+    // If we have headings, group entries by the heading they fall under
+    if (headings.length > 0) {
+      const groups: DayGroup[] = [];
+      let currentGroup: DayGroup | null = null;
+      let headingIdx = 0;
+
+      for (const entry of entries) {
+        // Find the heading this entry belongs to
+        while (headingIdx < headings.length && headings[headingIdx].lineOffset < entry.lineOffset) {
+          currentGroup = { label: headings[headingIdx].title, entries: [] };
+          groups.push(currentGroup);
+          headingIdx++;
+        }
+        if (currentGroup) {
+          currentGroup.entries.push(entry);
+        } else {
+          // Entry before any heading — create unnamed group
+          currentGroup = { label: "", entries: [] };
+          groups.push(currentGroup);
+          currentGroup.entries.push(entry);
+        }
+      }
+      return groups;
+    }
+
+    // No headings — try grouping by time pattern (AM/PM or date-ish)
+    // Simple approach: all in one group
+    return [{ label: "", entries }];
+  }
+
+  private updateEntryCount(count: number): void {
+    if (this.entryCountEl) {
+      this.entryCountEl.textContent = count > 0 ? ` · ${formatEntryCount(count)}` : "";
+    }
+  }
+
+  private renderStreamEntries(container: HTMLElement, entries: StreamEntry[], periodPath: string, fullContent: string): void {
+    this.clearCardComponents();
+    const groups = this.groupByDayHeading(entries, fullContent);
+    const ordered = this.plugin.settings.timelineOrder === "desc"
+      ? [...groups].reverse()
+      : groups;
+
+    for (const group of ordered) {
+      if (groups.length > 1 && group.label) {
+        const dayHeader = container.createDiv({ cls: "tm-day-header" });
+        dayHeader.createSpan({ text: group.label, cls: "tm-day-label" });
+        dayHeader.createSpan({ text: `${group.entries.length}`, cls: "tm-day-count" });
+      }
+      for (const entry of group.entries) {
+        void this.renderStreamCard(container, entry, periodPath);
+      }
+    }
+  }
+
+  private async renderStreamCard(container: HTMLElement, entry: StreamEntry, periodPath: string): Promise<void> {
+    const cardComp = new Component();
+    cardComp.load();
+    this.cardComponents.push(cardComp);
+
+    const card = container.createDiv({ cls: "tm-card" });
+
+    const header = card.createDiv({ cls: "tm-card-header" });
+    if (entry.time) {
+      const timeIcon = header.createSpan({ cls: "tm-card-time-icon" });
+      setIcon(timeIcon, "clock");
+      header.createSpan({ cls: "tm-card-time", text: entry.time });
+    } else {
+      header.createSpan({ cls: "tm-card-dot" });
+    }
+
+    // Card actions (icon-only with tooltips — compact, no overflow)
+    const actionsEl = header.createDiv({ cls: "tm-card-actions" });
+
+    // Copy button
+    const copyBtn = actionsEl.createEl("button", {
+      cls: "tm-card-action-btn",
+      attr: { "aria-label": t("stream_btn_copy"), title: t("stream_btn_copy") },
+    });
+    setIcon(copyBtn, "copy");
+    copyBtn.addEventListener("click", (e: MouseEvent) => {
+      e.stopPropagation();
+      const copyText = prepareStreamEntryTextForDisplay(entry.text);
+      navigator.clipboard.writeText(copyText).then(() => {
+        new Notice(t("stream_card_copied"));
+      });
+    });
+
+    // Open in editor button
+    const editBtn = actionsEl.createEl("button", {
+      cls: "tm-card-action-btn",
+      attr: { "aria-label": t("stream_btn_edit"), title: t("stream_open_in_editor") },
+    });
+    setIcon(editBtn, "pencil");
+    editBtn.addEventListener("click", (e: MouseEvent) => {
+      e.stopPropagation();
+      this.app.workspace.openLinkText(periodPath, "", false);
+    });
+
+    // Append continuation button
+    const appendBtn = actionsEl.createEl("button", {
+      cls: "tm-card-action-btn",
+      attr: { "aria-label": t("stream_btn_append"), title: t("stream_btn_append") },
+    });
+    setIcon(appendBtn, "message-square-plus");
+
+    let appendBox: HTMLElement | null = null;
+    appendBtn.addEventListener("click", (e: MouseEvent) => {
+      e.stopPropagation();
+      if (appendBox) {
+        appendBox.remove();
+        appendBox = null;
+        return;
+      }
+      appendBox = card.createDiv({ cls: "tm-card-append-box" });
+      const appendField = appendBox.createEl("textarea", {
+        cls: "tm-append-field",
+        attr: {
+          placeholder: t("stream_append_placeholder"),
+          rows: "2",
+        },
+      });
+      appendField.focus();
+
+      const appendActions = appendBox.createDiv({ cls: "tm-append-actions" });
+      const cancelBtn = appendActions.createEl("button", {
+        cls: "tm-btn-ghost tm-btn-sm",
+        text: t("stream_append_cancel"),
+      });
+      cancelBtn.addEventListener("click", (ce: MouseEvent) => {
+        ce.stopPropagation();
+        appendBox?.remove();
+        appendBox = null;
+      });
+
+      const submitAppendBtn = appendActions.createEl("button", {
+        cls: "tm-submit-btn tm-btn-sm",
+        text: t("stream_append_submit"),
+      });
+
+      const doSubmit = async () => {
+        const text = appendField.value.trim();
+        if (!text) return;
+        submitAppendBtn.disabled = true;
+        submitAppendBtn.textContent = "...";
+        try {
+          const res = this.plugin.kernelService.appendStreamEntry({
+            relativePath: periodPath,
+            content: text,
+            heading: entry.heading,
+            startLine: entry.startLine,
+            endLine: entry.endLine,
+            anchorText: entry.text || undefined,
+          });
+          if (res.ok) {
+            appendBox?.remove();
+            appendBox = null;
+            await this.refreshStream();
+          }
+        } finally {
+          if (submitAppendBtn) {
+            submitAppendBtn.disabled = false;
+            submitAppendBtn.textContent = t("stream_append_submit");
+          }
+        }
+      };
+
+      appendField.addEventListener("keydown", (ev: KeyboardEvent) => {
+        if (ev.key === "Enter" && !ev.shiftKey) {
+          ev.preventDefault();
+          void doSubmit();
+        } else if (ev.key === "Escape") {
+          appendBox?.remove();
+          appendBox = null;
+        }
+      });
+      submitAppendBtn.addEventListener("click", (se: MouseEvent) => {
+        se.stopPropagation();
+        void doSubmit();
+      });
+    });
+
+    // Collapse only very long cards (>600 chars or >20 non-empty lines).
+    // Desktop feed expand is 480/8; this page uses a looser 600/20 so more cards stay open.
+    const displayText = prepareStreamEntryTextForDisplay(entry.text);
+    const { main, appends } = splitStreamPreviewParts(displayText);
+    const isLongContent = displayText.length > 600 || displayText.split("\n").filter((l: string) => l.trim()).length > 20;
+    const body = card.createDiv({ cls: isLongContent ? "tm-card-body tm-collapsed" : "tm-card-body" });
+    if (appends.length > 0) {
+      if (main) {
+        try {
+          await MarkdownRenderer.render(this.app, main, body, "", cardComp);
+        } catch {
+          body.textContent = main;
+        }
+      }
+      const appendsContainer = card.createDiv({ cls: "tm-stream-appends" });
+      for (const a of appends) {
+        const block = appendsContainer.createDiv({ cls: "tm-stream-append-block" });
+        const titleEl = block.createDiv({ cls: "tm-stream-append-title" });
+        titleEl.textContent = a.title;
+        if (a.body) {
+          const appendBody = block.createDiv({ cls: "tm-stream-append-body" });
+          try {
+            await MarkdownRenderer.render(this.app, a.body, appendBody, "", cardComp);
+          } catch {
+            appendBody.textContent = a.body;
+          }
+        }
+      }
+    } else if (displayText) {
+      try {
+        await MarkdownRenderer.render(this.app, displayText, body, "", cardComp);
+      } catch {
+        body.textContent = displayText;
+      }
+    }
+
+    // Only attach collapse toggle for long content
+    if (isLongContent) {
+      const toggleCollapse = () => {
+        body.classList.toggle("tm-collapsed");
+      };
+      body.addEventListener("click", toggleCollapse);
+      body.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          toggleCollapse();
+        }
+      });
+      body.setAttribute("role", "button");
+      body.setAttribute("tabindex", "0");
+      body.setAttribute("aria-label", t("stream_expand_entry"));
+    }
+
+    if (entry.tags.length > 0) {
+      const footer = card.createDiv({ cls: "tm-card-footer" });
+      for (const tag of entry.tags) {
+        footer.createSpan({ cls: "tm-card-tag", text: `#${tag}` });
+      }
+    }
+  }
+
+  async refreshSuggestions(opts: { force?: boolean } = {}): Promise<void> {
+    if (this.suggestionInFlight) return;
+    this.suggestionInFlight = true;
+
+    const { suggestionContainer } = this;
+
+    if (!this.plugin.kernelService.isWorkspaceReady()) {
+      this.suggestionInFlight = false;
+      return;
+    }
+
+    if (!hasConfiguredProvider(this.plugin.settings.ai)) {
+      this.paintSuggestEntry(suggestionContainer, null);
+      this.suggestionInFlight = false;
+      return;
+    }
+
+    try {
+      const cached = this.plugin.kernelService.peekSuggestions();
+      const force = opts.force === true;
+      let suggestions = cached;
+      if (force || cached.length === 0) {
+        suggestions = await this.plugin.kernelService.generateSuggestions(opts);
+      }
+      this.paintSuggestEntry(suggestionContainer, suggestions);
+    } finally {
+      this.suggestionInFlight = false;
+    }
+  }
+
+  /** Quiet count entry → AI Dock 建议 tab（唯一完整确认面）。count=0 不占位。 */
+  private paintSuggestEntry(container: HTMLElement, suggestions: SuggestionCard[] | null): void {
+    container.empty();
+    if (!suggestions || suggestions.length === 0) return;
+
+    const strip = container.createDiv({ cls: "tm-suggest-entry-strip" });
+    const icon = strip.createSpan({ cls: "tm-suggest-entry-icon" });
+    setIcon(icon, "lightbulb");
+    strip.createSpan({
+      text: t("sidebar_suggestions_count", { count: suggestions.length }),
+      cls: "tm-suggest-entry-label",
+    });
+    const openBtn = strip.createEl("button", {
+      text: t("suggestions_open_confirm"),
+      cls: "tm-btn-ghost tm-btn-sm tm-suggest-entry-open",
+    });
+    openBtn.setAttribute("aria-label", t("suggestions_open_confirm"));
+    openBtn.addEventListener("click", () => void this.openSidebarSuggestions());
+  }
+
+  private async openSidebarSuggestions(): Promise<void> {
+    await this.openSidebar();
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_SIDEBAR_DOCK);
+    if (leaves.length === 0) return;
+    const view = leaves[0].view as unknown as { revealTab?: (tab: "suggestions") => void };
+    view.revealTab?.("suggestions");
+  }
+
+  // ── Actions ────────────────────────────────────────────────────────────
+
+  private submitInput(): void {
+    const text = this.inputEl.value.trim();
+    if (!text) return;
+
+    const isUrl = isLoneUrlCapture(text);
+    const target = isUrl ? "inbox" : "stream";
+    if (isUrl) {
+      new Notice(t("notice_url_to_inbox"));
+    }
+
+    const tags = this.plugin.settings.autoTag ? extractTags(text) : [];
+    this.inputEl.disabled = true;
+    this.submitBtn.disabled = true;
+    this.submitBtn.empty();
+    this.submitBtn.createSpan({ cls: "tm-btn-spinner" });
+    const result = this.plugin.kernelService.capture(text, { target, tags });
+
+    if (result.ok) {
+      this.inputEl.value = "";
+      this.inputEl.style.height = "auto";
+      this.refreshStream();
+      // Scroll to top (newest entry in desc order)
+      this.streamContainer.scrollTop = 0;
+      // Result notices (written → path / pending / failed) come from
+      // kernelService.capture — no duplicate generic toast here.
+    } else {
+      new Notice(t("notice_write_failed"));
+    }
+    this.inputEl.disabled = false;
+    this.submitBtn.disabled = false;
+    this.submitBtn.empty();
+    this.submitBtn.textContent = t("quick_capture_log_it");
+    this.inputEl.focus();
+  }
+
+  private async organizePeriod(): Promise<void> {
+    if (this.organizing) return;
+    const periodPath = this.periodSelect.value;
+    if (!periodPath) return;
+
+    this.organizing = true;
+    this.organizeBtn.disabled = true;
+    this.organizeBtn.empty();
+    this.organizeBtn.createSpan({ cls: "tm-btn-spinner tm-btn-spinner-dark" });
+    new Notice(t("notice_organizing"));
+
+    try {
+      this.plugin.kernelService.reconcilePeriod(periodPath);
+
+      // Shared serial lane — never a parallel off-lane AI call; the lane's
+      // completion notice + refreshed views are the feedback.
+      const aiQueued = this.plugin.settings.autoMaintainTodos
+        && hasConfiguredProvider(this.plugin.settings.ai);
+      if (aiQueued) {
+        this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "all", true);
+      }
+
+      await this.refreshSuggestions({ force: true });
+      await this.refreshStream();
+      if (!aiQueued) {
+        new Notice(t("notice_organize_done"));
+      }
+    } catch (err) {
+      console.error("[topmind] organizePeriod failed:", err);
+      new Notice(`${t("notice_execute_failed")}: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      this.organizing = false;
+      this.organizeBtn.disabled = false;
+      this.organizeBtn.empty();
+      setIcon(this.organizeBtn, "wand-2");
+      this.organizeBtn.createSpan({ text: t("stream_organize") });
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "topmind-obsidian-plugin",
+  "version": "4.12.2",
+  "private": true,
+  "description": "topmind Stream for Obsidian \u2014 \u4e3b\u533a\u57df\u52a8\u6001\u6d41 + AI \u6c89\u6dc0\u526f\u9a7e",
+  "type": "module",
+  "license": "MIT",
+  "author": "TopMindSpace",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "imports": {
+    "#kernel/*": "./lib/*"
+  },
+  "scripts": {
+    "predev": "node scripts/ensure-engine.mjs",
+    "dev": "node esbuild.config.mjs --watch",
+    "prebuild": "node scripts/ensure-engine.mjs",
+    "build": "node esbuild.config.mjs",
+    "pretypecheck": "node scripts/ensure-engine.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "pack": "node scripts/pack-plugin.mjs",
+    "pack:verify": "node scripts/verify-pack.mjs",
+    "ensure-engine": "node scripts/ensure-engine.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "builtin-modules": "^4.0.0",
+    "esbuild": "^0.28.2",
+    "obsidian": "^1.5.0",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/topmindspace/topmind-obsidian.git"
+  }
+}

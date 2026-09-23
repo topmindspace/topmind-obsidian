@@ -1,0 +1,125 @@
+# Release Topmind Stream for Obsidian.
+# HARD RULE (community plugins): GitHub tag MUST equal manifest.json version.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Draft tag (must equal manifest.version)"
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: obsidian-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Checkout topmind engine
+        uses: actions/checkout@v5
+        with:
+          repository: topmindspace/topmind
+          ref: main
+          path: .topmind-src
+        continue-on-error: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER=$(node -p "require('./manifest.json').version")
+          PKG=$(node -p "require('./package.json').version")
+          if [[ "$VER" != "$PKG" ]]; then
+            echo "ERROR: manifest.version ($VER) != package.json.version ($PKG)"
+            exit 1
+          fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" == v* ]]; then
+            if [[ "$TAG" != "v$VER" ]]; then
+              echo "ERROR: tag $TAG must equal v$VER (community plugin hard rule)"
+              exit 1
+            fi
+          fi
+
+      - name: Test + Build + Pack
+        env:
+          TOPMIND_SRC: ${{ github.workspace }}/.topmind-src
+        run: |
+          npm run ensure-engine
+          npm run build
+          npm test
+          npm run pack:verify
+          npm run pack
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VER: ${{ steps.ver.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          DRAFT=""
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.release_tag }}"
+            DRAFT="--draft"
+          fi
+          NOTES="Topmind Stream v${VER}
+
+          ## Install
+          - Community plugins (after listing): search **Topmind Stream**
+          - BRAT: add \`topmindspace/topmind-obsidian\`
+          - Manual: unzip into \`<Vault>/.obsidian/plugins/topmind-stream/\`
+
+          ## Requires
+          - Obsidian ≥ 1.5.0
+          - Desktop-only (uses Node fs)
+
+          Kernel engine inlined at build time from topmindspace/topmind.
+          "
+          # Community plugin required assets at Release root
+          gh release create "$TAG" $DRAFT \
+            --title "v${VER}" \
+            --notes "$NOTES" \
+            dist/main.js \
+            dist/manifest.json \
+            dist/styles.css \
+            release/topmind-obsidian-${VER}.zip \
+            release/topmind-obsidian-${VER}.SHA256SUMS \
+            || gh release upload "$TAG" \
+              dist/main.js dist/manifest.json dist/styles.css \
+              release/topmind-obsidian-${VER}.zip release/topmind-obsidian-${VER}.SHA256SUMS \
+              --clobber
+
+          # versions.json for BRAT / community tooling
+          node -e '
+            const fs = require("fs");
+            const m = require("./manifest.json");
+            const versions = { [m.version]: m.minAppVersion };
+            fs.writeFileSync("versions.json", JSON.stringify(versions, null, 2) + "\n");
+          '
+          gh release upload "$TAG" versions.json --clobber
