@@ -587,6 +587,30 @@ export function suggestionApplyIsWrite(kind?: string): boolean {
 }
 
 /**
+ * Open an external help/docs URL safely.
+ * Prefer Electron `shell.openExternal` (Obsidian desktop); fall back to
+ * `window.open` with noopener. Only http(s) URLs are allowed.
+ */
+export function openExternalUrl(url: string): void {
+  const trimmed = String(url || "").trim();
+  if (!/^https?:\/\//iu.test(trimmed)) return;
+  try {
+    // Electron is external at bundle time (esbuild platform:node).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const electron = require("electron") as {
+      shell?: { openExternal?: (u: string) => void };
+    };
+    if (electron?.shell?.openExternal) {
+      void electron.shell.openExternal(trimmed);
+      return;
+    }
+  } catch {
+    // Not running under Electron shell — fall through.
+  }
+  window.open(trimmed, "_blank", "noopener,noreferrer");
+}
+
+/**
  * Resolve an inspectable target file for a suggestion card, if any.
  * Mirrors Desktop: targetPath → payload.sourcePath → payload.path; rejects
  * traversal and the placeholder `undefined.md` / `period.md` stems.

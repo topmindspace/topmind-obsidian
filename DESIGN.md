@@ -322,13 +322,18 @@ AI 操作按钮仅在 AI 已配置时显示。默认显示文本标签模式（`
 │  AI 状态             ✓ 已配置 — AI 功能可用              │
 │  [从 Desktop 导入]  ← 一键导入已配置密钥                  │
 │  默认服务商          [自动 ▾]                              │
-│  模型                [服务商默认 ▾]                       │
+│  模型                [服务商默认 ▾] [自定义 ID] [↻]       │
 │                                                           │
-│  ── 国际服务商 ──  ── 国内服务商 ──  ── 本地/兼容 ──     │
-│  OpenAI  ✓          DeepSeek ✓     Ollama                │
-│  Anthropic          Moonshot       Custom                │
-│  Google Gemini      Zhipu                                │
-│  xAI / Grok         MiniMax                               │
+│  ── 国际服务商 ───────────────────────────────────────  │
+│  OpenAI     [BaseURL] [API Key]  ✓ ★  ↗                  │
+│  Anthropic  [BaseURL] [API Key]     ↗                    │
+│  Google…    [BaseURL] [API Key]     ↗                    │
+│  xAI/Grok · Groq · Mistral · OpenRouter  …                │
+│  ── 国内服务商 ───────────────────────────────────────  │
+│  DeepSeek · Moonshot · Zhipu · MiniMax · Qwen · …         │
+│  ── 本地 / 兼容 ──────────────────────────────────────  │
+│  Ollama     [http://127.0.0.1:11434/v1]                   │
+│  Custom     [BaseURL] [API Key]                           │
 │                                                           │
 │  [测试连接]  ← 验证 AI 连通性                            │
 │  写回模式            [删除/归档前问我 ▾]                  │
@@ -395,7 +400,7 @@ AI 操作按钮仅在 AI 已配置时显示。默认显示文本标签模式（`
 
 ## 7. Ribbon 图标
 
-左侧 Ribbon 栏添加 `waves` 图标（与动态页签 `getIcon()` 一致），点击打开「记一下」弹窗。
+左侧 Ribbon 栏添加 `pencil` 图标，点击打开「记一下」弹窗（动态页签图标仍为 `waves`）。
 
 ---
 
@@ -534,14 +539,15 @@ System prompt 跟随 UI locale：
 
 ### 11.4 字体规范
 
-所有字体大小使用 Obsidian CSS 变量，不使用硬编码 px 值：
+所有字体大小使用 Obsidian CSS 变量（经 `--tm-type-*` 令牌派生），**禁止**硬编码 px：
 
 | 变量 | 用途 |
 |------|------|
-| `--font-ui-medium` | 正文、输入框 |
-| `--font-ui-small` | 标题、按钮文字 |
-| `--font-ui-smaller` | 辅助文字、时间戳、徽章 |
-| `--font-text-size` | 卡片正文（跟随用户阅读设置） |
+| `--tm-type-display` ← `--font-ui-medium` | Hero 标题 |
+| `--tm-type-title` ← `--font-ui-medium` | 区块标题、compose 正文 |
+| `--tm-type-body` ← `--font-ui-small` | 卡片正文、按钮 |
+| `--tm-type-label` ← `--font-ui-small` | 标签、控件文字 |
+| `--tm-type-meta` ← `--font-ui-smaller` | 时间戳、徽章、辅助 |
 
 ---
 

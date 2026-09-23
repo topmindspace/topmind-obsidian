@@ -266,12 +266,14 @@ export class SidebarDockView extends ItemView {
 
     const workbenchBtn = headerActions.createEl("button", { cls: "tm-sidebar-icon-btn tm-sidebar-btn-labeled" });
     setIcon(workbenchBtn, "waves");
+    workbenchBtn.createSpan({ text: t("sidebar_btn_workbench"), cls: "tm-sidebar-btn-label" });
     workbenchBtn.setAttribute("aria-label", t("sidebar_open_workbench"));
     workbenchBtn.setAttribute("title", t("sidebar_open_workbench"));
     workbenchBtn.addEventListener("click", () => this.openWorkbench());
 
     const settingsBtn = headerActions.createEl("button", { cls: "tm-sidebar-icon-btn tm-sidebar-btn-labeled" });
     setIcon(settingsBtn, "settings");
+    settingsBtn.createSpan({ text: t("sidebar_open_settings"), cls: "tm-sidebar-btn-label" });
     settingsBtn.setAttribute("aria-label", t("sidebar_open_settings"));
     settingsBtn.setAttribute("title", t("sidebar_open_settings"));
     settingsBtn.addEventListener("click", () => this.openSettings());
@@ -1348,6 +1350,7 @@ export class SidebarDockView extends ItemView {
     });
     const iconSpan = captureBtn.createSpan({ cls: "tm-action-icon-span" });
     setIcon(iconSpan, "pencil");
+    captureBtn.createSpan({ text: t("sidebar_btn_capture"), cls: "tm-sidebar-action-label" });
     captureBtn.setAttribute("aria-label", t("sidebar_btn_capture"));
     captureBtn.setAttribute("title", t("sidebar_btn_capture"));
     captureBtn.addEventListener("click", () => this.plugin.openQuickCapture());
@@ -1372,6 +1375,7 @@ export class SidebarDockView extends ItemView {
       const aiOpsBtn = actionsBar.createEl("button", { cls: "tm-sidebar-action-btn" });
       const aiIcon = aiOpsBtn.createSpan({ cls: "tm-action-icon-span" });
       setIcon(aiIcon, "sparkles");
+      aiOpsBtn.createSpan({ text: t("sidebar_op_menu"), cls: "tm-sidebar-action-label" });
       aiOpsBtn.setAttribute("aria-label", t("sidebar_op_menu"));
       aiOpsBtn.setAttribute("title", t("sidebar_op_menu"));
       aiOpsBtn.addEventListener("click", (evt: MouseEvent) => {
@@ -1405,6 +1409,7 @@ export class SidebarDockView extends ItemView {
     const btn = parent.createEl("button", { cls: "tm-sidebar-action-btn" });
     const iconSpan = btn.createSpan({ cls: "tm-action-icon-span" });
     setIcon(iconSpan, icon);
+    btn.createSpan({ text: label, cls: "tm-sidebar-action-label" });
     btn.setAttribute("aria-label", label);
     btn.setAttribute("title", label);
     btn.addEventListener("click", () => { void handler(); });

@@ -7,6 +7,10 @@ export const zhCN = {
 
   // ── Views ──
   stream_workbench_title: "动态",
+  stream_greet_morning: "早上好",
+  stream_greet_afternoon: "下午好",
+  stream_greet_evening: "晚上好",
+  stream_greet_night: "夜深了",
 
   // ── 记一下 (Note it) ──
   quick_capture_title: "记一下",

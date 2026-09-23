@@ -58,6 +58,33 @@ test("styles.css: every --tm-* token is defined once and used", async (t) => {
   });
 });
 
+test("styles.css: custom properties stay inside a rule block", async (t) => {
+  await t.test("no orphaned --tm-* tokens at top level", () => {
+    // A token written after a rule's closing `}` is dead CSS: browsers drop it,
+    // so every var() consumer silently falls back. This class of bug shipped
+    // once when a design-token block was split and the closing brace moved.
+    const offenders = [];
+    let depth = 0;
+    css.split("\n").forEach((line, i) => {
+      for (const ch of line) {
+        if (ch === "{") depth += 1;
+        else if (ch === "}") depth -= 1;
+      }
+      const s = line.trim();
+      // Skip comment chrome (box-drawing separators inside block comments).
+      if (/^(\/\*|\*|\/\/)/.test(s) || /^-{3,}$/.test(s)) return;
+      if (depth === 0 && s.startsWith("--")) {
+        offenders.push(`L${i + 1}: ${s.slice(0, 80)}`);
+      }
+      if (depth < 0) {
+        offenders.push(`L${i + 1}: unbalanced '}'`);
+        depth = 0;
+      }
+    });
+    assert.deepEqual(offenders, [], `orphaned tokens / unbalanced braces:\n${offenders.join("\n")}`);
+  });
+});
+
 test("styles.css: accent-colored text uses Obsidian's text accent", async (t) => {
   await t.test("no text painted with the control accent", () => {
     // Obsidian maintains two accents and the split is deliberate:
@@ -76,6 +103,24 @@ test("styles.css: accent-colored text uses Obsidian's text accent", async (t) =>
     });
     assert.deepEqual(offenders, [], `text using the control accent:\n${offenders.join("\n")}`);
     assert.match(css, /--tm-text-accent:\s*var\(--text-accent/);
+  });
+});
+
+test("styles.css: type sizes resolve through Obsidian / --tm-type tokens", async (t) => {
+  await t.test("no bare font-size px values", () => {
+    // Plugin guidelines: respect the user's font-size settings. A hardcoded
+    // px type ramp freezes the UI when the user scales interface fonts.
+    // The only allowed literals live on --tm-type-* definitions (and those
+    // must themselves derive from --font-ui-*).
+    const offenders = [];
+    css.split("\n").forEach((line, i) => {
+      if (/^\s*(\/\*|\*)/.test(line)) return;
+      if (/\bfont-size:\s*[0-9.]+px/.test(line)) {
+        offenders.push(`L${i + 1}: ${line.trim()}`);
+      }
+    });
+    assert.deepEqual(offenders, [], `hardcoded font-size px:\n${offenders.join("\n")}`);
+    assert.match(css, /--tm-type-body:\s*var\(--font-ui-/);
   });
 });
 

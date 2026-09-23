@@ -142,18 +142,35 @@ export class StreamWorkbenchView extends ItemView {
 
   // ── Layout (shared between onOpen and refresh) ──────────────────────
 
-  /** Render the full layout: toolbar + input bar + stream section + suggestions section */
+  /** Personal workbench homepage — hero compose + timeline feed. */
   private renderLayout(contentEl: HTMLElement): void {
-    // ── Toolbar ──
-    this.renderToolbar(contentEl);
+    const shell = contentEl.createDiv({ cls: "tm-wb-shell" });
+    shell.setAttr("data-stream-column", "true");
 
-    // Shared compose + stream column (not the far toolbar)
-    const feedColumn = contentEl.createDiv({ cls: "tm-feed-column" });
-    feedColumn.setAttr("data-stream-column", "true");
+    // ── Top bar (identity + utilities) ──
+    this.renderToolbar(shell);
 
-    // ── Quick Input Bar ──
-    const inputBar = feedColumn.createDiv({ cls: "tm-input-bar" });
-    const inputWrap = inputBar.createDiv({ cls: "tm-input-wrap" });
+    // ── Hero: date line + greeting + compose ──
+    const hero = shell.createDiv({ cls: "tm-wb-hero" });
+    const heroHead = hero.createDiv({ cls: "tm-wb-hero-head" });
+    const today = new Date();
+    const dateLabel = today.toLocaleDateString(undefined, {
+      month: "long",
+      day: "numeric",
+      weekday: "long",
+    });
+    heroHead.createDiv({ cls: "tm-wb-hero-kicker", text: dateLabel });
+    const hour = today.getHours();
+    const greetKey =
+      hour < 5 ? "stream_greet_night" :
+      hour < 12 ? "stream_greet_morning" :
+      hour < 18 ? "stream_greet_afternoon" :
+      "stream_greet_evening";
+    heroHead.createDiv({ cls: "tm-wb-hero-title", text: t(greetKey) });
+    heroHead.createDiv({ cls: "tm-wb-hero-sub", text: t("stream_workbench_title") });
+
+    const compose = hero.createDiv({ cls: "tm-wb-compose" });
+    const inputWrap = compose.createDiv({ cls: "tm-input-wrap" });
     this.inputEl = inputWrap.createEl("textarea", {
       cls: "tm-input-field",
       attr: {
@@ -162,19 +179,24 @@ export class StreamWorkbenchView extends ItemView {
         "aria-label": t("quick_capture_log_it"),
       },
     });
-
-    // URL detection hint (visual feedback when typing a lone URL)
     this.urlHintEl = inputWrap.createDiv({ cls: "tm-url-hint tm-url-hint-hidden" });
     const urlHintIcon = this.urlHintEl.createSpan({ cls: "tm-url-hint-icon" });
     setIcon(urlHintIcon, "link");
     this.urlHintEl.createSpan({ text: t("compose_url_hint") });
 
-    // AI polish button
-    const polishBtn = inputBar.createEl("button", {
-      cls: "tm-btn-secondary tm-btn-icon-only tm-btn-polish",
+    const composeFoot = compose.createDiv({ cls: "tm-wb-compose-foot" });
+    const hint = composeFoot.createSpan({
+      cls: "tm-wb-compose-hint",
+      text: `${t("quick_capture_hint_enter_note")} · ${t("quick_capture_hint_shift_enter")}`,
+    });
+
+    const composeActions = composeFoot.createDiv({ cls: "tm-wb-compose-actions" });
+    const polishBtn = composeActions.createEl("button", {
+      cls: "tm-btn-ghost",
       attr: { "aria-label": t("stream_btn_polish"), title: t("stream_btn_polish") },
     });
     setIcon(polishBtn, "sparkles");
+    polishBtn.createSpan({ text: t("stream_btn_polish"), cls: "tm-btn-ghost-label" });
     polishBtn.addEventListener("click", async () => {
       const val = this.inputEl.value.trim();
       if (!val) return;
@@ -191,13 +213,12 @@ export class StreamWorkbenchView extends ItemView {
       }
     });
 
-    this.submitBtn = inputBar.createEl("button", {
+    this.submitBtn = composeActions.createEl("button", {
       text: t("quick_capture_log_it"),
       cls: "tm-submit-btn",
     });
     this.submitBtn.setAttribute("aria-label", t("quick_capture_log_it"));
 
-    // Interactions
     this.inputEl.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
@@ -210,38 +231,28 @@ export class StreamWorkbenchView extends ItemView {
     });
     this.submitBtn.addEventListener("click", () => this.submitInput());
 
-    // ── Stream Section ──
-    const streamHeader = feedColumn.createDiv({ cls: "tm-section-header" });
+    // ── Timeline section ──
+    const section = shell.createDiv({ cls: "tm-wb-section" });
+    const streamHeader = section.createDiv({ cls: "tm-section-header" });
     const streamTitleDiv = streamHeader.createDiv({ cls: "tm-section-title" });
     streamTitleDiv.createSpan({ text: t("stream_this_week"), cls: "tm-section-title-text" });
     this.entryCountEl = streamTitleDiv.createSpan({ cls: "tm-entry-count" });
 
     const streamControls = streamHeader.createDiv({ cls: "tm-section-controls" });
-
-    // Period switcher stays visible (primary navigation of the feed)
-    this.periodSelect = streamControls.createEl("select", {
-      cls: "tm-period-select",
-    });
+    this.periodSelect = streamControls.createEl("select", { cls: "tm-period-select" });
     this.periodSelect.setAttribute("aria-label", t("stream_switch_period"));
     this.periodSelect.addEventListener("change", () => this.refreshStream());
 
-    // Icon-only secondary actions (high-frequency stay visible; labels live in tooltips)
-    const refreshStreamBtn = streamControls.createEl("button", {
-      cls: "tm-btn-secondary tm-btn-icon-only",
-    });
+    const refreshStreamBtn = streamControls.createEl("button", { cls: "tm-btn-ghost tm-btn-icon" });
     setIcon(refreshStreamBtn, "refresh-cw");
     refreshStreamBtn.setAttribute("aria-label", t("toolbar_btn_refresh"));
     refreshStreamBtn.setAttribute("title", t("toolbar_btn_refresh"));
     refreshStreamBtn.addEventListener("click", () => {
       refreshStreamBtn.addClass("tm-btn-spinning");
-      this.refreshStream().finally(() => {
-        refreshStreamBtn.removeClass("tm-btn-spinning");
-      });
+      this.refreshStream().finally(() => refreshStreamBtn.removeClass("tm-btn-spinning"));
     });
 
-    this.organizeBtn = streamControls.createEl("button", {
-      cls: "tm-btn-secondary tm-btn-icon-only",
-    });
+    this.organizeBtn = streamControls.createEl("button", { cls: "tm-btn-ghost tm-btn-icon" });
     setIcon(this.organizeBtn, "wand-2");
     this.organizeBtn.setAttribute("aria-label", t("stream_organize"));
     this.organizeBtn.setAttribute("title", t("stream_organize"));
@@ -249,33 +260,24 @@ export class StreamWorkbenchView extends ItemView {
 
     this.renderLayoutToggle(streamControls);
 
-    const memoryBtn = streamControls.createEl("button", {
-      cls: "tm-btn-secondary tm-btn-icon-only",
-    });
+    const memoryBtn = streamControls.createEl("button", { cls: "tm-btn-ghost tm-btn-icon" });
     setIcon(memoryBtn, "user");
     memoryBtn.setAttribute("aria-label", t("toolbar_btn_profile"));
     memoryBtn.setAttribute("title", t("toolbar_btn_profile"));
     memoryBtn.setAttribute("data-stream-open-memory", "true");
     memoryBtn.addEventListener("click", () => void this.plugin.openMemoryBrowse());
 
-    this.streamContainer = feedColumn.createDiv({ cls: "tm-stream-container" });
+    this.streamContainer = section.createDiv({ cls: "tm-stream-container tm-wb-timeline" });
     this.applyFeedLayout();
 
-    // ── Suggest entry strip（非完整确认面）──
-    // 唯一确认面在 AI Dock「建议」tab；此处只在 count>0 时露出计数入口。
-    this.suggestionContainer = contentEl.createDiv({ cls: "tm-suggest-entry" });
+    this.suggestionContainer = shell.createDiv({ cls: "tm-suggest-entry" });
   }
-
-  // ── Toolbar ────────────────────────────────────────────────────────────
 
   private renderToolbar(container: HTMLElement): void {
     const toolbar = container.createDiv({ cls: "tm-toolbar" });
-
-    // Left: view title + period context (the only identity chrome)
     const titleWrap = toolbar.createDiv({ cls: "tm-toolbar-title" });
     titleWrap.createSpan({ text: t("stream_workbench_title"), cls: "tm-toolbar-title-text" });
 
-    // Task progress badge (updated by subscribe) — click opens history panel
     this.taskBadgeEl = toolbar.createDiv({ cls: "tm-task-badge tm-task-badge-hidden" });
     this.taskBadgeEl.setAttribute("role", "button");
     this.taskBadgeEl.setAttribute("tabindex", "0");
@@ -290,30 +292,27 @@ export class StreamWorkbenchView extends ItemView {
         this.taskBadgeEl?.click();
       }
     });
-
     this.taskPanelEl = container.createDiv({ cls: "tm-task-panel" });
     this.taskPanelEl.hidden = true;
 
-    // Right: three icon actions only (sidebar / settings / new note)
     const actionsDiv = toolbar.createDiv({ cls: "tm-toolbar-actions" });
-
-    const sidebarBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn tm-toolbar-btn-labeled" });
-    sidebarBtn.createSpan({ text: t("toolbar_btn_sidebar"), cls: "tm-toolbar-btn-label" });
+    const sidebarBtn = actionsDiv.createEl("button", { cls: "tm-btn-ghost tm-btn-icon" });
     setIcon(sidebarBtn, "panel-right");
+    sidebarBtn.createSpan({ text: t("toolbar_btn_sidebar"), cls: "tm-toolbar-btn-label" });
     sidebarBtn.setAttribute("aria-label", t("sidebar_open_sidebar"));
     sidebarBtn.setAttribute("title", t("sidebar_open_sidebar"));
     sidebarBtn.addEventListener("click", () => this.openSidebar());
 
-    const settingsBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn tm-toolbar-btn-labeled" });
-    settingsBtn.createSpan({ text: t("toolbar_btn_settings"), cls: "tm-toolbar-btn-label" });
+    const settingsBtn = actionsDiv.createEl("button", { cls: "tm-btn-ghost tm-btn-icon" });
     setIcon(settingsBtn, "settings");
+    settingsBtn.createSpan({ text: t("toolbar_btn_settings"), cls: "tm-toolbar-btn-label" });
     settingsBtn.setAttribute("aria-label", t("sidebar_open_settings"));
     settingsBtn.setAttribute("title", t("sidebar_open_settings"));
     settingsBtn.addEventListener("click", () => this.openSettings());
 
-    const newNoteBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn tm-toolbar-btn-labeled" });
-    newNoteBtn.createSpan({ text: t("toolbar_btn_new_note"), cls: "tm-toolbar-btn-label" });
+    const newNoteBtn = actionsDiv.createEl("button", { cls: "tm-btn-ghost tm-btn-icon" });
     setIcon(newNoteBtn, "file-plus");
+    newNoteBtn.createSpan({ text: t("toolbar_btn_new_note"), cls: "tm-toolbar-btn-label" });
     newNoteBtn.setAttribute("aria-label", t("toolbar_btn_new_note"));
     newNoteBtn.setAttribute("title", t("toolbar_btn_new_note"));
     newNoteBtn.addEventListener("click", () => this.createNewNote());
@@ -738,18 +737,20 @@ export class StreamWorkbenchView extends ItemView {
     cardComp.load();
     this.cardComponents.push(cardComp);
 
-    const card = container.createDiv({ cls: "tm-card" });
+    const card = container.createDiv({ cls: "tm-card tm-wb-card" });
 
-    const header = card.createDiv({ cls: "tm-card-header" });
+    // Time gutter (direct child → grid-area: time)
     if (entry.time) {
-      const timeIcon = header.createSpan({ cls: "tm-card-time-icon" });
-      setIcon(timeIcon, "clock");
-      header.createSpan({ cls: "tm-card-time", text: entry.time });
+      card.createSpan({ cls: "tm-card-time", text: entry.time });
     } else {
-      header.createSpan({ cls: "tm-card-dot" });
+      const timeCell = card.createDiv({ cls: "tm-card-time tm-card-time-soft" });
+      timeCell.createSpan({ cls: "tm-card-dot" });
     }
 
-    // Card actions (icon-only with tooltips — compact, no overflow)
+    // Head row: actions only (grid-area: head)
+    const header = card.createDiv({ cls: "tm-card-header" });
+
+    // Card actions (always visible, quiet)
     const actionsEl = header.createDiv({ cls: "tm-card-actions" });
 
     // Copy button

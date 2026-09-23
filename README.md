@@ -104,11 +104,10 @@ When first enabled, Topmind Stream checks if your vault already contains a Topmi
 
 ### 3. Configure AI Copilot (Optional)
 
-Navigate to **Settings -> Topmind Stream -> AI Copilot**:
+Navigate to **Settings -> Topmind Stream -> AI Co-pilot & Save**:
 
-- **Multi-provider**: Configure all your API keys at once — OpenAI, Anthropic, Google Gemini, DeepSeek, Moonshot, Zhipu, MiniMax, xAI, Ollama (local), or Custom endpoint.
-- Set a **default provider** preference, or let the plugin auto-select the first configured one.
-- Optionally pick a **model**. Lists resolve from three sources (official provider `list-models` when a key/endpoint exists, then the [models.dev](https://models.dev) community catalog via Obsidian `requestUrl`, then curated defaults). Refresh force-bypasses cache; a failed download is not stored as live. Custom model IDs stay selectable.
+- **Provider board (all visible at once)**: International / Domestic / Local groups — OpenAI, Anthropic, Google Gemini, DeepSeek, Moonshot, Zhipu, MiniMax, xAI, Groq, Mistral, OpenRouter, Qwen, Doubao, SiliconFlow, Baidu, Hunyuan, Ollama, Custom. Each row has Base URL + API Key, configured ✓, and default ★.
+- **Model**: dropdown + custom model ID + refresh. Official `list-models` when keyed, then the [models.dev](https://models.dev) community catalog via Obsidian `requestUrl`, then curated defaults.
 - **Import from Desktop**: One-click import of AI keys from topmind Desktop. Works with encrypted keys — use Desktop's **Settings → AI → Export for Obsidian** to create a plaintext export file, then click **Import from Desktop** in the plugin settings.
 - Choose **Writeback Mode**:
   - `confirm` (*Ask before saving* — Recommended): Preview changes in the Suggestion Popover before writing.
@@ -122,7 +121,7 @@ Navigate to **Settings -> Topmind Stream -> AI Copilot**:
 
 - Command palette -> **Topmind: Note it** (*bind a hotkey in Obsidian Settings -> Hotkeys*).
 - `Cmd/Ctrl + P` -> **Topmind: Open Stream** to open the timeline tab.
-- Click the **Waves icon** in the left ribbon to open **Note it** instantly.
+- Click the **Pencil icon** in the left ribbon to open **Note it** instantly.
 
 Product vocabulary (aligned with Desktop): **Note it** / 记一下 · **Log it** / 记下 · stream · topic · My profile · delivery.
 

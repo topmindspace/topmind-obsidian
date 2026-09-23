@@ -9,6 +9,10 @@ export const enUS: typeof zhCN = {
 
   // ── Views ──
   stream_workbench_title: "Stream",
+  stream_greet_morning: "Good morning",
+  stream_greet_afternoon: "Good afternoon",
+  stream_greet_evening: "Good evening",
+  stream_greet_night: "Late night",
 
   // ── Note it (记一下) ──
   quick_capture_title: "Note it",

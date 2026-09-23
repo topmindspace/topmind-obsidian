@@ -99,11 +99,10 @@ topmind Stream 通过 5 个通俗直观的概念降低认知负担：
 
 ### 3. 配置 AI 副驾（可选）
 
-进入 **设置 → Topmind Stream → AI 副驾**：
+进入 **设置 → Topmind Stream → AI 副驾与写回策略**：
 
-- **多服务商**：一次性配置所有 API 密钥 — OpenAI、Anthropic、Google Gemini、DeepSeek、Moonshot、Zhipu、MiniMax、xAI、Ollama（本地）或自定义端点。
-- 设置**默认服务商**偏好，或让插件自动选择第一个已配置的服务商。
-- 可选从动态列表挑选**模型**：已配置密钥/端点时走官方 list-models，否则用 [models.dev](https://models.dev) 社区目录（Obsidian `requestUrl`），再回退精选默认。刷新会强制绕过缓存；失败不会把空列表写成已同步。仍可手填自定义模型 ID。
+- **服务商看板（全部可见）**：国际 / 国内 / 本地三组同时展示 — OpenAI、Anthropic、Google Gemini、DeepSeek、Moonshot、Zhipu、MiniMax、xAI、Groq、Mistral、OpenRouter、Qwen、Doubao、SiliconFlow、Baidu、Hunyuan、Ollama、Custom。每行可填 Base URL + API Key，已配置显示 ✓，可设默认 ★。
+- **模型**：下拉 + 自定义模型 ID + 刷新。已配置密钥/端点时走官方 list-models，否则用 [models.dev](https://models.dev) 社区目录，再回退精选默认。
 - **从 Desktop 导入**：一键导入 topmind Desktop 的 `app-settings.json` 中已配置的 AI 密钥。
 - 选择**写回模式**：
   - `confirm`（*删除/归档前问我* — 推荐）：分级——内容新建/更新/编辑直接落盘；仅删除/归档需你确认。
@@ -117,7 +116,7 @@ topmind Stream 通过 5 个通俗直观的概念降低认知负担：
 
 - 命令面板 → **Topmind: 记一下**（在 Obsidian 设置 → 快捷键 中绑定快捷键）。
 - `Cmd/Ctrl + P` → **Topmind: 打开动态** 打开时间轴页签。
-- 点击左侧 Ribbon 栏的 **波浪图标** 即可打开**记一下**。
+- 点击左侧 Ribbon 栏的 **铅笔图标** 即可打开**记一下**。
 
 产品词汇（与 Desktop 对齐）：**记一下** / Note it · **记下** / Log it · 动态 · 专题 · 我的情况 · 交付。
 

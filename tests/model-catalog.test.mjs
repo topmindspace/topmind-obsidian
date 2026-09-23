@@ -77,7 +77,9 @@ describe("settings + chat wiring (static, shipped source)", () => {
     assert.match(src, /notice_models_fallback/);
     assert.match(src, /applyModelOptions/);
     assert.match(src, /credentialsForProvider/);
-    assert.match(src, /s\.ai\.defaultModel && s\.ai\.defaultModel !== preset\?\.model/);
+    // Custom model id must survive a catalog refresh even when not in the live list.
+    assert.match(src, /s\.ai\.defaultModel &&/);
+    assert.match(src, /s\.ai\.defaultModel !== preset\?\.model/);
   });
 
   test("chat switcher keeps custom id and uses resolveProviderCatalog", () => {
@@ -88,10 +90,31 @@ describe("settings + chat wiring (static, shipped source)", () => {
     assert.match(src, /createEl\("option", \{ value: currentModel/);
   });
 
-  test("model control is rendered whenever a provider is configured", () => {
+  test("model control is always rendered (not gated on one configured provider)", () => {
     const src = fs.readFileSync(path.join(srcDir, "settings", "settings-tab.ts"), "utf8");
-    assert.match(src, /if \(activeProvider && activeProvider !== "none"\)/);
+    // Model picker is a first-class AI control — always on screen so a user who
+    // just pasted a key never has to hunt for it.
+    assert.match(src, /renderModelPicker/);
     assert.match(src, /settings_ai_model/);
-    assert.match(src, /custom-model-id/);
+    // Custom model entry stays available next to the dropdown.
+    assert.match(src, /settings_ai_model_enter_custom|custom-model-id/);
+    // Full provider board is the primary surface (not a one-at-a-time picker).
+    assert.match(src, /renderProviderBoard/);
+  });
+
+  test("AI settings stay on the display() path (no empty getSettingDefinitions)", () => {
+    // Returning [] from getSettingDefinitions() has been observed to suppress
+    // display() on Obsidian 1.13 — which is how the AI board vanished from
+    // Settings. The tab must keep using display() and must not reintroduce an
+    // empty definitions override.
+    const raw = fs.readFileSync(path.join(srcDir, "settings", "settings-tab.ts"), "utf8");
+    const src = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+    assert.doesNotMatch(src, /getSettingDefinitions\s*\(/u);
+    assert.match(src, /display\(\): void/);
+    assert.match(src, /renderAiSection/);
+    assert.match(src, /renderProviderBoard/);
+    // Credential board must expose key fields for the major providers.
+    assert.match(src, /PROVIDER_KEY_FIELDS/);
+    assert.match(src, /settings_ai_key|password/);
   });
 });
