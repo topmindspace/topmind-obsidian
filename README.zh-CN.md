@@ -1,10 +1,10 @@
 # topmind Stream for Obsidian
 
-[简体中文](README.md) | [English](README.en.md)
+[English](README.md) | [简体中文](README.zh-CN.md)
 
 [![Obsidian 插件](https://img.shields.io/badge/Obsidian-%E6%8F%92%E4%BB%B6-purple?style=flat-square&logo=obsidian)](https://obsidian.md)
 [![开源协议: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![最低 Obsidian 版本](https://img.shields.io/badge/Obsidian-%E2%89%A51.5.0-informational?style=flat-square)](https://obsidian.md)
+[![最低 Obsidian 版本](https://img.shields.io/badge/Obsidian-%E2%89%A51.13.0-informational?style=flat-square)](https://obsidian.md)
 [![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-dynamic-green.svg?style=flat-square)](manifest.json)
 
 > **Obsidian 的「主区域动态流 + 静默 AI 沉淀副驾」**  
@@ -213,7 +213,7 @@ npm run pack
 
 ## 环境要求
 
-- **Obsidian 版本**：桌面端 ≥ `v1.5.0`（暂不支持移动端；桌面优先设计）。
+- **Obsidian 版本**：桌面端 ≥ `v1.13.0`（暂不支持移动端；桌面优先设计）。
 - **Node.js**：≥ `v20.11`（从源码构建需要）。
 
 ---

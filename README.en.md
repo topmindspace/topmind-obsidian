@@ -1,6 +1,6 @@
 # Topmind Stream for Obsidian
 
-[简体中文](README.md) | [English](README.en.md)
+[English](README.md) | [简体中文](README.zh-CN.md)
 
 > **Repository**: [topmindspace/topmind-obsidian](https://github.com/topmindspace/topmind-obsidian) — community plugin home.
 > Kernel engine is **inlined at build time** from [topmindspace/topmind](https://github.com/topmindspace/topmind) (`TOPMIND_SRC` / sibling `../topmind` / CI `.topmind-src`).
@@ -8,7 +8,7 @@
 
 [![Obsidian Plugin](https://img.shields.io/badge/Obsidian-Plugin-purple?style=flat-square&logo=obsidian)](https://obsidian.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![Minimum Obsidian Version](https://img.shields.io/badge/Obsidian-%E2%89%A51.5.0-informational?style=flat-square)](https://obsidian.md)
+[![Minimum Obsidian Version](https://img.shields.io/badge/Obsidian-%E2%89%A51.13.0-informational?style=flat-square)](https://obsidian.md)
 [![Version](https://img.shields.io/badge/version-dynamic-green.svg?style=flat-square)](manifest.json)
 
 > **Main-area Stream + Background AI Copilot for Obsidian**  
@@ -73,11 +73,11 @@ Topmind Stream reduces mental overhead by focusing on 5 plain-language concepts:
 #### Option B: Obsidian BRAT (Beta Builds)
 1. Install the [Obsidian BRAT](https://github.com/obsidian-tools/obsidian-brat) plugin.
 2. Go to **BRAT Settings** -> **Add Plugin**.
-3. Enter repository URL: `https://github.com/topmindspace/topmind-obsidian`
+3. Enter repository: `topmindspace/topmind-obsidian`
 4. Enable **Topmind Stream**.
 
 #### Option C: Manual Installation
-1. Download `topmind-obsidian-<version>.zip` from [Releases](https://github.com/topmindspace/topmind-obsidian/releases) (product `v*` ships the current plugin zip; `obsidian-v*` is a hotfix-only tag).
+1. Download the release assets from [Releases](https://github.com/topmindspace/topmind-obsidian/releases): either `main.js` + `manifest.json` + `styles.css` (+ `templates/`), or the zip.
 2. Extract `main.js`, `manifest.json`, `styles.css`, and `templates/` to:
    `<your-vault>/.obsidian/plugins/topmind-stream/`
 3. Reload Obsidian, navigate to **Settings -> Community plugins**, and enable **Topmind Stream**.
@@ -218,7 +218,7 @@ npm run pack
 
 ## Requirements
 
-- **Obsidian Version**: Desktop ≥ `v1.5.0` (Mobile currently unsupported; desktop-first design).
+- **Obsidian Version**: Desktop ≥ `v1.13.0` (Mobile currently unsupported; desktop-first design).
 - **Node.js**: ≥ `v20.11` (for building from source).
 
 ---

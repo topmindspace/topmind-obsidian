@@ -352,7 +352,7 @@ async function fetchWithRetry(
       });
 
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("AI request timeout")), REQUEST_TIMEOUT_MS);
+        window.setTimeout(() => reject(new Error("AI request timeout")), REQUEST_TIMEOUT_MS);
       });
 
       const res = await Promise.race([requestPromise, timeoutPromise]);
@@ -392,7 +392,7 @@ async function fetchWithRetry(
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 /**

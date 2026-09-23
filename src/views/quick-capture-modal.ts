@@ -87,12 +87,12 @@ export class QuickCaptureModal extends Modal {
     this.submitBtn.setAttribute("aria-label", t("quick_capture_note_it"));
 
     // Focus input
-    setTimeout(() => this.textarea.focus(), 50);
+    window.setTimeout(() => this.textarea.focus(), 50);
 
     // Auto-grow textarea + char count + URL detection
     this.textarea.addEventListener("input", () => {
-      this.textarea.style.height = "auto";
-      this.textarea.style.height = Math.min(this.textarea.scrollHeight, 300) + "px";
+      this.textarea.setCssStyles({ height: "auto" });
+      this.textarea.setCssStyles({ height: `${Math.min(this.textarea.scrollHeight, 300)}px` });
       this.updateCharCount();
       this.updateUrlHint();
     });
@@ -173,7 +173,7 @@ export class QuickCaptureModal extends Modal {
     if (result.ok) {
       this.modalEl.addClass("tm-modal-submitted");
       new Notice(t("quick_capture_success"), 2000);
-      setTimeout(() => this.close(), 120);
+      window.setTimeout(() => this.close(), 120);
     } else {
       this.textarea.disabled = false;
       this.tagInput.disabled = false;

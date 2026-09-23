@@ -92,13 +92,26 @@
   display: flex;
   align-items: center;
   gap: var(--tm-gap-sm);
-  margin-bottom: var(--tm-gap-md);
-  padding: 4px 8px;
-  background: var(--background-secondary);
-  border-radius: var(--tm-radius-lg);
-  border: 1px solid var(--background-modifier-border);
-  flex-wrap: wrap;
+  margin-bottom: var(--tm-gap-sm);
+  padding: 2px 0;
+  min-height: 32px;
+  flex-wrap: nowrap;
   overflow: visible;
+}
+
+.tm-toolbar-title {
+  display: flex;
+  align-items: center;
+  gap: var(--tm-gap-xs);
+  min-width: 0;
+}
+
+.tm-toolbar-title-text {
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .tm-toolbar-status {
@@ -271,11 +284,8 @@
 }
 
 .tm-toolbar-btn-label {
-  font-size: var(--font-ui-smaller);
-  white-space: nowrap;
-  font-weight: 500;
   overflow: visible;
-  flex-shrink: 0;
+  display: inline;
 }
 
 /* Sidebar icon button — icon-first header control.
@@ -309,11 +319,8 @@
 }
 
 .tm-sidebar-btn-label {
-  font-size: var(--font-ui-smaller);
-  white-space: nowrap;
-  font-weight: 500;
   overflow: visible;
-  flex-shrink: 0;
+  display: inline;
 }
 
 /* Explicit narrow rule — hide labeled-button text only when the pane is tight.
@@ -1441,9 +1448,9 @@
   transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1), opacity 140ms ease-out;
 }
 
-.tm-quick-capture-modal.tm-modal-submitted {
-  transform: translateY(-10px) scale(0.97) !important;
-  opacity: 0 !important;
+.tm-modal-submitted.tm-quick-capture-modal, .tm-quick-capture-modal.tm-modal-submitted {
+  transform: translateY(-10px) scale(0.97);
+  opacity: 0;
   pointer-events: none;
 }
 
@@ -1674,6 +1681,10 @@
   display: none;
 }
 
+.tm-sidebar-status-compact .tm-status-label {
+  display: none;
+}
+
 /* ── Tab Bar ────────────────────────────────────────────────────────── */
 
 .tm-tab-bar {
@@ -1681,11 +1692,11 @@
   border-bottom: 1px solid var(--background-modifier-border);
   flex-shrink: 0;
   overflow-x: auto;
-  scrollbar-width: none;
 }
 
 .tm-tab-bar::-webkit-scrollbar {
   height: 0;
+  width: 0;
 }
 
 .tm-tab-btn {
@@ -2399,6 +2410,20 @@
 
 .tm-sidebar-bottom-actions {
   display: flex;
+  gap: var(--tm-gap-xs);
+  padding-top: var(--tm-gap-xs);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.tm-sidebar-bottom-actions .tm-sidebar-action-btn {
+  flex: 1 1 0%;
+  justify-content: center;
+  min-width: 0;
+}
+
+/* legacy */
+.tm-sidebar-bottom-actions-legacy {
+  display: flex;
   flex-wrap: nowrap;
   gap: var(--tm-gap-sm);
   padding: 6px 8px;
@@ -2560,6 +2585,27 @@
 /* ── Chat Model Switcher ─────────────────────────────────────────── */
 
 .tm-chat-model-switcher {
+  display: flex;
+  align-items: center;
+  gap: var(--tm-gap-xs);
+  flex-wrap: wrap;
+  margin-bottom: var(--tm-gap-xs);
+}
+
+.tm-chat-switcher-static {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border-radius: var(--tm-radius-sm);
+  background: var(--background-modifier-hover);
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* legacy block below kept for other switcher bits */
+.tm-chat-model-switcher-legacy {
   display: flex;
   gap: var(--tm-gap-md);
   padding: 6px 8px;
@@ -2990,4 +3036,54 @@
   border-top-color: var(--interactive-accent);
   border-radius: 50%;
   animation: tm-spin 0.8s linear infinite;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Settings helpers (declarative settings render hosts)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.tm-status-input {
+  opacity: 0.85;
+}
+
+.tm-status-input-dim {
+  font-style: italic;
+  opacity: 0.65;
+}
+
+.tm-setting-hint-accent {
+  color: var(--text-accent);
+  font-weight: 600;
+}
+
+.tm-model-custom-input {
+  margin-left: 4px;
+  width: 180px;
+  max-width: 40vw;
+}
+
+.tm-baseurl-input {
+  width: 160px;
+  max-width: 36vw;
+}
+
+.tm-settings-ai-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tm-gap-sm);
+  width: 100%;
+}
+
+.tm-settings-ai-block .setting-item {
+  border-top: none;
+  padding-top: var(--tm-gap-xs);
+  padding-bottom: var(--tm-gap-xs);
+}
+
+
+/* Toolbar is icon-first at all widths (labels reserved for a11y/tooltip).
+   Generic .tm-toolbar-btn-label keeps overflow:visible for optional hosts. */
+.tm-stream-workbench .tm-toolbar-btn-label {
+  display: none;
 }

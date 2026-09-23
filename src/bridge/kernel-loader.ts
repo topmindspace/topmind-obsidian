@@ -16,9 +16,8 @@ import { getVaultBasePath, getEngineRoot } from "./vault-bridge";
 // implementation at build time. The KernelApi interface below manually declares
 // the type surface and must be kept in sync with lib/kernel-api.mjs exports.
 // Future improvement: generate .d.ts from lib/ JSDoc to eliminate this escape hatch.
-// @ts-expect-error — kernel-api.mjs is a plain ESM file without .d.ts types;
-// esbuild bundles the actual implementation at build time.
-import * as kernelApi from "#kernel/kernel-api.mjs";
+import * as kernelApiNs from "#kernel/kernel-api.mjs";
+const kernelApi = kernelApiNs as unknown as Record<string, unknown>;
 
 // ── Kernel result shapes (aligned with lib/) ───────────────────────────────
 

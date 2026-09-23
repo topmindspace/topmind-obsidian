@@ -594,3 +594,11 @@ npm run obsidian:test      # 仅测试
 2. **不平行实现** — 任何新的 Kernel 能力都应通过 `KernelService` 封装后暴露给 View，不在 View 中直接调 Kernel。
 3. **esbuild shim 随引擎演进** — 若 Kernel 新增 `createRequire` 模式，需在 `esbuild.config.mjs` 添加对应 shim。
 4. **测试覆盖** — 每次适配变更需更新 `tests/plugin.test.mjs` 中的对应测试。
+
+## 信息架构降噪（2026-09-23）
+
+- 工具栏：标题 + 任务徽章 + 3 图标（侧栏/设置/新笔记）；**不**复读 AI 状态/模型。
+- 流头部：周期选择 + 4 图标（刷新/整理/布局/我的情况）。
+- 侧栏：状态点 + 任务徽章 + 2 图标；底部 3 格（记一下/整理/AI 菜单）。
+- 模型切换唯一面：对话 tab + 设置。
+- Agent 循环：generate 失败可重试续跑（修「AI 总断」）。

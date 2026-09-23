@@ -80,7 +80,7 @@ export function renderSuggestionCard(
     const result = await cb.apply(sugg);
     if (result.ok) {
       card.classList.add("tm-card-removing");
-      setTimeout(() => card.remove(), 200);
+      window.setTimeout(() => card.remove(), 200);
       if (result.openPath) {
         await cb.openVaultPath(result.openPath);
       }
@@ -112,6 +112,6 @@ export function renderSuggestionCard(
   dismissBtn.addEventListener("click", () => {
     cb.dismiss(sugg);
     card.classList.add("tm-card-removing");
-    setTimeout(() => card.remove(), 200);
+    window.setTimeout(() => card.remove(), 200);
   });
 }

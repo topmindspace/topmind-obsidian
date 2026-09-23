@@ -292,7 +292,6 @@ export default class TopmindPlugin extends Plugin {
         if (backup) {
           this.settings = mergeAiBackup(this.settings, backup);
           if (settingsHaveAiKeys(this.settings)) {
-            console.info("[topmind] AI keys restored from backup file");
             // Persist the restored settings so data.json is back in sync
             await this.saveData(this.settings);
           }

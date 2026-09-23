@@ -1,223 +1,228 @@
-# topmind Stream for Obsidian
+# Topmind Stream for Obsidian
 
-[简体中文](README.md) | [English](README.en.md)
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-[![Obsidian 插件](https://img.shields.io/badge/Obsidian-%E6%8F%92%E4%BB%B6-purple?style=flat-square&logo=obsidian)](https://obsidian.md)
-[![开源协议: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![最低 Obsidian 版本](https://img.shields.io/badge/Obsidian-%E2%89%A51.5.0-informational?style=flat-square)](https://obsidian.md)
-[![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-dynamic-green.svg?style=flat-square)](manifest.json)
+> **Repository**: [topmindspace/topmind-obsidian](https://github.com/topmindspace/topmind-obsidian) — community plugin home.
+> Kernel engine is **inlined at build time** from [topmindspace/topmind](https://github.com/topmindspace/topmind) (`TOPMIND_SRC` / sibling `../topmind` / CI `.topmind-src`).
 
-> **Obsidian 的「主区域动态流 + 静默 AI 沉淀副驾」**  
-> 随手记下、AI 默认建议、用户确认后再沉淀、文件永远属于本地。
+
+[![Obsidian Plugin](https://img.shields.io/badge/Obsidian-Plugin-purple?style=flat-square&logo=obsidian)](https://obsidian.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+[![Minimum Obsidian Version](https://img.shields.io/badge/Obsidian-%E2%89%A51.13.0-informational?style=flat-square)](https://obsidian.md)
+[![Version](https://img.shields.io/badge/version-dynamic-green.svg?style=flat-square)](manifest.json)
+
+> **Main-area Stream + Background AI Copilot for Obsidian**  
+> Capture thoughts instantly, let AI propose organized updates in the background, review & confirm before saving — your Markdown files always remain yours.
 
 ---
 
-## 这是什么？
+## What is Topmind Stream?
 
-**topmind Stream** 将 topmind 引擎的核心**低摩擦个人动态流体验**带入 Obsidian。
+**Topmind Stream** brings the core low-friction **Personal Stream Workflow** of the Topmind engine directly into your Obsidian Vault.
 
-传统笔记往往要求在记录前先想好分类、标签与文件夹层级。topmind Stream 将其转变为顺畅的即时流式体验：
+Traditional note-taking often forces you to make frustrating upfront decisions about folders, tags, and structure before writing. Topmind Stream replaces that friction with a seamless capture-and-settle workflow:
 
 ```text
 收进来 -> 继续做 -> 交付/沉淀 -> 找回/调整
-随手记下  ->  AI 后台默认建议  ->  用户确认后再沉淀  ->  文件永远属于本地
+Capture Instantly  ->  AI Proposes in Background  ->  You Review & Confirm  ->  Markdown Files Stay Yours
 ```
 
-- **零负担记录**：突发的随笔想法、网页剪藏、代码片段随意记下，不再为「放在哪里」而犹豫。
-- **本地优先与纯标准 Markdown**：无专有数据库锁定，无私有格式。所有数据均存储在 Vault 中（`topmind.yaml` + 编号分类目录）。
-- **主动而不打扰的 AI 辅助**：后台自动提取待办事项、建议专题涌现、整理我的情况，但**未经用户确认，绝对不会擅自修改本地文件**。
+- **Zero Friction Capture**: Jot down ideas, links, or quick snippets without worrying about placement.
+- **Local-First & Standard Markdown**: No custom databases or proprietary locking. Everything is stored as plain Markdown in your Vault (`topmind.yaml` + folder categories).
+- **Proactive Yet Unobtrusive AI**: AI extracts action items, suggests topic emergence, and organizes memory, but **never mutates your vault without your confirmation**.
 
 ---
 
-## 核心能力
+## Key Features
 
-- **记一下**：打开完整捕捉弹窗（快捷键在 Obsidian 设置 → 快捷键 自行绑定）。落点：本周动态或 Inbox。
-- **动态页签**：Obsidian 主区域时间轴；输入栏 **记下** 写入周期本；卡片流 + AI 建议。
-- **AI 副驾面板**（侧边栏）：标签式右侧面板统一汇聚全部 AI 能力 — **清单**、**建议**、**对话**、**动态** — 一站式管理。头部显示 AI 状态 + 模型徽章 + 快速设置入口。
-- **AI 对话**：与 AI 对话你的笔记、清单和动态。上下文感知 — 自动注入近期动态条目、当前清单和个人画像，让 AI 回答更有针对性。
-- **整理本周**：一键 reconcile 周期本、AI 提取待办事项并刷新涌现建议。
-- **后台 AI 副驾**：自动提炼待办（`memory/todo.md`）、建议专题涌现、整理个人画像记忆（`memory/profile.md`）。
-- **快速设置入口**：侧边栏头部与动态工具栏为 icon+文本（默认宽度显示全称；窄栏才藏字）。刷新与整理用不同图标。模型徽章显示当前 AI 服务商 + 模型。
-- **安全写回与备份**：所有写入经由 Kernel `writeback-engine` 闸口（`open`/`locked`）；**仅高影响**（locked 覆盖、锁定/核心删除）写备份/回执。归档是迁入 `99-归档` 的新家，不是备份。
-
----
-
-## 用户核心概念（≤ 5）
-
-topmind Stream 通过 5 个通俗直观的概念降低认知负担：
-
-| 概念 | 含义 | Vault 落点 |
-|------|------|------------|
-| **记一下** | 随手存一条想法/片段 | 本周动态周期本 / `00-Inbox/` |
-| **动态** | 日常流水与时间轴 | `10-动态/`（每周一本） |
-| **专题** | 长期主题归档 | `{大类}/{YYYY-主题}/` |
-| **我的情况** | 记忆平面浏览（画像 / 周期反思 / 专题记忆） | `memory/` 下的文件（默认画像 `memory/profile.md`） |
-| **交付** | 最终成品与文章 | `88-交付/` |
+- **Note it**: Open the capture modal (bind a hotkey in Obsidian Settings → Hotkeys). Destinations: this week's stream or Inbox.
+- **Stream view**: A tab in the Obsidian main area with a compose box (**Log it** into the period note), a timeline of cards, and AI suggestions.
+- **AI Copilot Panel** (Sidebar): A tabbed right sidebar unifying all AI capabilities — **Todos**, **Suggestions**, **Chat**, and **Stream** — in one place. Includes a model badge showing the active AI provider + model.
+- **AI Chat**: Converse with AI about your notes, todos, and stream entries. The chat is context-aware — it automatically injects your recent stream entries, current todos, and personal profile.
+- **Weekly Reconciliation**: Reconcile your weekly logs, extract pending action items, and refresh suggestions with one click.
+- **Background AI Copilot**: Automatically extract todos (`memory/todo.md`), suggest emergent topics, and maintain your personal context profile (`memory/profile.md`).
+- **Quick Settings Access**: One-click access to plugin settings from both the sidebar header and the workbench toolbar. Toolbar buttons are icon+label at default width (labels hide only when the pane is narrow). Refresh and Organize use distinct icons. Model badge shows the currently active AI provider + model.
+- **Writeback Protection**: Every AI modification goes through the Kernel `writeback-engine` (`open`/`locked`). Backups and receipts are **high-impact only** (locked overwrite; delete/archive of locked/core notes). Ordinary open updates do not create Archive copies.
 
 ---
 
-## 快速开始
+## User Core Concepts (≤ 5)
 
-### 1. 安装
+Topmind Stream reduces mental overhead by focusing on 5 plain-language concepts:
 
-#### 方式 A：Obsidian 官方社区插件市场（发布审核中）
-1. 打开 **Obsidian 设置** → **社区插件**。
-2. 关闭安全模式，点击 **浏览**。
-3. 搜索 **Topmind Stream**。
-4. 点击 **安装**，然后 **启用**。
-
-#### 方式 B：使用 BRAT 插件一键安装
-1. 在 Obsidian 社区插件中安装并启用 **BRAT** (TfTHacker / obsidian-42-brat)。
-2. 打开 BRAT 设置，点击 **Add Beta plugin**。
-3. 输入仓库地址：`topmindspace/topmind`
-4. 点击 Add Plugin，启用 **Topmind Stream**。
-
-#### 方式 C：手动解压安装
-1. 从 [GitHub Releases](https://github.com/topmindspace/topmind-obsidian/releases) 下载最新版的 `topmind-obsidian-<ver>.zip`。
-2. 解压并将 `topmind-stream` 文件夹放入你的 Obsidian Vault 目录：`<Vault>/.obsidian/plugins/`。
-3. 重新打开 Obsidian，在 **设置 → 社区插件** 中开启 **Topmind Stream**。
-
-#### 升级
-| 方式 | 操作 |
-|------|------|
-| 社区市场 / BRAT | 从插件列表更新 / BRAT「检查更新」 |
-| 手动 zip | 下载新版 `topmind-obsidian-<ver>.zip`，替换 `plugins/topmind-stream/` 下的文件，重新加载 Obsidian |
-| 从源码构建 | `npm run obsidian:pack` → 按上述方式安装 |
-
-你的 Vault 文件（`topmind.yaml`、`10-动态/`、`memory/`）**不会**被插件升级替换。版本真源：[`manifest.json`](./manifest.json)（`npm run versions`）。
+| Concept | Meaning | Vault Location |
+|---------|---------|----------------|
+| **Capture** (*记一下*) | Save a quick thought / snippet | Weekly Stream Log / `00-Inbox/` |
+| **Stream** (*动态*) | Daily activity & timeline | `10-Stream/` (weekly file per log) |
+| **Topic** (*专题*) | Long-term subject folder | `{Category}/{YYYY-Topic}/` |
+| **My Profile** (*我的情况*) | Memory-plane browse (profile / periodic / topic memory) | Files under `memory/` (default portrait `memory/profile.md`) |
+| **Delivery** (*交付*) | Final delivery items & published work | `88-Delivery/` |
 
 ---
 
-### 2. 初始化工作区
+## Quick Start
 
-首次启用时，Topmind Stream 会检查你的 Vault 是否已包含 topmind 工作区结构（`topmind.yaml` 和编号分类目录）。
+### 1. Installation
 
-- **已有工作区**：自动检测，无需设置。
-- **全新 Vault**：进入 **设置 → Topmind Stream**，选择模板（`stream`、`balanced`、`research` 或 `periodic`），点击 **初始化工作区**。
+#### Option A: Obsidian Community Plugins (Recommended once listed)
+1. Open **Obsidian Settings** -> **Community plugins**.
+2. Turn off Safe Mode and click **Browse**.
+3. Search for **Topmind Stream**.
+4. Click **Install** and then **Enable**.
 
----
+#### Option B: Obsidian BRAT (Beta Builds)
+1. Install the [Obsidian BRAT](https://github.com/obsidian-tools/obsidian-brat) plugin.
+2. Go to **BRAT Settings** -> **Add Plugin**.
+3. Enter repository: `topmindspace/topmind-obsidian`
+4. Enable **Topmind Stream**.
 
-### 3. 配置 AI 副驾（可选）
+#### Option C: Manual Installation
+1. Download the release assets from [Releases](https://github.com/topmindspace/topmind-obsidian/releases): either `main.js` + `manifest.json` + `styles.css` (+ `templates/`), or the zip.
+2. Extract `main.js`, `manifest.json`, `styles.css`, and `templates/` to:
+   `<your-vault>/.obsidian/plugins/topmind-stream/`
+3. Reload Obsidian, navigate to **Settings -> Community plugins**, and enable **Topmind Stream**.
 
-进入 **设置 → Topmind Stream → AI 副驾**：
+#### Upgrade
+| Method | How |
+|--------|-----|
+| Community / BRAT | Update from the plugin list / BRAT "Check for updates" |
+| Manual zip | Download the newer `topmind-obsidian-<ver>.zip`, replace files under `plugins/topmind-stream/`, reload Obsidian |
+| From source | `npm run obsidian:pack` -> install zip as above |
 
-- **多服务商**：一次性配置所有 API 密钥 — OpenAI、Anthropic、Google Gemini、DeepSeek、Moonshot、Zhipu、MiniMax、xAI、Ollama（本地）或自定义端点。
-- 设置**默认服务商**偏好，或让插件自动选择第一个已配置的服务商。
-- 可选从动态列表挑选**模型**：已配置密钥/端点时走官方 list-models，否则用 [models.dev](https://models.dev) 社区目录（Obsidian `requestUrl`），再回退精选默认。刷新会强制绕过缓存；失败不会把空列表写成已同步。仍可手填自定义模型 ID。
-- **从 Desktop 导入**：一键导入 topmind Desktop 的 `app-settings.json` 中已配置的 AI 密钥。
-- 选择**写回模式**：
-  - `confirm`（*删除/归档前问我* — 推荐）：分级——内容新建/更新/编辑直接落盘；仅删除/归档需你确认。
-  - `auto`（*自动保存*）：自动应用 AI 建议，同时自动创建后台备份。
-
-*注：AI 完全是可选的！极速捕捉、时间轴浏览和手动周整理无需 API 密钥即可流畅使用。*
-
----
-
-### 4. 日常使用
-
-- 命令面板 → **Topmind: 记一下**（在 Obsidian 设置 → 快捷键 中绑定快捷键）。
-- `Cmd/Ctrl + P` → **Topmind: 打开动态** 打开时间轴页签。
-- 点击左侧 Ribbon 栏的 **波浪图标** 即可打开**记一下**。
-
-产品词汇（与 Desktop 对齐）：**记一下** / Note it · **记下** / Log it · 动态 · 专题 · 我的情况 · 交付。
+Your vault files (`topmind.yaml`, `10-Stream/` or `10-动态/`, `memory/`) are **not** replaced by the plugin upgrade. Version truth: [`manifest.json`](./manifest.json) (`npm run versions`).
 
 ---
 
-## 命令面板参考
+### 2. Workspace Initialization
 
-| 命令 | 说明 |
-|------|------|
-| `Topmind: 记一下` | 捕捉笔记或片段（默认：本周动态） |
-| `Topmind: 打开动态` | 打开动态时间轴页签 |
-| `Topmind: 打开侧边栏` | 打开侧边栏面板 |
-| `Topmind: 整理本周` | 整理周期本并刷新建议 |
-| `Topmind: 刷新 AI 建议` | 重新生成 AI 建议卡片 |
-| `Topmind: AI 整理待办` | 对近期活动运行 AI 待办提取 |
-| `Topmind: 主题分类` | 运行 AI 主题分类 |
-| `Topmind: 整理我的情况` | 运行 AI 整理我的情况（画像 + 周期） |
-| `Topmind: 打开我的情况` | 打开记忆平面浏览（点开条目仍落到 vault 文件） |
-| `Topmind: 打开 Inbox` | 打开 Inbox 分类目录 |
+When first enabled, Topmind Stream checks if your vault already contains a Topmind workspace structure (`topmind.yaml` and standard numbered folders).
+
+- **Existing Workspace**: Automatically detected; no setup needed.
+- **New Vault**: Go to **Settings -> Topmind Stream**, select a template (`stream`, `balanced`, `research`, or `periodic`), and click **Initialize Workspace**.
 
 ---
 
-## 架构与生态
+### 3. Configure AI Copilot (Optional)
 
-Topmind Stream 是 **Topmind Monorepo 生态**的一个可选表面。它与 Topmind Desktop、UTR CLI 和便携 AI Skills 共享同一套核心 Kernel 引擎和目录契约。
+Navigate to **Settings -> Topmind Stream -> AI Copilot**:
+
+- **Multi-provider**: Configure all your API keys at once — OpenAI, Anthropic, Google Gemini, DeepSeek, Moonshot, Zhipu, MiniMax, xAI, Ollama (local), or Custom endpoint.
+- Set a **default provider** preference, or let the plugin auto-select the first configured one.
+- Optionally pick a **model**. Lists resolve from three sources (official provider `list-models` when a key/endpoint exists, then the [models.dev](https://models.dev) community catalog via Obsidian `requestUrl`, then curated defaults). Refresh force-bypasses cache; a failed download is not stored as live. Custom model IDs stay selectable.
+- **Import from Desktop**: One-click import of AI keys from topmind Desktop. Works with encrypted keys — use Desktop's **Settings → AI → Export for Obsidian** to create a plaintext export file, then click **Import from Desktop** in the plugin settings.
+- Choose **Writeback Mode**:
+  - `confirm` (*Ask before saving* — Recommended): Preview changes in the Suggestion Popover before writing.
+  - `auto` (*Auto Save*): Automatically apply AI suggestions with automatic background backups.
+
+*Note: AI is completely optional! Quick capture, timeline browsing, and manual weekly reconciliation work seamlessly without an API key.*
+
+---
+
+### 4. Daily Usage
+
+- Command palette -> **Topmind: Note it** (*bind a hotkey in Obsidian Settings -> Hotkeys*).
+- `Cmd/Ctrl + P` -> **Topmind: Open Stream** to open the timeline tab.
+- Click the **Waves icon** in the left ribbon to open **Note it** instantly.
+
+Product vocabulary (aligned with Desktop): **Note it** / 记一下 · **Log it** / 记下 · stream · topic · My profile · delivery.
+
+---
+
+## Command Palette Reference
+
+| Command Name | Description |
+|--------------|-------------|
+| `Topmind: Note it` | Capture a note or snippet (default: this week's stream) |
+| `Topmind: Open Stream` | Open the Stream timeline tab |
+| `Topmind: Open Sidebar` | Open the sidebar dock widget |
+| `Topmind: Organize This Week` | Reconcile weekly log & refresh suggestions |
+| `Topmind: Refresh AI Suggestions` | Regenerate AI suggestion cards |
+| `Topmind: AI Maintain Todos` | Run AI todo extraction on recent activities |
+| `Topmind: Classify Topics` | Run AI topic classification |
+| `Topmind: Organize My Profile` | Run AI organization of My profile (profile + periodic) |
+| `Topmind: Open My Profile` | Open the memory-plane browse (rows still open vault files) |
+| `Topmind: Open Inbox` | Open the inbox category directory |
+
+---
+
+## Architecture & Ecosystem
+
+Topmind Stream is an optional surface of the **Topmind Monorepo Ecosystem**. It shares the exact same core Kernel engine and directory contract with Topmind Desktop, UTR CLI, and Portable AI Skills.
 
 ```text
-Obsidian 表面 (TypeScript + esbuild)
-  ├── ItemView 与侧边栏面板
-  ├── 设置页签 (PluginSettingTab)
-  └── Vault 桥接与 AI Provider 层
+Obsidian Surface (TypeScript + esbuild)
+  ├── ItemView & Sidebar Widgets
+  ├── Settings Tab (PluginSettingTab)
+  └── Vault Bridge & AI Provider Layer
         │
         ▼
-Kernel 八引擎 (打包 lib/*.mjs)
+Kernel 八引擎 (Bundled lib/*.mjs)
   contract · workspace-model · stream · memory
   writeback · lifecycle · derived · ingest
   + todo / ai-operation / suggest / activity-window
         │
         ▼
-Obsidian Vault (纯文件系统 = 唯一内容真源)
-  topmind.yaml + {NN-分类}/ + memory/ + .topmind/
+Obsidian Vault (Plain Filesystem = Single Source of Truth)
+  topmind.yaml + {NN-Category}/ + memory/ + .topmind/
 ```
 
-### 对比：Desktop 应用 vs. Obsidian 插件
+### Comparison: Desktop App vs. Obsidian Plugin
 
-| 特性 / 维度 | Topmind Desktop | Topmind Obsidian 插件 |
-|-------------|-----------------|----------------------|
-| **主要定位** | 独立富桌面应用 | Obsidian 内嵌原生视图 |
-| **编辑器类型** | Tiptap 富文本 & 所见即所得 | Obsidian 原生 Markdown 编辑器 |
-| **AI 运行时** | Vercel AI SDK v7 | Obsidian `requestUrl`（OpenAI / Anthropic / Gemini 兼容） |
-| **共享引擎** | Kernel `lib/` 八引擎 | Kernel `lib/` 八引擎（打包内联） |
-| **数据格式** | 标准 Markdown | 标准 Markdown（同一 Vault） |
+| Feature / Aspect | Topmind Desktop | Topmind Obsidian Plugin |
+|------------------|-----------------|-------------------------|
+| **Primary Focus** | Standalone rich desktop app | Native embedded view inside Obsidian |
+| **Editor Type** | Tiptap rich text & WYSIWYG | Obsidian native Markdown editor |
+| **AI Runtime** | Vercel AI SDK v7 | Obsidian `requestUrl` (OpenAI / Anthropic / Gemini compat) |
+| **Shared Engine** | Kernel `lib/` 8-Engine | Kernel `lib/` 8-Engine (bundled) |
+| **Data Format** | Standard Markdown | Standard Markdown (Same Vault) |
 
-*你可以在 Topmind Desktop 和 Obsidian 中同时打开同一个 Vault，互不冲突。*
-
----
-
-## 安全、隐私与数据保护
-
-- **本地优先存储**：所有笔记和元数据均以标准 Markdown 文件存储在你的磁盘上。
-- **零遥测**：topmind 不追踪、不收集、不向外部服务器发送你的使用数据。
-- **API Key 安全**：API 密钥存储在 Vault 的 `.obsidian` 目录下插件的 `data.json` 中。
-- **写回保护**：所有 AI 驱动的文件变更通过 `writeback-engine`（`open`/`locked`）。备份/回执仅高影响（锁定覆盖、锁定/核心笔记删除归档），普通开放更新不造归档副本。
+*You can open the exact same Vault in both Topmind Desktop and Obsidian simultaneously without conflicts.*
 
 ---
 
-## 开发与构建
+## Security, Privacy & Data Safety
+
+- **Local-First Storage**: All notes and metadata reside in standard Markdown files on your disk.
+- **Zero Telemetry**: Topmind does not track, collect, or send your usage data to external servers.
+- **API Key Security**: API Keys are stored locally in the plugin's `data.json` inside your vault's `.obsidian` directory.
+- **Writeback Protection**: All AI-driven file changes pass through `writeback-engine` (`open`/`locked`). Backups/receipts only for locked overwrite and locked/core delete-archive — not every write.
+
+---
+
+## Development & Building
 
 ```bash
-# 安装依赖
+# Install dependencies
 npm install
 
-# 启动 esbuild watch 模式
+# Start esbuild watch mode
 npm run dev
 
-# 生产构建
+# Production build
 npm run build
 
-# TypeScript 类型检查
+# Run TypeScript type check
 npm run typecheck
 
-# 运行单元测试
+# Run unit tests
 npm test
 
-# 验证打包完整性
+# Verify package integrity
 npm run pack:verify
 
-# 创建 release ZIP 包
+# Create release ZIP package
 npm run pack
 ```
 
 ---
 
-## 环境要求
+## Requirements
 
-- **Obsidian 版本**：桌面端 ≥ `v1.5.0`（暂不支持移动端；桌面优先设计）。
-- **Node.js**：≥ `v20.11`（从源码构建需要）。
+- **Obsidian Version**: Desktop ≥ `v1.13.0` (Mobile currently unsupported; desktop-first design).
+- **Node.js**: ≥ `v20.11` (for building from source).
 
 ---
 
-## 协议
+## License
 
 [MIT License](LICENSE) © [TopMindSpace](https://github.com/topmindspace)

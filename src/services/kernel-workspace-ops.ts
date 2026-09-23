@@ -833,6 +833,7 @@ export interface ChatProgressEvent {
 }
 
 export interface WorkspaceChatTurnOpts {
+  configDir?: string;
   userMessage: string;
   history?: Array<{ role: "user" | "assistant"; content: string }>;
   generate: WorkspaceChatGenerate;
@@ -1155,6 +1156,7 @@ export async function runWorkspaceChatTurn(
     engineRoot: opts.engineRoot,
     writebackMode: contractMode || opts.writebackMode,
     actor: "ai" as const,
+    configDir: opts.configDir,
   };
 
   const conversation: string[] = [];
@@ -1245,19 +1247,62 @@ export async function runWorkspaceChatTurn(
     return toolResultForModel(result);
   };
 
-  outer: for (;;) {
+  // Transient generate failures must not kill the whole turn (Desktop parity:
+  // one in-loop retry, then surface the error as the answer). This is a root
+  // cause of "AI 功能总是断" — a single network blip used to abort mid-task.
+  let generateFailures = 0;
+  const MAX_GENERATE_FAILURES = 2;
+
+  for (;;) {
     let brokeOnFinalText = false;
     for (let step = 0; step < maxSteps; step++) {
       stepCount += 1;
       emit({ kind: "step", step: stepCount, maxSteps, autoContinues });
       const prompt = conversation.join("\n\n");
-      const raw = await opts.generate(prompt, {
-        operation: "chat",
-        systemPrompt: `${opts.systemExtra || ""}\n\n${answerGuide}\n\n${toolGuide}`.trim(),
-        maxOutputTokens: 8192,
-        temperature: 0.4,
-      });
+      let raw: unknown;
+      try {
+        raw = await opts.generate(prompt, {
+          operation: "chat",
+          systemPrompt: `${opts.systemExtra || ""}\n\n${answerGuide}\n\n${toolGuide}`.trim(),
+          maxOutputTokens: 8192,
+          temperature: 0.4,
+        });
+        generateFailures = 0;
+      } catch (err) {
+        generateFailures += 1;
+        const msg = err instanceof Error ? err.message : String(err);
+        emit({ kind: "step", step: stepCount, maxSteps, tool: "retry", autoContinues });
+        if (generateFailures >= MAX_GENERATE_FAILURES) {
+          lastRaw = chromeZh
+            ? `模型请求连续失败（${msg}）。已执行的工具结果与路径回执见上文；请稍后重试或检查服务商配置。`
+            : `Model request failed repeatedly (${msg}). Tool results and path receipts above; retry later or check provider settings.`;
+          finished = true;
+          brokeOnFinalText = true;
+          break;
+        }
+        conversation.push(
+          chromeZh
+            ? `[系统] 上一步模型请求失败：${msg}。请基于已有工具结果继续完成原目标；若无法继续，用简短中文说明卡点与已完成路径。`
+            : `[System] Previous model call failed: ${msg}. Continue from existing tool results; if stuck, reply briefly with the blocker and completed paths.`,
+        );
+        continue;
+      }
       lastRaw = String(raw || "");
+      if (!lastRaw.trim()) {
+        // Empty completion — treat as soft failure and re-prompt once.
+        generateFailures += 1;
+        if (generateFailures >= MAX_GENERATE_FAILURES) {
+          finished = true;
+          brokeOnFinalText = true;
+          break;
+        }
+        conversation.push(
+          chromeZh
+            ? "[系统] 上一轮回复为空。请继续完成原目标，或给出简短结论。"
+            : "[System] Previous reply was empty. Continue the original goal or give a short conclusion.",
+        );
+        continue;
+      }
       const call = parseToolCall(lastRaw);
       if (!call) {
         brokeOnFinalText = true;

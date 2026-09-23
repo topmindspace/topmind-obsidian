@@ -15,8 +15,9 @@ import path from "node:path";
  * Uses the internal adapter's getBasePath() which is available on desktop.
  */
 export function getVaultBasePath(app: App): string {
-  // @ts-expect-error — getBasePath is internal but stable on desktop
-  const basePath = app.vault.adapter.getBasePath?.();
+  // Internal desktop adapter API — stable on Electron, typed via a narrow shape.
+  const adapter = app.vault.adapter as { getBasePath?: () => unknown };
+  const basePath = adapter.getBasePath?.();
   if (typeof basePath === "string" && basePath.length > 0) {
     return basePath;
   }

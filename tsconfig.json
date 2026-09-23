@@ -18,6 +18,6 @@
       "#kernel/*": ["./lib/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "lib/model-catalog.d.ts", "lib/memory-feed.d.mts", "lib/*.d.mts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts", "lib/model-catalog.d.ts", "lib/memory-feed.d.mts", "lib/*.d.mts"],
   "exclude": ["node_modules", "dist", "tests"]
 }

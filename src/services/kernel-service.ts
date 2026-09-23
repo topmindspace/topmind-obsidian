@@ -852,6 +852,8 @@ export class KernelService {
       systemExtra: systemPrompt,
       maxSteps: clampMaxAgentSteps(this.settings.maxAgentSteps),
       onProgress: opts.onProgress,
+      engineRoot: this.getEngineRoot(),
+      configDir: this.app.vault.configDir,
     });
 
     // Agent writes already hit disk via the write gate — poke vault listeners now.

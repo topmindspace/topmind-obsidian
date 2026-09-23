@@ -56,8 +56,8 @@ export class StreamWorkbenchView extends ItemView {
   private taskPanelEl: HTMLElement | null = null;
   private taskPanelOpen = false;
   private currentEntries: StreamEntry[] = [];
-  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
-  private streamRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshTimer: number | null = null;
+  private streamRefreshTimer: number | null = null;
   private suggestionInFlight = false;
   private streamLoading = false;
   private organizing = false;
@@ -131,8 +131,8 @@ export class StreamWorkbenchView extends ItemView {
   }
 
   async onClose(): Promise<void> {
-    if (this.refreshTimer) clearTimeout(this.refreshTimer);
-    if (this.streamRefreshTimer) clearTimeout(this.streamRefreshTimer);
+    if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
+    if (this.streamRefreshTimer) window.clearTimeout(this.streamRefreshTimer);
     this.refreshTimer = null;
     this.streamRefreshTimer = null;
     this.suggestionInFlight = false;
@@ -218,7 +218,14 @@ export class StreamWorkbenchView extends ItemView {
 
     const streamControls = streamHeader.createDiv({ cls: "tm-section-controls" });
 
-    // Manual refresh button — reloads stream content from vault
+    // Period switcher stays visible (primary navigation of the feed)
+    this.periodSelect = streamControls.createEl("select", {
+      cls: "tm-period-select",
+    });
+    this.periodSelect.setAttribute("aria-label", t("stream_switch_period"));
+    this.periodSelect.addEventListener("change", () => this.refreshStream());
+
+    // Icon-only secondary actions (high-frequency stay visible; labels live in tooltips)
     const refreshStreamBtn = streamControls.createEl("button", {
       cls: "tm-btn-secondary tm-btn-icon-only",
     });
@@ -232,28 +239,20 @@ export class StreamWorkbenchView extends ItemView {
       });
     });
 
-    this.periodSelect = streamControls.createEl("select", {
-      cls: "tm-period-select",
-    });
-    this.periodSelect.setAttribute("aria-label", t("stream_switch_period"));
-    this.periodSelect.addEventListener("change", () => this.refreshStream());
-
     this.organizeBtn = streamControls.createEl("button", {
-      cls: "tm-btn-secondary",
+      cls: "tm-btn-secondary tm-btn-icon-only",
     });
-    // wand-2 = 整理（Desktop RiMagicLine）；list-checks 留给「清单」
     setIcon(this.organizeBtn, "wand-2");
-    this.organizeBtn.createSpan({ text: t("stream_organize") });
     this.organizeBtn.setAttribute("aria-label", t("stream_organize"));
+    this.organizeBtn.setAttribute("title", t("stream_organize"));
     this.organizeBtn.addEventListener("click", () => this.organizePeriod());
 
     this.renderLayoutToggle(streamControls);
 
     const memoryBtn = streamControls.createEl("button", {
-      cls: "tm-btn-secondary tm-toolbar-btn-labeled",
+      cls: "tm-btn-secondary tm-btn-icon-only",
     });
     setIcon(memoryBtn, "user");
-    memoryBtn.createSpan({ text: t("toolbar_btn_profile"), cls: "tm-toolbar-btn-label" });
     memoryBtn.setAttribute("aria-label", t("toolbar_btn_profile"));
     memoryBtn.setAttribute("title", t("toolbar_btn_profile"));
     memoryBtn.setAttribute("data-stream-open-memory", "true");
@@ -272,38 +271,15 @@ export class StreamWorkbenchView extends ItemView {
   private renderToolbar(container: HTMLElement): void {
     const toolbar = container.createDiv({ cls: "tm-toolbar" });
 
-    // Left: workspace status badge
-    const aiReady = hasConfiguredProvider(this.plugin.settings.ai);
-    const statusBadge = toolbar.createDiv({ cls: "tm-toolbar-status" });
-    const dot = statusBadge.createSpan({ cls: `tm-status-dot ${aiReady ? "tm-dot-ok" : "tm-dot-off"}` });
-    dot.setAttribute("aria-hidden", "true");
-    statusBadge.createSpan({
-      text: aiReady ? t("sidebar_ai_ready") : t("sidebar_ai_off"),
-      cls: "tm-toolbar-status-label",
-    });
+    // Left: view title + period context (the only identity chrome)
+    const titleWrap = toolbar.createDiv({ cls: "tm-toolbar-title" });
+    titleWrap.createSpan({ text: t("stream_workbench_title"), cls: "tm-toolbar-title-text" });
 
-    // Model badge (if AI configured) — clickable to open settings for model switch
-    if (aiReady) {
-      const modelLabel = this.plugin.kernelService.getActiveModelLabel();
-      if (modelLabel) {
-        const modelBadge = toolbar.createDiv({ cls: "tm-toolbar-model", text: modelLabel });
-        modelBadge.setAttribute("role", "button");
-        modelBadge.setAttribute("tabindex", "0");
-        modelBadge.setAttribute("title", t("chat_model_switch"));
-        modelBadge.addEventListener("click", () => this.openSettings());
-        modelBadge.addEventListener("keydown", (e: KeyboardEvent) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            modelBadge.click();
-          }
-        });
-      }
-    }
-
-    // AI Task progress badge (updated by subscribe) — click opens history panel
+    // Task progress badge (updated by subscribe) — click opens history panel
     this.taskBadgeEl = toolbar.createDiv({ cls: "tm-task-badge tm-task-badge-hidden" });
     this.taskBadgeEl.setAttribute("role", "button");
     this.taskBadgeEl.setAttribute("tabindex", "0");
+    this.taskBadgeEl.setAttribute("title", t("sidebar_tab_history"));
     this.taskBadgeEl.addEventListener("click", () => {
       this.taskPanelOpen = !this.taskPanelOpen;
       this.renderTaskPanel(aiTaskManager.getProgress());
@@ -318,40 +294,29 @@ export class StreamWorkbenchView extends ItemView {
     this.taskPanelEl = container.createDiv({ cls: "tm-task-panel" });
     this.taskPanelEl.hidden = true;
 
-    // Right: quick action buttons (icon-only with tooltips — no text overflow)
+    // Right: three icon actions only (sidebar / settings / new note)
     const actionsDiv = toolbar.createDiv({ cls: "tm-toolbar-actions" });
 
-    // Open sidebar button
     const sidebarBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn tm-toolbar-btn-labeled" });
-    setIcon(sidebarBtn, "panel-right");
     sidebarBtn.createSpan({ text: t("toolbar_btn_sidebar"), cls: "tm-toolbar-btn-label" });
+    setIcon(sidebarBtn, "panel-right");
     sidebarBtn.setAttribute("aria-label", t("sidebar_open_sidebar"));
     sidebarBtn.setAttribute("title", t("sidebar_open_sidebar"));
     sidebarBtn.addEventListener("click", () => this.openSidebar());
 
-    // Settings button
     const settingsBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn tm-toolbar-btn-labeled" });
-    setIcon(settingsBtn, "settings");
     settingsBtn.createSpan({ text: t("toolbar_btn_settings"), cls: "tm-toolbar-btn-label" });
+    setIcon(settingsBtn, "settings");
     settingsBtn.setAttribute("aria-label", t("sidebar_open_settings"));
     settingsBtn.setAttribute("title", t("sidebar_open_settings"));
     settingsBtn.addEventListener("click", () => this.openSettings());
 
-    // New Note button — creates a new note in the inbox directory
     const newNoteBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn tm-toolbar-btn-labeled" });
-    setIcon(newNoteBtn, "file-plus");
     newNoteBtn.createSpan({ text: t("toolbar_btn_new_note"), cls: "tm-toolbar-btn-label" });
+    setIcon(newNoteBtn, "file-plus");
     newNoteBtn.setAttribute("aria-label", t("toolbar_btn_new_note"));
     newNoteBtn.setAttribute("title", t("toolbar_btn_new_note"));
     newNoteBtn.addEventListener("click", () => this.createNewNote());
-
-    // Profile button
-    const profileBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn tm-toolbar-btn-labeled" });
-    setIcon(profileBtn, "user");
-    profileBtn.createSpan({ text: t("toolbar_btn_profile"), cls: "tm-toolbar-btn-label" });
-    profileBtn.setAttribute("aria-label", t("cmd_open_profile"));
-    profileBtn.setAttribute("title", t("cmd_open_profile"));
-    profileBtn.addEventListener("click", () => void this.plugin.openMemoryBrowse());
   }
 
   private currentFeedLayout(): "list" | "card" {
@@ -519,8 +484,8 @@ export class StreamWorkbenchView extends ItemView {
   // ── Refresh ────────────────────────────────────────────────────────────
 
   private scheduleRefresh(delay: number): void {
-    if (this.refreshTimer) clearTimeout(this.refreshTimer);
-    this.refreshTimer = setTimeout(() => this.refreshAll(), delay);
+    if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
+    this.refreshTimer = window.setTimeout(() => this.refreshAll(), delay);
   }
 
   /**
@@ -529,13 +494,13 @@ export class StreamWorkbenchView extends ItemView {
    * re-running it on every keystroke save would burn tokens for churn.
    */
   private scheduleStreamRefresh(delay: number): void {
-    if (this.streamRefreshTimer) clearTimeout(this.streamRefreshTimer);
-    this.streamRefreshTimer = setTimeout(() => this.refreshStream(), delay);
+    if (this.streamRefreshTimer) window.clearTimeout(this.streamRefreshTimer);
+    this.streamRefreshTimer = window.setTimeout(() => this.refreshStream(), delay);
   }
 
   private autoGrowTextarea(el: HTMLTextAreaElement): void {
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+    el.setCssStyles({ height: "auto" });
+    el.setCssStyles({ height: `${Math.min(el.scrollHeight, 120)}px` });
   }
 
   private updateUrlHint(): void {
@@ -649,7 +614,7 @@ export class StreamWorkbenchView extends ItemView {
       // Restore scroll position after rendering to eliminate jumping
       if (savedScroll > 0) {
         scrollParent.scrollTop = savedScroll;
-        requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
           scrollParent.scrollTop = savedScroll;
         });
       }
@@ -1035,7 +1000,7 @@ export class StreamWorkbenchView extends ItemView {
 
     if (result.ok) {
       this.inputEl.value = "";
-      this.inputEl.style.height = "auto";
+      this.inputEl.setCssStyles({ height: "auto" });
       this.refreshStream();
       // Scroll to top (newest entry in desc order)
       this.streamContainer.scrollTop = 0;

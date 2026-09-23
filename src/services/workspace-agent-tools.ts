@@ -20,6 +20,8 @@ export interface AgentToolContext {
   engineRoot?: string;
   writebackMode?: AgentWriteMode;
   actor?: "ai" | "user";
+  /** Vault config folder name (Vault#configDir) — not always ".obsidian". */
+  configDir?: string;
 }
 
 export interface AgentToolResult {
@@ -131,7 +133,7 @@ function resolveArchiveDir(kernel: KernelApi, workspaceRoot: string, engineRoot?
 
 function walkFiles(root: string, opts: { maxFiles?: number; skipDirs?: Set<string> } = {}): string[] {
   const maxFiles = opts.maxFiles || 4000;
-  const skip = opts.skipDirs || new Set([".obsidian", ".topmind", ".git", "node_modules"]);
+  const skip = opts.skipDirs || new Set([".topmind", ".git", "node_modules", ".obsidian"]); // .obsidian is last-resort fallback
   const out: string[] = [];
   const stack = [root];
   while (stack.length && out.length < maxFiles) {
@@ -200,7 +202,8 @@ export function searchWorkspace(
     return { ok: false, tool, error: `scope not found: ${scopeRel || "."}`, hint: "Use workspace_overview or list_categories to confirm paths." };
   }
 
-  const skipDirs = new Set([".obsidian", ".topmind", ".git", "node_modules"]);
+  const skipDirs = new Set([".topmind", ".git", "node_modules"]);
+  skipDirs.add(ctx.configDir || ".obsidian");
   if (!opts.includeArchive) skipDirs.add(archiveName);
 
   const results: Array<{ relativePath: string; line: number; preview: string }> = [];

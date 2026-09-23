@@ -107,7 +107,7 @@ async function httpGetJson(
     headers: { Accept: "application/json", ...headers },
   });
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error("fetch timeout")), timeoutMs);
+    window.setTimeout(() => reject(new Error("fetch timeout")), timeoutMs);
   });
   const res = await Promise.race([requestPromise, timeoutPromise]);
   if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
@@ -140,8 +140,16 @@ async function fetchCommunityCatalog(force: boolean): Promise<{ ok: boolean; cat
           error: parsed.error || "empty community catalog",
         };
       }
-      communityCache = { catalog: parsed.catalog, fetchedAt: Date.now() };
-      return { ok: true, catalog: parsed.catalog };
+      const catalog: ProviderCatalogEntry[] = parsed.catalog.map((c) => ({
+        id: c.id,
+        label: c.label,
+        models: c.models,
+        live: Boolean(c.live),
+        source: c.source,
+        error: c.error,
+      }));
+      communityCache = { catalog, fetchedAt: Date.now() };
+      return { ok: true, catalog };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn("[topmind] models.dev fetch failed:", message);
