@@ -1,5 +1,7 @@
 # Release Topmind Stream for Obsidian.
-# HARD RULE (community plugins): GitHub tag MUST equal manifest.json version.
+# HARD RULE (community plugins): GitHub tag MUST equal manifest.json version
+# exactly (4.13.0, not v4.13.0). The community directory looks up releases by
+# this tag when installing assets.
 name: Release
 
 on:
@@ -9,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Draft tag (must equal manifest.version)"
+        description: "Draft tag (must equal manifest.version, no v prefix — e.g. 4.13.0)"
         type: string
         required: true
 
@@ -58,11 +60,11 @@ jobs:
           fi
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           TAG="${GITHUB_REF_NAME}"
-          if [[ "$TAG" == v* ]]; then
-            if [[ "$TAG" != "v$VER" ]]; then
-              echo "ERROR: tag $TAG must equal v$VER (community plugin hard rule)"
-              exit 1
-            fi
+          # Community directory hard rule: GitHub tag MUST equal manifest.version
+          # exactly — `4.13.0`, NOT `v4.13.0`. Obsidian matches releases by this tag.
+          if [[ "$TAG" != "$VER" ]]; then
+            echo "ERROR: tag $TAG must equal manifest.version $VER (no v prefix) — community directory hard rule"
+            exit 1
           fi
 
       - name: Test + Build + Pack
