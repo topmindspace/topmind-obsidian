@@ -220,9 +220,8 @@ export class TopmindSettingTab extends PluginSettingTab {
             name: t("workspace_status"),
             desc: t("workspace_contract_doctor_desc"),
             aliases: ["workspace", "contract", "工作区"],
-            render: (setting: Setting) => {
-              setting.setName(t("workspace_status")).setDesc(t("workspace_contract_doctor_desc"));
-              this.renderWorkspaceStatusRows(setting.settingEl);
+            render: (setting: Setting, group: { addSetting(cb: (s: Setting) => void): unknown }) => {
+              this.mountWorkspaceStatus(setting, group);
             },
           },
           {
@@ -230,7 +229,28 @@ export class TopmindSettingTab extends PluginSettingTab {
             desc: t("init_workspace_desc"),
             aliases: ["init", "template", "初始化"],
             render: (setting: Setting) => {
-              this.renderInitWorkspaceRow(setting);
+              setting
+                .setName(t("init_workspace"))
+                .setDesc(t("init_workspace_desc"))
+                .addDropdown((dd) => {
+                  for (const opt of TEMPLATE_OPTIONS) dd.addOption(opt.value, opt.label);
+                  dd.setValue("stream");
+                  this.templateSelect = dd.selectEl;
+                })
+                .addButton((btn) =>
+                  btn.setButtonText(t("init_workspace")).onClick(() => {
+                    const templateId = this.templateSelect?.value || "stream";
+                    new ConfirmModal(this.app, t("init_workspace"), t("init_workspace_confirm"), () => {
+                      const result = this.plugin.kernelService.initWorkspace(templateId);
+                      if (result.ok) {
+                        new Notice(t("init_workspace_success"));
+                        this.update();
+                      } else {
+                        new Notice(`${t("init_workspace_failed")}: ${result.error}`);
+                      }
+                    });
+                  }),
+                );
             },
           },
         ],
@@ -276,11 +296,15 @@ export class TopmindSettingTab extends PluginSettingTab {
           {
             name: t("settings_ai"),
             desc: t("settings_ai_status_desc"),
-            aliases: ["AI", "provider", "model", "key", "模型", "密钥"],
-            render: (setting: Setting) => {
-              const root = setting.settingEl.createDiv({ cls: "tm-settings-ai-block" });
-              this.renderAiSettingsInto(root);
-              return () => root.empty();
+            aliases: ["AI", "provider", "model", "key", "模型", "密钥", "API"],
+            searchable: true,
+            render: (setting: Setting, group: { addSetting(cb: (s: Setting) => void): unknown }) => {
+              this.mountAiSettings(group);
+              const s = this.plugin.settings;
+              const ready = hasConfiguredProvider(s.ai);
+              setting
+                .setName(t("settings_ai_status"))
+                .setDesc(ready ? t("settings_ai_ready") : t("settings_ai_not_configured"));
             },
           },
           {
@@ -350,35 +374,102 @@ export class TopmindSettingTab extends PluginSettingTab {
   }
 
 
-  /** Workspace status rows hosted by getSettingDefinitions render. */
-  private renderWorkspaceStatusRows(parent: HTMLElement): void {
+  /** Workspace status + contract doctor + init (declarative mount). */
+  private mountWorkspaceStatus(
+    host: Setting,
+    group: { addSetting(cb: (s: Setting) => void): unknown },
+  ): void {
     const prev = this.plugin.settings.writebackMode;
     this.plugin.kernelService.hydrateWritebackModeFromContract();
     if (this.plugin.settings.writebackMode !== prev) {
       void this.plugin.saveSettings();
     }
-    const holder = parent.createDiv({ cls: "tm-settings-workspace-status" });
-    // Reuse display()-era renderer against a temporary container.
-    const prevContainer = this.containerEl;
-    // renderWorkspaceStatus writes to this.containerEl — swap via a local bag.
-    (this as unknown as { containerEl: HTMLElement }).containerEl = holder;
-    try {
-      this.renderWorkspaceStatus();
-    } finally {
-      (this as unknown as { containerEl: HTMLElement }).containerEl = prevContainer;
-    }
-  }
 
-  private renderInitWorkspaceRow(setting: Setting): void {
-    setting
-      .setName(t("init_workspace"))
-      .setDesc(t("init_workspace_desc"))
-      .addDropdown((dd) => {
+    const ready = this.plugin.kernelService.isWorkspaceReady();
+    let detail = ready ? t("workspace_ready") : t("workspace_not_ready");
+    try {
+      if (ready) {
+        const model = this.plugin.kernelService.getResolvedModel();
+        const n = (model.categories || []).filter((c) => !(c as { hidden?: boolean }).hidden).length;
+        detail = t("workspace_categories_count", { count: n });
+      }
+    } catch {
+      /* keep ready label */
+    }
+
+    host.setName(t("workspace_status")).setDesc(detail);
+    host.addExtraButton((btn) => {
+      btn.setIcon("stethoscope").setTooltip(t("workspace_contract_doctor")).onClick(() => {
+        try {
+          const kernel = getKernel();
+          const root = this.plugin.kernelService.getVaultPath();
+          const inspect = kernel.inspectContract?.(root);
+          if (!inspect) {
+            new Notice(t("workspace_contract_doctor_failed"));
+            return;
+          }
+          if (inspect.onDiskValid) {
+            new Notice(t("workspace_contract_doctor_ok"));
+            return;
+          }
+          const ensured = kernel.ensureContract?.(root, {});
+          if (ensured?.onDiskValid) {
+            new Notice(t("workspace_contract_doctor_fixed"));
+            this.plugin.kernelService.invalidateCache();
+            this.update();
+          } else {
+            new Notice(t("workspace_contract_doctor_failed"));
+          }
+        } catch (err) {
+          new Notice(
+            `${t("workspace_contract_reseed_failed")}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      });
+    });
+
+    if (ready) {
+      group.addSetting((s) => {
+        s.setName(t("workspace_contract_reseed")).setDesc(t("workspace_contract_reseed_confirm"));
+        s.addButton((btn) =>
+          btn.setButtonText(t("workspace_contract_reseed")).setWarning().onClick(() => {
+            new ConfirmModal(
+              this.app,
+              t("workspace_contract_reseed"),
+              t("workspace_contract_reseed_confirm"),
+              () => {
+                try {
+                  const result = reseedWorkspaceContract(
+                    getKernel(),
+                    this.plugin.kernelService.getVaultPath(),
+                  );
+                  if (result.ok) {
+                    new Notice(t("workspace_contract_reseed_ok"));
+                    this.plugin.kernelService.invalidateCache();
+                    this.update();
+                  } else {
+                    new Notice(`${t("workspace_contract_reseed_failed")}: ${result.error || ""}`);
+                  }
+                } catch (err) {
+                  new Notice(
+                    `${t("workspace_contract_reseed_failed")}: ${err instanceof Error ? err.message : String(err)}`,
+                  );
+                }
+              },
+            );
+          }),
+        );
+      });
+    }
+
+    group.addSetting((s) => {
+      s.setName(t("init_workspace")).setDesc(t("init_workspace_desc"));
+      s.addDropdown((dd) => {
         for (const opt of TEMPLATE_OPTIONS) dd.addOption(opt.value, opt.label);
         dd.setValue("stream");
         this.templateSelect = dd.selectEl;
-      })
-      .addButton((btn) =>
+      });
+      s.addButton((btn) =>
         btn.setButtonText(t("init_workspace")).onClick(() => {
           const templateId = this.templateSelect?.value || "stream";
           new ConfirmModal(this.app, t("init_workspace"), t("init_workspace_confirm"), () => {
@@ -392,34 +483,17 @@ export class TopmindSettingTab extends PluginSettingTab {
           });
         }),
       );
+    });
   }
 
-  /** Full AI settings block (status / import / providers / model / test). */
-  private renderAiSettingsInto(root: HTMLElement): void {
+  /** AI settings as sibling Setting rows (searchable via the host item). */
+  private mountAiSettings(group: { addSetting(cb: (s: Setting) => void): unknown }): void {
     const s = this.plugin.settings;
-    const containerEl = root;
-
     const aiReady = hasConfiguredProvider(s.ai);
-    const statusText = aiReady ? t("settings_ai_ready") : t("settings_ai_not_configured");
-    new Setting(containerEl)
-      .setName(t("settings_ai_status"))
-      .setDesc(t("settings_ai_status_desc"))
-      .addText((text) => {
-        text.setValue(statusText).setDisabled(true);
-        text.inputEl.addClass(aiReady ? "tm-status-input" : "tm-status-input tm-status-input-dim");
-      });
 
-    if (aiReady && !s.ai.defaultModel) {
-      const hintSetting = new Setting(containerEl)
-        .setName(t("settings_ai_model_select_hint"))
-        .setDesc(t("settings_ai_model_select_hint_desc"));
-      hintSetting.infoEl.addClass("tm-setting-hint-accent");
-    }
-
-    new Setting(containerEl)
-      .setName(t("settings_ai_import"))
-      .setDesc(t("settings_ai_import_desc"))
-      .addButton((btn) =>
+    group.addSetting((row) => {
+      row.setName(t("settings_ai_import")).setDesc(t("settings_ai_import_desc"));
+      row.addButton((btn) =>
         btn.setButtonText(t("settings_ai_import")).onClick(() => {
           const result = tryImportDesktopSettings();
           if (!result) {
@@ -442,7 +516,7 @@ export class TopmindSettingTab extends PluginSettingTab {
           if (result.preference && !s.ai.sourcePreference) s.ai.sourcePreference = result.preference;
           if (result.model && !s.ai.defaultModel) s.ai.defaultModel = result.model;
           if (count > 0) {
-            this.save();
+            void this.save();
             new Notice(t("settings_ai_import_success", { count }));
             this.update();
           } else {
@@ -450,16 +524,13 @@ export class TopmindSettingTab extends PluginSettingTab {
           }
         }),
       );
+    });
 
-    // Provider picker + credentials (reuse display path by rendering remaining
-    // AI controls that live in display() after the import row).
-    // Keep a single implementation: call the historical body via a scoped bag.
-    this.renderAiProviderControls(containerEl);
+    this.mountAiProviderControls(group);
 
-    new Setting(containerEl)
-      .setName(t("settings_ai_test"))
-      .setDesc(t("settings_security_note"))
-      .addButton((btn) =>
+    group.addSetting((row) => {
+      row.setName(t("settings_ai_test")).setDesc(t("settings_security_note"));
+      row.addButton((btn) =>
         btn.setButtonText(t("settings_ai_test")).onClick(async () => {
           if (!hasConfiguredProvider(s.ai)) {
             new Notice(t("settings_ai_test_no_key"));
@@ -481,11 +552,28 @@ export class TopmindSettingTab extends PluginSettingTab {
           }
         }),
       );
+    });
+
+    if (aiReady && !s.ai.defaultModel) {
+      group.addSetting((row) => {
+        row.setName(t("settings_ai_model_select_hint")).setDesc(t("settings_ai_model_select_hint_desc"));
+        row.infoEl.addClass("tm-setting-hint-accent");
+      });
+    }
   }
 
   /** Provider / model / credential controls (single source for settings UI). */
-  private renderAiProviderControls(containerEl: HTMLElement): void {
+  private mountAiProviderControls(group: { addSetting(cb: (s: Setting) => void): unknown }): void {
     const s = this.plugin.settings;
+    const Setting_ = (name: string): Setting => {
+      let created!: Setting;
+      group.addSetting((row) => {
+        created = row;
+        row.setName(name);
+      });
+      return created;
+    };
+
     const allPids = Object.keys(AI_PROVIDER_PRESETS);
     const isPidConfigured = (gid: string) =>
       gid === "custom"
@@ -500,7 +588,7 @@ export class TopmindSettingTab extends PluginSettingTab {
       "openai";
     this.configPid = activeProvider;
 
-    const picker = new Setting(containerEl).setName(t("settings_ai_provider"));
+    const picker = Setting_(t("settings_ai_provider"));
     picker.addDropdown((dd) => {
       for (const pid of allPids) {
         const meta = AI_PROVIDER_PRESETS[pid];
@@ -515,58 +603,61 @@ export class TopmindSettingTab extends PluginSettingTab {
       });
     });
 
-    // Model selection
+    // Model selection — rendered whenever a provider is configured
     const preset = AI_PROVIDER_PRESETS[activeProvider];
     let modelSelectEl: HTMLSelectElement | null = null;
-    const modelSetting = new Setting(containerEl).setName(t("settings_ai_model"));
-    modelSetting.addDropdown((dd) => {
-      const fallback = curatedModelsForSafe(activeProvider);
-      for (const m of fallback) dd.addOption(m.id, m.label);
-      if (s.ai.defaultModel && !fallback.some((m) => m.id === s.ai.defaultModel)) {
-        dd.addOption(s.ai.defaultModel, s.ai.defaultModel);
-      }
-      dd.setValue(s.ai.defaultModel || "").onChange(async (v) => {
-        s.ai.defaultModel = v;
-        s.aiModel = v;
-        await this.save();
-      });
-      modelSelectEl = dd.selectEl;
-    });
-    modelSetting.addText((text) => {
-      text.setPlaceholder("custom-model-id").setValue(s.ai.defaultModel || "");
-      text.inputEl.addClass("tm-model-custom-input");
-      text.onChange(async (v) => {
-        const trimmed = v.trim();
-        if (trimmed && trimmed !== s.ai.defaultModel) {
-          s.ai.defaultModel = trimmed;
-          s.aiModel = trimmed;
+    if (activeProvider && activeProvider !== "none") {
+      const modelSetting = Setting_(t("settings_ai_model"));
+      modelSetting.addDropdown((dd) => {
+        const fallback = curatedModelsForSafe(activeProvider);
+        for (const m of fallback) dd.addOption(m.id, m.label);
+        if (s.ai.defaultModel && s.ai.defaultModel !== preset?.model && !fallback.some((m) => m.id === s.ai.defaultModel)) {
+          dd.addOption(s.ai.defaultModel, s.ai.defaultModel);
+        }
+        dd.setValue(s.ai.defaultModel || "").onChange(async (v) => {
+          s.ai.defaultModel = v;
+          s.aiModel = v;
           await this.save();
-        }
+        });
+        modelSelectEl = dd.selectEl;
       });
-    });
-    modelSetting.addExtraButton((btn) => {
-      btn.setIcon("refresh-cw").setTooltip(t("settings_ai_refresh_models")).onClick(async () => {
-        if (!modelSelectEl) return;
-        btn.setDisabled(true);
-        btn.setIcon("loader");
-        try {
-          const result = await this.loadDynamicModels(activeProvider, modelSelectEl, true);
-          const count = String(result.models.length);
-          if (result.source === "official") new Notice(t("notice_models_official", { count }));
-          else if (result.source === "community") new Notice(t("notice_models_community", { count }));
-          else new Notice(t("notice_models_fallback"));
-        } finally {
-          btn.setDisabled(false);
-          btn.setIcon("refresh-cw");
-        }
+      modelSetting.addText((text) => {
+        text.setPlaceholder("custom-model-id").setValue(s.ai.defaultModel || "");
+        text.inputEl.addClass("tm-model-custom-input");
+        text.onChange(async (v) => {
+          const trimmed = v.trim();
+          if (trimmed && trimmed !== s.ai.defaultModel) {
+            s.ai.defaultModel = trimmed;
+            s.aiModel = trimmed;
+            await this.save();
+          }
+        });
       });
-    });
-    if (modelSelectEl) void this.loadDynamicModels(activeProvider, modelSelectEl, false);
+      modelSetting.addExtraButton((btn) => {
+        btn.setIcon("refresh-cw").setTooltip(t("settings_ai_refresh_models")).onClick(async () => {
+          if (!modelSelectEl) return;
+          btn.setDisabled(true);
+          btn.setIcon("loader");
+          try {
+            const result = await this.loadDynamicModels(activeProvider, modelSelectEl, true);
+            const count = String(result.models.length);
+            if (result.source === "official") new Notice(t("notice_models_official", { count }));
+            else if (result.source === "community") new Notice(t("notice_models_community", { count }));
+            else new Notice(t("notice_models_fallback"));
+          } finally {
+            btn.setDisabled(false);
+            btn.setIcon("refresh-cw");
+          }
+        });
+      });
+      if (modelSelectEl) void this.loadDynamicModels(activeProvider, modelSelectEl, false);
+    }
 
-    const detail = new Setting(containerEl).setName(
+    const detail = Setting_(
       preset.label + (isPidConfigured(activeProvider) ? " ✓" : "") +
         (s.ai.sourcePreference === activeProvider ? " ★" : ""),
     );
+    detail.setDesc(t("settings_security_note"));
     if (preset.helpUrl) {
       detail.addExtraButton((btn: ExtraButtonComponent) => {
         btn.setIcon("external-link").setTooltip(preset.helpUrl).onClick(() => {
@@ -651,525 +742,12 @@ export class TopmindSettingTab extends PluginSettingTab {
     }
   }
 
+  /**
+   * @deprecated Since Obsidian 1.13 the tab is driven by getSettingDefinitions().
+   * Kept as a no-op shim so accidental calls do not paint a second UI tree.
+   */
   display(): void {
-    const { containerEl } = this;
-    const prevWritebackMode = this.plugin.settings.writebackMode;
-    this.plugin.kernelService.hydrateWritebackModeFromContract();
-    // Persist hydrated display-cache value so data.json stops lying after the
-    // contract changed elsewhere (Desktop / manual edit).
-    if (this.plugin.settings.writebackMode !== prevWritebackMode) {
-      void this.plugin.saveSettings();
-    }
-    const s = this.plugin.settings;
-
-    containerEl.empty();
-    this.templateSelect = null;
-
-    // ── Section: Workspace & Contract ──
-    new Setting(containerEl).setName(t("settings_workspace")).setHeading();
-
-    // Workspace status card
-    this.renderWorkspaceStatus();
-
-    new Setting(containerEl)
-      .setName(t("init_workspace"))
-      .setDesc(t("init_workspace_desc"))
-      .addDropdown((dd) => {
-        for (const opt of TEMPLATE_OPTIONS) {
-          dd.addOption(opt.value, opt.label);
-        }
-        dd.setValue("stream");
-        this.templateSelect = dd.selectEl;
-      })
-      .addButton((btn) =>
-        btn
-          .setButtonText(t("init_workspace"))
-          .onClick(() => {
-            const templateId = this.templateSelect?.value || "stream";
-            // Writes ~5 directories + topmind.yaml into this vault — confirm first.
-            new ConfirmModal(this.app, t("init_workspace"), t("init_workspace_confirm"), () => {
-              const result = this.plugin.kernelService.initWorkspace(templateId);
-              if (result.ok) {
-                new Notice(t("init_workspace_success"));
-                this.update();
-              } else {
-                new Notice(`${t("init_workspace_failed")}: ${result.error}`);
-              }
-            });
-          }),
-      );
-
-    // ── Section: Stream Workbench ──
-    new Setting(containerEl).setName(t("settings_stream")).setHeading();
-
-    new Setting(containerEl)
-      .setName(t("settings_auto_open"))
-      .setDesc(t("settings_auto_open_desc"))
-      .addToggle((toggle) =>
-        toggle.setValue(s.autoOpenWorkbench).onChange(async (v) => {
-          s.autoOpenWorkbench = v;
-          await this.save();
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName(t("settings_timeline_order"))
-      .setDesc(t("settings_timeline_order_desc"))
-      .addDropdown((dd) =>
-        dd
-          .addOption("desc", t("timeline_desc"))
-          .addOption("asc", t("timeline_asc"))
-          .setValue(s.timelineOrder)
-          .onChange(async (v) => {
-            s.timelineOrder = v as TimelineOrder;
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName(t("settings_auto_tag"))
-      .setDesc(t("settings_auto_tag_desc"))
-      .addToggle((toggle) =>
-        toggle.setValue(s.autoTag).onChange(async (v) => {
-          s.autoTag = v;
-          await this.save();
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName(t("settings_locale_override"))
-      .setDesc(t("settings_locale_override_desc"))
-      .addDropdown((dd) =>
-        dd
-          .addOption("", t("locale_auto"))
-          .addOption("zh-CN", "简体中文")
-          .addOption("en-US", "English")
-          .setValue(s.localeOverride)
-          .onChange(async (v) => {
-            s.localeOverride = v;
-            await this.save();
-            const { setLocale } = await import("../i18n");
-            const obsLocale = (this.app as unknown as { locale?: string }).locale || "zh-CN";
-            setLocale(v || (obsLocale.startsWith("en") ? "en-US" : "zh-CN"));
-            this.update();
-          }),
-      );
-
-    // ── Section: AI Co-pilot & Writeback ──
-    new Setting(containerEl).setName(t("settings_ai")).setHeading();
-
-    // Status indicator
-    const aiReady = hasConfiguredProvider(s.ai);
-    const statusText = aiReady
-      ? t("settings_ai_ready")
-      : t("settings_ai_not_configured");
-
-    new Setting(containerEl)
-      .setName(t("settings_ai_status"))
-      .setDesc(t("settings_ai_status_desc"))
-      .addText((text) => {
-        text.setValue(statusText).setDisabled(true);
-        text.inputEl.addClass(aiReady ? "tm-status-input" : "tm-status-input tm-status-input-dim");
-      });
-
-    // Prominent model selection prompt when AI is configured but no model selected
-    if (aiReady && !s.ai.defaultModel) {
-      const hintSetting = new Setting(containerEl)
-        .setName(t("settings_ai_model_select_hint"))
-        .setDesc(t("settings_ai_model_select_hint_desc"));
-      hintSetting.infoEl.addClass("tm-setting-hint-accent");
-    }
-
-    // Import from Desktop
-    new Setting(containerEl)
-      .setName(t("settings_ai_import"))
-      .setDesc(t("settings_ai_import_desc"))
-      .addButton((btn) =>
-        btn
-          .setButtonText(t("settings_ai_import"))
-          .onClick(() => {
-            const result = tryImportDesktopSettings();
-            if (!result) {
-              new Notice(t("settings_ai_import_not_found"));
-              return;
-            }
-            if (result.encrypted) {
-              new Notice(t("settings_ai_import_encrypted"));
-              return;
-            }
-            const m = s.ai.manual as unknown as Record<string, string>;
-            let count = 0;
-            for (const [key, val] of Object.entries(result.imported)) {
-              if (key === "baseUrlOverrides") continue;
-              if (typeof val === "string" && val && !m[key]) {
-                m[key] = val;
-                count++;
-              }
-            }
-            if (result.preference && !s.ai.sourcePreference) {
-              s.ai.sourcePreference = result.preference;
-            }
-            if (result.model && !s.ai.defaultModel) {
-              s.ai.defaultModel = result.model;
-            }
-            if (count > 0) {
-              this.save();
-              new Notice(t("settings_ai_import_success", { count }));
-              this.update();
-            } else {
-              new Notice(t("settings_ai_import_nothing"));
-            }
-          }),
-      );
-
-    // ── One provider picker = preference + credential target ──
-    const allPids = Object.keys(AI_PROVIDER_PRESETS);
-    const isPidConfigured = (gid: string) =>
-      gid === "custom"
-        ? Boolean(s.ai.manual.customBaseUrl && s.ai.manual.customKey)
-        : gid === "ollama"
-          ? Boolean(s.ai.manual.ollamaBaseUrl)
-          : Boolean(getProviderKey(gid, s.ai.manual));
-
-    // Preference "" = auto. Edit target follows preference, else last picked, else first configured.
-    if (!this.configPid || !AI_PROVIDER_PRESETS[this.configPid]) {
-      this.configPid = s.ai.sourcePreference || allPids.find(isPidConfigured) || allPids[0];
-    }
-    const pid = this.configPid;
-    const meta = AI_PROVIDER_PRESETS[pid];
-    const isConfigured = isPidConfigured(pid);
-
-    new Setting(containerEl)
-      .setName(t("settings_ai_preference"))
-      .setDesc(meta.baseUrl || t("settings_ai_preference_desc"))
-      .addDropdown((dd) => {
-        dd.addOption("", t("settings_ai_auto"));
-        for (const gid of allPids) {
-          const p = AI_PROVIDER_PRESETS[gid];
-          const star = s.ai.sourcePreference === gid ? " ★" : isPidConfigured(gid) ? " ✓" : "";
-          dd.addOption(gid, `${p.label}${star}`);
-        }
-        dd.setValue(s.ai.sourcePreference || "").onChange(async (v) => {
-          s.ai.sourcePreference = v;
-          s.aiProvider = (v || "none") as TopmindPlugin["settings"]["aiProvider"];
-          // Selecting a concrete provider is also the credential-edit target.
-          this.configPid = v || allPids.find(isPidConfigured) || allPids[0];
-          await this.save();
-          clearModelsDevCache();
-          this.update();
-        });
-      });
-
-    // Model selection — always visible when any provider is configured
-    const activeProvider = s.ai.sourcePreference || this.configPid || "";
-    if (activeProvider && activeProvider !== "none") {
-      const preset = AI_PROVIDER_PRESETS[activeProvider];
-      const providerLabel = preset?.label || activeProvider;
-      const modelSetting = new Setting(containerEl)
-        .setName(t("settings_ai_model"))
-        .setDesc(t("settings_ai_model_desc") + ` (${providerLabel})`);
-      let modelSelectEl: HTMLSelectElement | null = null;
-      modelSetting.addDropdown((dd) => {
-        dd.addOption("", t("settings_ai_model_default"));
-        if (preset?.model) {
-          dd.addOption(preset.model, `${preset.model} (${t("settings_ai_model_default")})`);
-        }
-        // Curated fallbacks — official / community overlay arrives async
-        const fallback = PROVIDER_DEFAULT_MODELS[activeProvider] || [];
-        for (const m of fallback) {
-          dd.addOption(m.id, m.label);
-        }
-        if (s.ai.defaultModel && s.ai.defaultModel !== preset?.model && !fallback.some((m) => m.id === s.ai.defaultModel)) {
-          dd.addOption(s.ai.defaultModel, s.ai.defaultModel);
-        }
-        dd.setValue(s.ai.defaultModel || "").onChange(async (v) => {
-          s.ai.defaultModel = v;
-          s.aiModel = v;
-          await this.save();
-        });
-        modelSelectEl = dd.selectEl;
-      });
-      // Also allow custom model text input
-      modelSetting.addText((text) => {
-        text
-          .setPlaceholder("custom-model-id")
-          .setValue(s.ai.defaultModel || "");
-        text.inputEl.addClass("tm-model-custom-input");
-        text.onChange(async (v) => {
-          // Only update if the value is not empty and differs from dropdown
-          const trimmed = v.trim();
-          if (trimmed && trimmed !== s.ai.defaultModel) {
-            s.ai.defaultModel = trimmed;
-            s.aiModel = trimmed;
-            await this.save();
-          }
-        });
-      });
-      // Refresh — force-bypass TTL; official list-models when keyed, else models.dev
-      modelSetting.addExtraButton((btn) => {
-        btn
-          .setIcon("refresh-cw")
-          .setTooltip(t("settings_ai_refresh_models"))
-          .onClick(async () => {
-            if (!modelSelectEl) return;
-            btn.setDisabled(true);
-            btn.setIcon("loader");
-            try {
-              const result = await this.loadDynamicModels(activeProvider, modelSelectEl, true);
-              const count = String(result.models.length);
-              if (result.source === "official") {
-                new Notice(t("notice_models_official", { count }));
-              } else if (result.source === "community") {
-                new Notice(t("notice_models_community", { count }));
-              } else {
-                new Notice(t("notice_models_fallback"));
-              }
-            } finally {
-              btn.setDisabled(false);
-              btn.setIcon("refresh-cw");
-            }
-          });
-      });
-      // Curated defaults are already on screen; enrich without blocking first paint
-      if (modelSelectEl) {
-        void this.loadDynamicModels(activeProvider, modelSelectEl, false);
-      }
-    }
-
-    // ── Credentials for the selected provider (no second picker) ──
-    const detail = new Setting(containerEl).setName(
-      meta.label + (isConfigured ? " ✓" : "") + (s.ai.sourcePreference === pid ? " ★" : ""),
-    );
-
-    if (meta.helpUrl) {
-      detail.addExtraButton((btn: ExtraButtonComponent) => {
-        btn
-          .setIcon("external-link")
-          .setTooltip(meta.helpUrl)
-          .onClick(() => {
-            window.open(meta.helpUrl, "_blank");
-          });
-      });
-    }
-
-    // Set / clear preferred provider (★)
-    detail.addExtraButton((btn: ExtraButtonComponent) => {
-      const isDefault = s.ai.sourcePreference === pid;
-      btn
-        .setIcon(isDefault ? "star" : "star-off")
-        .setTooltip(isDefault ? t("settings_ai_clear_default") : t("settings_ai_set_default"))
-        .onClick(async () => {
-          s.ai.sourcePreference = isDefault ? "" : pid;
-          s.aiProvider = ((isDefault ? "" : pid) || "none") as TopmindPlugin["settings"]["aiProvider"];
-          if (isDefault) s.ai.defaultModel = "";
-          await this.save();
-          clearModelsDevCache();
-          this.update();
-        });
-    });
-
-    if (pid === "ollama") {
-      detail.addText((text) => {
-        text
-          .setPlaceholder("http://127.0.0.1:11434/v1")
-          .setValue(s.ai.manual.ollamaBaseUrl || "");
-        text.inputEl.type = "url";
-        text.onChange(async (v) => {
-          s.ai.manual.ollamaBaseUrl = v.trim().replace(/\/+$/, "");
-          await this.save();
-        });
-      });
-    } else if (pid === "custom") {
-      detail.addText((text) => {
-        text
-          .setPlaceholder("https://api.example.com/v1")
-          .setValue(s.ai.manual.customBaseUrl || "");
-        text.inputEl.type = "url";
-        text.onChange(async (v) => {
-          s.ai.manual.customBaseUrl = v.trim().replace(/\/+$/, "");
-          await this.save();
-        });
-      });
-      detail.addText((text) => {
-        text.inputEl.type = "password";
-        text
-          .setPlaceholder("sk-...")
-          .setValue(s.ai.manual.customKey || "");
-        text.onChange(async (v) => {
-          s.ai.manual.customKey = v;
-          await this.save();
-        });
-      });
-    } else {
-      const keyField = PROVIDER_KEY_FIELDS[pid];
-      // Optional base URL override (proxy / regional) — placeholder = official default
-      detail.addText((text) => {
-        text
-          .setPlaceholder(meta.baseUrl || "https://…")
-          .setValue(s.ai.manual.baseUrlOverrides?.[pid] || "");
-        text.inputEl.type = "url";
-        text.inputEl.addClass("tm-baseurl-input");
-        text.onChange(async (v) => {
-          const raw = v.trim().replace(/\/+$/, "");
-          const bag = { ...(s.ai.manual.baseUrlOverrides || {}) };
-          if (raw) bag[pid] = raw;
-          else delete bag[pid];
-          s.ai.manual.baseUrlOverrides = bag;
-          await this.save();
-        });
-      });
-
-      if (keyField) {
-        detail.addText((text) => {
-          text.inputEl.type = "password";
-          const placeholder = pid === "anthropic" ? "sk-ant-..."
-            : pid === "google" ? "AI..."
-            : pid === "groq" ? "gsk_..."
-            : pid === "openrouter" ? "sk-or-..."
-            : "sk-...";
-          text
-            .setPlaceholder(placeholder)
-            .setValue(String((s.ai.manual as unknown as Record<string, string>)[keyField] || ""));
-          text.onChange(async (v) => {
-            const wasConfigured = hasConfiguredProvider(s.ai);
-            (s.ai.manual as unknown as Record<string, string>)[keyField] = v;
-            await this.save();
-            if (!wasConfigured && hasConfiguredProvider(s.ai) && !s.ai.defaultModel) {
-              clearModelsDevCache();
-              new Notice(t("settings_ai_model_select_hint"));
-              this.update();
-            }
-          });
-        });
-
-        if (isConfigured) {
-          detail.addExtraButton((btn: ExtraButtonComponent) => {
-            btn
-              .setIcon("x")
-              .setTooltip(t("settings_ai_clear_key"))
-              .onClick(async () => {
-                (s.ai.manual as unknown as Record<string, string>)[keyField] = "";
-                await this.save();
-                this.update();
-              });
-          });
-        }
-      }
-    }
-
-    // Connection test
-    new Setting(containerEl)
-      .setName(t("settings_ai_test"))
-      .setDesc(t("settings_security_note"))
-      .addButton((btn) =>
-        btn
-          .setButtonText(t("settings_ai_test"))
-          .onClick(async () => {
-            if (!hasConfiguredProvider(s.ai)) {
-              new Notice(t("settings_ai_test_no_key"));
-              return;
-            }
-            btn.setButtonText(t("settings_ai_testing"));
-            btn.setDisabled(true);
-            try {
-              const provider = this.plugin.kernelService.testAiConnection();
-              const reply = await provider.generate("Reply with: OK", { operation: "test" });
-              if (reply && reply.trim().length > 0) {
-                new Notice(t("settings_ai_test_success"));
-              } else {
-                new Notice(`${t("settings_ai_test_failed")}: empty response`);
-              }
-            } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err);
-              new Notice(`${t("settings_ai_test_failed")}: ${msg}`);
-            } finally {
-              btn.setButtonText(t("settings_ai_test"));
-              btn.setDisabled(false);
-            }
-          }),
-      );
-
-    // Writeback mode
-    new Setting(containerEl)
-      .setName(t("settings_writeback_mode"))
-      .setDesc(t("settings_writeback_mode_desc"))
-      .addDropdown((dd) =>
-        dd
-          .addOption("auto", t("writeback_auto"))
-          .addOption("confirm", t("writeback_confirm"))
-          .setValue(s.writebackMode)
-          .onChange(async (v) => {
-            const mode = v as WritebackMode;
-            s.writebackMode = mode;
-            this.plugin.kernelService.mirrorWritebackMode(mode);
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName(t("settings_max_agent_steps"))
-      .setDesc(t("settings_max_agent_steps_desc"))
-      .addSlider((slider) =>
-        slider
-          .setLimits(3, 80, 1)
-          .setValue(s.maxAgentSteps || 32)
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            s.maxAgentSteps = v;
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName(t("settings_auto_suggest"))
-      .setDesc(t("settings_auto_suggest_desc"))
-      .addToggle((toggle) =>
-        toggle.setValue(s.autoSuggest).onChange(async (v) => {
-          s.autoSuggest = v;
-          await this.save();
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName(t("settings_auto_maintain_todos"))
-      .setDesc(t("settings_auto_maintain_todos_desc"))
-      .addToggle((toggle) =>
-        toggle.setValue(s.autoMaintainTodos).onChange(async (v) => {
-          s.autoMaintainTodos = v;
-          await this.save();
-        }),
-      );
-
-    // ── Section: Security & Archive ──
-    new Setting(containerEl).setName(t("settings_security")).setHeading();
-
-    new Setting(containerEl)
-      .setName(t("settings_backup_keep"))
-      .setDesc(t("settings_backup_keep_desc"))
-      .addSlider((slider) =>
-        slider
-          .setLimits(0, 10, 1)
-          .setValue(s.backupKeep)
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            s.backupKeep = v;
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName(t("settings_receipt_keep"))
-      .setDesc(t("settings_receipt_keep_desc"))
-      .addSlider((slider) =>
-        slider
-          .setLimits(10, 200, 10)
-          .setValue(s.receiptKeep)
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            s.receiptKeep = v;
-            await this.save();
-          }),
-      );
+    /* declarative settings own the surface */
   }
 
   /**

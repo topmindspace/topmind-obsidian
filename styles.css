@@ -403,10 +403,7 @@
 }
 
 .tm-task-badge.tm-task-badge-hidden {
-  background: transparent;
-  border-color: var(--background-modifier-border);
-  color: var(--text-muted);
-  cursor: pointer;
+  display: none;
 }
 
 .tm-task-panel {
@@ -2463,18 +2460,17 @@
 }
 
 .tm-sidebar-action-btn.tm-sidebar-capture-primary {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-  border-color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+  color: var(--tm-text-accent);
+  border-color: var(--background-modifier-border);
   font-weight: 600;
-  box-shadow: var(--shadow-s);
-  flex: 1.2 1 0%;
+  flex: 1 1 0%;
 }
 
 .tm-sidebar-action-btn.tm-sidebar-capture-primary:hover {
-  background: var(--interactive-accent-hover, var(--interactive-accent));
-  color: var(--text-on-accent);
-  opacity: 0.94;
+  background: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-primary));
+  border-color: var(--interactive-accent);
+  color: var(--tm-text-accent);
 }
 
 .tm-action-with-label {
@@ -3086,4 +3082,502 @@
    Generic .tm-toolbar-btn-label keeps overflow:visible for optional hosts. */
 .tm-stream-workbench .tm-toolbar-btn-label {
   display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Workbench design pass (2026-09-23) — hierarchy · type · quiet chrome
+   Personal-workspace homepage feel: one header rhythm, calm surfaces,
+   consistent 28/32/36 control heights, no purple slabs, hover-reveal
+   card actions. Scoped only.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.tm-stream-workbench,
+.tm-sidebar-dock {
+  /* type scale */
+  --tm-font-title: 15px;
+  --tm-font-section: 12px;
+  --tm-font-body: var(--font-text-size, 14px);
+  --tm-font-meta: 11px;
+  --tm-track-section: 0.04em;
+  --tm-surface-elevated: var(--background-primary);
+  --tm-surface-sunken: var(--background-secondary);
+  --tm-border-quiet: color-mix(in srgb, var(--background-modifier-border) 72%, transparent);
+  --tm-control-h: 28px;
+  --tm-control-h-lg: 34px;
+}
+
+/* ── Stream: single-column workbench ─────────────────────────────────── */
+
+.tm-stream-workbench {
+  padding: 12px 20px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 100%;
+  background:
+    radial-gradient(
+      1200px 420px at 50% -10%,
+      color-mix(in srgb, var(--interactive-accent) 6%, transparent),
+      transparent 60%
+    ),
+    transparent;
+}
+
+.tm-stream-workbench .tm-toolbar {
+  min-height: 36px;
+  gap: 10px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+}
+
+.tm-toolbar-title-text {
+  font-size: var(--tm-font-title);
+  font-weight: 650;
+  color: var(--text-normal);
+  letter-spacing: -0.01em;
+}
+
+.tm-stream-workbench .tm-toolbar-btn {
+  width: var(--tm-control-h);
+  height: var(--tm-control-h);
+  border-radius: var(--tm-radius-md);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.tm-stream-workbench .tm-toolbar-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  border-color: var(--tm-border-quiet);
+}
+
+/* Compose card — the hero of the workbench */
+.tm-stream-workbench .tm-input-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 12px 12px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--tm-border-quiet);
+  background: var(--tm-surface-elevated);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--background-modifier-border) 40%, transparent);
+  transition: border-color var(--tm-transition), box-shadow var(--tm-transition);
+}
+
+.tm-stream-workbench .tm-input-bar:focus-within {
+  border-color: color-mix(in srgb, var(--interactive-accent) 55%, var(--background-modifier-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+}
+
+.tm-stream-workbench .tm-input-field {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 4px 2px;
+  min-height: 36px;
+  font-size: var(--tm-font-body);
+  line-height: 1.55;
+  color: var(--text-normal);
+  resize: none;
+}
+
+.tm-stream-workbench .tm-input-field:focus {
+  border: none;
+  box-shadow: none;
+  outline: none;
+}
+
+.tm-stream-workbench .tm-input-field::placeholder {
+  color: var(--text-faint);
+}
+
+.tm-stream-workbench .tm-input-bar .tm-btn-polish {
+  width: var(--tm-control-h);
+  height: var(--tm-control-h);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  flex-shrink: 0;
+}
+
+.tm-stream-workbench .tm-input-bar .tm-btn-polish:hover {
+  color: var(--tm-text-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+}
+
+.tm-stream-workbench .tm-submit-btn,
+.tm-stream-workbench .tm-input-bar .tm-submit-btn {
+  height: var(--tm-control-h-lg);
+  min-width: 72px;
+  padding: 0 16px;
+  border-radius: 9px;
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  box-shadow: none;
+  flex-shrink: 0;
+}
+
+.tm-stream-workbench .tm-submit-btn:hover:not(:disabled) {
+  background: var(--interactive-accent-hover, var(--interactive-accent));
+  transform: none;
+}
+
+/* Section header: quiet label + controls on one baseline */
+.tm-stream-workbench .tm-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  margin: 2px 0 0;
+  padding: 0 2px;
+}
+
+.tm-stream-workbench .tm-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--tm-font-section);
+  font-weight: 600;
+  letter-spacing: var(--tm-track-section);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.tm-stream-workbench .tm-entry-count {
+  font-size: var(--tm-font-meta);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-faint);
+}
+
+.tm-stream-workbench .tm-section-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tm-stream-workbench .tm-period-select,
+.tm-stream-workbench .tm-btn-secondary.tm-btn-icon-only {
+  height: var(--tm-control-h);
+  border-radius: var(--tm-radius-md);
+  font-size: var(--tm-font-meta);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.tm-stream-workbench .tm-period-select:hover,
+.tm-stream-workbench .tm-btn-secondary.tm-btn-icon-only:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--tm-border-quiet);
+  color: var(--text-normal);
+}
+
+.tm-stream-workbench .tm-feed-layout-toggle {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 8px;
+  background: var(--background-modifier-hover);
+  border: 1px solid var(--tm-border-quiet);
+}
+
+.tm-stream-workbench .tm-feed-layout-btn {
+  height: 22px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--tm-font-meta);
+  font-weight: 550;
+}
+
+.tm-stream-workbench .tm-feed-layout-btn[data-active="true"] {
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--background-modifier-border) 50%, transparent);
+}
+
+/* Day headers */
+.tm-stream-workbench .tm-day-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 2px 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.tm-stream-workbench .tm-day-label {
+  font-size: var(--tm-font-section);
+  font-weight: 650;
+  letter-spacing: var(--tm-track-section);
+  color: var(--text-muted);
+}
+
+.tm-stream-workbench .tm-day-count {
+  font-size: var(--tm-font-meta);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Stream cards — quiet rows with hover-reveal actions */
+.tm-stream-workbench .tm-card {
+  padding: 12px 14px 12px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background-color var(--tm-transition), border-color var(--tm-transition);
+}
+
+.tm-stream-workbench .tm-card:hover {
+  background: var(--tm-surface-elevated);
+  border-color: var(--tm-border-quiet);
+}
+
+.tm-stream-workbench .tm-card-header {
+  min-height: 22px;
+  margin-bottom: 4px;
+}
+
+.tm-stream-workbench .tm-card-time {
+  font-size: var(--tm-font-meta);
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.tm-stream-workbench .tm-card-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--tm-transition);
+}
+
+.tm-stream-workbench .tm-card:hover .tm-card-actions,
+.tm-stream-workbench .tm-card:focus-within .tm-card-actions {
+  opacity: 1;
+}
+
+.tm-stream-workbench .tm-card-action-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.tm-stream-workbench .tm-card-action-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.tm-stream-workbench .tm-card-action-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tm-stream-workbench .tm-card-body {
+  font-size: var(--tm-font-body);
+  line-height: 1.6;
+  color: var(--text-normal);
+}
+
+/* list layout: tighter hairlines between rows */
+.tm-stream-workbench .tm-stream-container[data-layout="list"] .tm-card {
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  border-bottom: 1px solid var(--tm-border-quiet);
+  padding-inline: 4px;
+}
+
+.tm-stream-workbench .tm-stream-container[data-layout="list"] .tm-card:hover {
+  background: color-mix(in srgb, var(--background-modifier-hover) 55%, transparent);
+}
+
+.tm-stream-workbench .tm-stream-container[data-layout="card"] .tm-card {
+  background: var(--tm-surface-elevated);
+  border: 1px solid var(--tm-border-quiet);
+  margin-bottom: 8px;
+}
+
+/* Suggest entry strip */
+.tm-stream-workbench .tm-suggest-entry {
+  margin-top: 8px;
+  border-radius: 10px;
+  border: 1px dashed var(--tm-border-quiet);
+  background: color-mix(in srgb, var(--interactive-accent) 4%, transparent);
+}
+
+/* ── Sidebar Dock ────────────────────────────────────────────────────── */
+
+.tm-sidebar-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 8px 8px 8px;
+  min-height: 100%;
+}
+
+.tm-sidebar-dock .tm-sidebar-header {
+  min-height: 30px;
+  padding: 0 2px 6px;
+  border: none;
+  background: transparent;
+  overflow: hidden;
+}
+
+.tm-sidebar-dock .tm-sidebar-status-compact {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--background-modifier-hover);
+  gap: 6px;
+}
+
+.tm-sidebar-dock .tm-status-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.tm-sidebar-dock .tm-sidebar-icon-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.tm-sidebar-dock .tm-sidebar-icon-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.tm-sidebar-dock .tm-tab-bar {
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--tm-border-quiet);
+  background: var(--background-modifier-hover);
+  border-bottom: 1px solid var(--tm-border-quiet);
+  overflow-x: auto;
+}
+
+.tm-sidebar-dock .tm-tab-btn {
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  border-bottom: none;
+  font-size: var(--font-ui-smaller);
+  font-weight: 550;
+  color: var(--text-muted);
+  gap: 4px;
+  padding: 0 6px;
+}
+
+.tm-sidebar-dock .tm-tab-btn:hover {
+  color: var(--text-normal);
+  background: color-mix(in srgb, var(--background-primary) 55%, transparent);
+}
+
+.tm-sidebar-dock .tm-tab-btn[data-active="true"],
+.tm-sidebar-dock .tm-tab-btn.active,
+.tm-sidebar-dock .tm-tab-btn.is-active {
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--background-modifier-border) 45%, transparent);
+}
+
+.tm-sidebar-dock .tm-tab-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 2px;
+}
+
+.tm-sidebar-dock .tm-sidebar-bottom-actions {
+  gap: 6px;
+  padding-top: 8px;
+  margin-top: 8px;
+  border-top: 1px solid var(--tm-border-quiet);
+}
+
+.tm-sidebar-dock .tm-sidebar-action-btn {
+  height: 32px;
+  border-radius: 9px;
+  border: 1px solid var(--tm-border-quiet);
+  background: var(--tm-surface-elevated);
+  color: var(--text-muted);
+  box-shadow: none;
+  flex: 1 1 0%;
+}
+
+.tm-sidebar-dock .tm-sidebar-action-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.tm-sidebar-dock .tm-sidebar-action-btn:hover {
+  color: var(--tm-text-accent);
+  border-color: color-mix(in srgb, var(--interactive-accent) 40%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary));
+}
+
+.tm-sidebar-dock .tm-chat-model-switcher {
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--tm-border-quiet);
+  background: var(--tm-surface-sunken);
+}
+
+.tm-sidebar-dock .tm-chat-switcher-select {
+  height: 24px;
+  font-size: var(--tm-font-meta);
+  background: var(--background-primary);
+}
+
+/* ── Settings: kill double-headed AI card look ───────────────────────── */
+
+.tm-settings-ai-block {
+  gap: 0;
+}
+
+.tm-settings-ai-block .setting-item {
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: var(--tm-gap-md);
+  padding-bottom: var(--tm-gap-md);
+}
+
+.setting-item .tm-setting-hint-accent {
+  color: var(--tm-text-accent);
+  font-weight: 600;
+}
+
+/* Keep chrome contracts used by tests */
+.tm-toolbar-btn-labeled {
+  width: auto;
+}
+.tm-sidebar-btn-labeled {
+  width: auto;
 }

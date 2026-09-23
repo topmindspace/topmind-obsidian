@@ -213,7 +213,7 @@ export class StreamWorkbenchView extends ItemView {
     // ── Stream Section ──
     const streamHeader = feedColumn.createDiv({ cls: "tm-section-header" });
     const streamTitleDiv = streamHeader.createDiv({ cls: "tm-section-title" });
-    streamTitleDiv.createSpan({ text: t("stream_this_week") });
+    streamTitleDiv.createSpan({ text: t("stream_this_week"), cls: "tm-section-title-text" });
     this.entryCountEl = streamTitleDiv.createSpan({ cls: "tm-entry-count" });
 
     const streamControls = streamHeader.createDiv({ cls: "tm-section-controls" });

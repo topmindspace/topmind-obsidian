@@ -24,7 +24,7 @@ export const zhCN = {
   quick_capture_success: "✓ 已记下",
 
   // ── Stream Workbench ──
-  stream_this_week: "动态",
+  stream_this_week: "本周",
   stream_switch_period: "切换周期",
   stream_empty: "还没有动态",
   stream_empty_hint: "在上方输入框输入文字，按 Enter 记下",

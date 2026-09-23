@@ -26,7 +26,7 @@ export const enUS: typeof zhCN = {
   quick_capture_success: "✓ Captured",
 
   // ── Stream Workbench ──
-  stream_this_week: "Stream",
+  stream_this_week: "This week",
   stream_switch_period: "Switch Period",
   stream_empty: "No entries yet",
   stream_empty_hint: "Type in the input above and press Enter to log",
