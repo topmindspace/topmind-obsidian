@@ -218,7 +218,13 @@ async function main() {
     versionsMap = {};
   }
   versionsMap[version] = minApp;
-  const versionsBody = `${JSON.stringify(versionsMap, null, 2)}\n`;
+  // Stable order (oldest → newest) so diffs/reviews of versions.json stay readable.
+  const sortedVersions = Object.fromEntries(
+    Object.entries(versionsMap).sort((a, b) =>
+      a[0].localeCompare(b[0], undefined, { numeric: true }),
+    ),
+  );
+  const versionsBody = `${JSON.stringify(sortedVersions, null, 2)}\n`;
   await writeFile(versionsPath, versionsBody, "utf-8");
   await writeFile(path.join(releaseDir, "versions.json"), versionsBody, "utf-8");
   await writeFile(path.join(outputDist, "versions.json"), versionsBody, "utf-8");
