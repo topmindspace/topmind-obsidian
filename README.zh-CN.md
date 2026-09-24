@@ -12,6 +12,20 @@
 
 ---
 
+## 界面预览
+
+| 动态时间轴 | 我的情况 |
+|---|---|
+| ![动态时间轴](docs/images/stream-timeline-zh.png) | ![我的情况](docs/images/profile-memory-zh.png) |
+
+| AI 副驾设置 | English UI |
+|---|---|
+| ![AI 副驾设置](docs/images/settings-ai-copilot.png) | ![Stream timeline (English)](docs/images/stream-timeline-en.png) |
+
+更多：[My Profile (English)](docs/images/profile-memory-en.png)。
+
+---
+
 ## 这是什么？
 
 **topmind Stream** 将 topmind 引擎的核心**低摩擦个人动态流体验**带入 Obsidian。
@@ -69,7 +83,7 @@ topmind Stream 通过 5 个通俗直观的概念降低认知负担：
 #### 方式 B：使用 BRAT 插件一键安装
 1. 在 Obsidian 社区插件中安装并启用 **BRAT** (TfTHacker / obsidian-42-brat)。
 2. 打开 BRAT 设置，点击 **Add Beta plugin**。
-3. 输入仓库地址：`topmindspace/topmind`
+3. 输入仓库地址：`topmindspace/topmind-obsidian`
 4. 点击 Add Plugin，启用 **Topmind Stream**。
 
 #### 方式 C：手动解压安装

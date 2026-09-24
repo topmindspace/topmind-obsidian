@@ -16,6 +16,20 @@
 
 ---
 
+## Screenshots
+
+| Stream timeline | My Profile |
+|---|---|
+| ![Stream timeline](docs/images/stream-timeline-en.png) | ![My Profile](docs/images/profile-memory-en.png) |
+
+| AI settings | Chinese UI |
+|---|---|
+| ![AI Co-pilot settings](docs/images/settings-ai-copilot.png) | ![Stream timeline (Chinese)](docs/images/stream-timeline-zh.png) |
+
+More: [profile (Chinese)](docs/images/profile-memory-zh.png).
+
+---
+
 ## What is Topmind Stream?
 
 **Topmind Stream** brings the core low-friction **Personal Stream Workflow** of the Topmind engine directly into your Obsidian Vault.
