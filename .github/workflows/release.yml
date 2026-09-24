@@ -42,7 +42,6 @@ jobs:
           repository: topmindspace/topmind
           ref: main
           path: .topmind-src
-        continue-on-error: true
 
       - name: Setup Node
         uses: actions/setup-node@v5
