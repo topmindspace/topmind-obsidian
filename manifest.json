@@ -1,7 +1,7 @@
 {
   "id": "topmind-stream",
   "name": "Topmind Stream",
-  "version": "4.16.0",
+  "version": "4.16.1",
   "minAppVersion": "1.13.0",
   "description": "Personal stream + AI co-pilot — jot, confirm suggestions, files stay yours.",
   "author": "TopMindSpace",

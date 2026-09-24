@@ -1830,6 +1830,13 @@ select.tm-tag-input,
   opacity: 1;
 }
 
+/* Touch / no-hover: keep delete reachable without hover */
+@media (hover: none) {
+  .tm-todo-item .tm-todo-delete {
+    opacity: 1;
+  }
+}
+
 .tm-todo-done-header {
   display: flex;
   align-items: center;
