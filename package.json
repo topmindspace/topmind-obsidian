@@ -1,6 +1,6 @@
 {
   "name": "topmind-obsidian-plugin",
-  "version": "4.15.0",
+  "version": "4.16.0",
   "private": true,
   "description": "topmind Stream for Obsidian \u2014 \u4e3b\u533a\u57df\u52a8\u6001\u6d41 + AI \u6c89\u6dc0\u526f\u9a7e",
   "type": "module",

@@ -10,16 +10,22 @@ import type { App } from "obsidian";
 import fs from "node:fs";
 import path from "node:path";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
  * Get the absolute path of the Obsidian Vault root (= topmind workspace root).
  * Uses the internal adapter's getBasePath() which is available on desktop.
  */
 export function getVaultBasePath(app: App): string {
   // Internal desktop adapter API — stable on Electron, typed via a narrow shape.
-  const adapter = app.vault.adapter as { getBasePath?: () => unknown };
-  const basePath = adapter.getBasePath?.();
-  if (typeof basePath === "string" && basePath.length > 0) {
-    return basePath;
+  const adapter: unknown = app.vault.adapter;
+  if (isRecord(adapter) && typeof adapter.getBasePath === "function") {
+    const basePath: unknown = Reflect.apply(adapter.getBasePath, adapter, []);
+    if (typeof basePath === "string" && basePath.length > 0) {
+      return basePath;
+    }
   }
   throw new Error(
     "Cannot resolve vault base path. This plugin requires Obsidian desktop (Electron).",

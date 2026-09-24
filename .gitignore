@@ -1,7 +1,6 @@
 node_modules/
 dist/
 release/
-lib
 .engine-stamp.json
 .DS_Store
 .topmind-src/

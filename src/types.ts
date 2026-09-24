@@ -1,5 +1,10 @@
 // ── Shared type definitions ────────────────────────────────────────────────
 
+/** Narrow `unknown` to a plain object record (rejects arrays and null). */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
  * AI provider identifiers — aligned with Desktop's provider IDs.
  * Adding providers here automatically makes them available in settings + AI adapter.
@@ -17,6 +22,24 @@ export type AiProviderType =
   | "ollama"
   | "custom";
 
+const AI_PROVIDER_TYPES: ReadonlySet<string> = new Set([
+  "none",
+  "openai",
+  "anthropic",
+  "google",
+  "deepseek",
+  "moonshot",
+  "zhipu",
+  "minimax",
+  "xai",
+  "ollama",
+  "custom",
+]);
+
+export function isAiProviderType(value: unknown): value is AiProviderType {
+  return typeof value === "string" && AI_PROVIDER_TYPES.has(value);
+}
+
 /** Writeback mode */
 export type WritebackMode = "auto" | "confirm";
 
@@ -29,8 +52,10 @@ export type CaptureTarget = "stream" | "inbox";
 /**
  * Multi-provider API key storage — mirrors Desktop's `ai.manual` structure.
  * All keys are stored simultaneously; the user picks a `sourcePreference`.
+ * (Type alias, not interface — so it carries an implicit index signature
+ * when treated as `Record<string, unknown>` during settings restore.)
  */
-export interface AiManualKeys {
+export type AiManualKeys = {
   openAiKey: string;
   anthropicKey: string;
   googleKey: string;
@@ -52,7 +77,7 @@ export interface AiManualKeys {
   ollamaBaseUrl: string;
   /** Optional per-provider base URL overrides (proxy / regional endpoint). */
   baseUrlOverrides: Record<string, string>;
-}
+};
 
 /**
  * AI configuration block — aligned with Desktop's `ai` settings shape.
@@ -169,26 +194,29 @@ export function migrateSettings(raw: Record<string, unknown>): TopmindSettings {
   // Deep-clone DEFAULT_SETTINGS to avoid mutating the shared constant.
   // Object.assign only shallow-copies, so nested objects like `ai` would
   // be shared references — mutation in one call would corrupt all subsequent calls.
-  const merged: TopmindSettings = {
-    ...DEFAULT_SETTINGS,
-    ...raw,
-    ai: {
-      // Keep unknown raw.ai keys (future schema additions) so load→save
-      // cycles don't silently strip them.
-      ...(raw.ai && typeof raw.ai === "object" ? (raw.ai as Record<string, unknown>) : {}),
-      sourcePreference: "",
-      defaultModel: "",
-      manual: { ...EMPTY_AI_MANUAL },
-    },
-  } as TopmindSettings;
+  const merged: TopmindSettings = structuredClone(DEFAULT_SETTINGS);
+  // Preserve unknown top-level keys (future schema) without losing the typed shape.
+  Object.assign(merged, raw);
+
+  const rawAi = isRecord(raw.ai) ? raw.ai : null;
+  const nextAi: AiConfig = {
+    // Keep unknown raw.ai keys (future schema additions) so load→save
+    // cycles don't silently strip them.
+    sourcePreference: "",
+    defaultModel: "",
+    manual: { ...EMPTY_AI_MANUAL },
+  };
+  if (rawAi) {
+    Object.assign(nextAi, rawAi);
+  }
+  merged.ai = nextAi;
 
   if (merged.feedLayout !== "list" && merged.feedLayout !== "card") {
     merged.feedLayout = "list";
   }
 
   // If raw has an ai object, merge its fields into our deep-cloned copy
-  if (raw.ai && typeof raw.ai === "object") {
-    const rawAi = raw.ai as Record<string, unknown>;
+  if (rawAi) {
     if (typeof rawAi.sourcePreference === "string") {
       merged.ai.sourcePreference = rawAi.sourcePreference;
     }
@@ -197,8 +225,10 @@ export function migrateSettings(raw: Record<string, unknown>): TopmindSettings {
     } else if (rawAi.defaultModel === null || rawAi.defaultModel === undefined) {
       merged.ai.defaultModel = "";
     }
-    if (rawAi.manual && typeof rawAi.manual === "object") {
-      merged.ai.manual = { ...EMPTY_AI_MANUAL, ...(rawAi.manual as Partial<AiManualKeys>) };
+    if (isRecord(rawAi.manual)) {
+      const manual: AiManualKeys = { ...EMPTY_AI_MANUAL };
+      Object.assign(manual, rawAi.manual);
+      merged.ai.manual = manual;
     }
   }
 
@@ -206,10 +236,10 @@ export function migrateSettings(raw: Record<string, unknown>): TopmindSettings {
   merged.ai.manual = { ...EMPTY_AI_MANUAL, ...merged.ai.manual };
 
   // Migrate old single-provider fields if manual is empty and aiProvider is set
-  const oldProvider = raw.aiProvider as string | undefined;
-  const oldKey = raw.aiApiKey as string | undefined;
-  const oldBaseUrl = raw.aiBaseUrl as string | undefined;
-  const oldModel = raw.aiModel as string | undefined;
+  const oldProvider = typeof raw.aiProvider === "string" ? raw.aiProvider : undefined;
+  const oldKey = typeof raw.aiApiKey === "string" ? raw.aiApiKey : undefined;
+  const oldBaseUrl = typeof raw.aiBaseUrl === "string" ? raw.aiBaseUrl : undefined;
+  const oldModel = typeof raw.aiModel === "string" ? raw.aiModel : undefined;
 
   // Only string secrets count — `baseUrlOverrides: {}` is always present and
   // must not block legacy single-provider migration.
@@ -242,8 +272,8 @@ export function migrateSettings(raw: Record<string, unknown>): TopmindSettings {
   }
 
   // Sync legacy aiProvider from sourcePreference for backward compat
-  if (merged.ai.sourcePreference) {
-    merged.aiProvider = merged.ai.sourcePreference as AiProviderType;
+  if (merged.ai.sourcePreference && isAiProviderType(merged.ai.sourcePreference)) {
+    merged.aiProvider = merged.ai.sourcePreference;
   }
 
   // ── Type normalization: a damaged data.json (hand-edited, partially written)

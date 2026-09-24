@@ -10,7 +10,8 @@
 // manual install, Obsidian sync conflicts, etc.).
 
 import { Plugin, WorkspaceLeaf, Notice, setIcon } from "obsidian";
-import { DEFAULT_SETTINGS, migrateSettings, hasConfiguredProvider, type TopmindSettings } from "./types";
+import { DEFAULT_SETTINGS, migrateSettings, hasConfiguredProvider, isAiProviderType, type TopmindSettings } from "./types.ts";
+import { isRecord, parseJsonUnknown } from "./utils.ts";
 import {
   VIEW_TYPE_STREAM_WORKBENCH,
   VIEW_TYPE_SIDEBAR_DOCK,
@@ -25,9 +26,9 @@ import {
   CMD_MEMORY_ORGANIZE,
   CMD_OPEN_PROFILE,
   CMD_OPEN_INBOX,
-} from "./constants";
-import { KernelService } from "./services/kernel-service";
-import { aiTaskManager, type TaskProgress } from "./services/ai-task-manager";
+} from "./constants.ts";
+import { KernelService } from "./services/kernel-service.ts";
+import { aiTaskManager, type TaskProgress } from "./services/ai-task-manager.ts";
 import { TopmindSettingTab } from "./settings/settings-tab";
 import { StreamWorkbenchView } from "./views/stream-workbench-view";
 import { SidebarDockView } from "./views/sidebar-dock-view";
@@ -46,7 +47,7 @@ const AI_KEYS_BACKUP_PATH = ".topmind/ai-keys-backup.json";
  */
 function extractAiBackup(settings: TopmindSettings): Record<string, unknown> {
   return {
-    ai: JSON.parse(JSON.stringify(settings.ai)),
+    ai: parseJsonUnknown(JSON.stringify(settings.ai)),
     aiProvider: settings.aiProvider,
     aiApiKey: settings.aiApiKey,
     aiBaseUrl: settings.aiBaseUrl,
@@ -69,25 +70,26 @@ function mergeAiBackup(settings: TopmindSettings, backup: Record<string, unknown
     manual: { ...settings.ai.manual },
   };
 
-  const backupAi = backup.ai as Record<string, unknown> | undefined;
-  if (backupAi && typeof backupAi === "object") {
-    const backupManual = backupAi.manual as Record<string, unknown> | undefined;
-    if (backupManual && typeof backupManual === "object") {
-      // Fill missing keys from backup — cast through unknown for safe key iteration
-      const manualTarget = merged.ai.manual as unknown as Record<string, string>;
+  const backupAi = isRecord(backup.ai) ? backup.ai : null;
+  if (backupAi) {
+    const backupManual = isRecord(backupAi.manual) ? backupAi.manual : null;
+    if (backupManual) {
+      // Fill missing keys from backup (write-through to merged.ai.manual).
+      const manualTarget: Record<string, unknown> = merged.ai.manual;
       for (const key of Object.keys(backupManual)) {
-        const currentVal = manualTarget[key] || "";
-        const backupVal = String(backupManual[key] || "");
-        if (!currentVal && backupVal) {
+        const currentVal = manualTarget[key];
+        const backupVal = backupManual[key];
+        const currentEmpty = currentVal == null || currentVal === "";
+        if (currentEmpty && typeof backupVal === "string" && backupVal) {
           manualTarget[key] = backupVal;
         }
       }
     }
-    if (!merged.ai.sourcePreference && backupAi.sourcePreference) {
-      merged.ai.sourcePreference = String(backupAi.sourcePreference);
+    if (!merged.ai.sourcePreference && typeof backupAi.sourcePreference === "string" && backupAi.sourcePreference) {
+      merged.ai.sourcePreference = backupAi.sourcePreference;
     }
-    if (!merged.ai.defaultModel && backupAi.defaultModel) {
-      merged.ai.defaultModel = String(backupAi.defaultModel);
+    if (!merged.ai.defaultModel && typeof backupAi.defaultModel === "string" && backupAi.defaultModel) {
+      merged.ai.defaultModel = backupAi.defaultModel;
     }
   }
 
@@ -116,8 +118,8 @@ function mergeAiBackup(settings: TopmindSettings, backup: Record<string, unknown
   ) {
     merged.aiModel = backup.aiModel;
   }
-  if (merged.aiProvider === "none" && backup.aiProvider) {
-    merged.aiProvider = backup.aiProvider as TopmindSettings["aiProvider"];
+  if (merged.aiProvider === "none" && isAiProviderType(backup.aiProvider) && backup.aiProvider !== "none") {
+    merged.aiProvider = backup.aiProvider;
   }
 
   return merged;
@@ -128,6 +130,20 @@ function mergeAiBackup(settings: TopmindSettings, backup: Record<string, unknown
  */
 function settingsHaveAiKeys(settings: TopmindSettings): boolean {
   return hasConfiguredProvider(settings.ai) || Boolean(settings.aiApiKey);
+}
+
+/** True when the backup payload carries at least one usable secret/endpoint. */
+function backupHasAiKeys(backup: Record<string, unknown>): boolean {
+  const ai = isRecord(backup.ai) ? backup.ai : null;
+  const manual = ai && isRecord(ai.manual) ? ai.manual : null;
+  if (manual) {
+    for (const [k, v] of Object.entries(manual)) {
+      if (k === "baseUrlOverrides") continue;
+      if (typeof v === "string" && v) return true;
+    }
+  }
+  if (typeof backup.aiApiKey === "string" && backup.aiApiKey) return true;
+  return false;
 }
 
 export default class TopmindPlugin extends Plugin {
@@ -154,7 +170,8 @@ export default class TopmindPlugin extends Plugin {
     await this.loadSettings();
 
     // ── i18n ──
-    const obsLocale = (this.app as unknown as { locale?: string }).locale || "zh-CN";
+    const appWithLocale: unknown = this.app;
+    const obsLocale = (isRecord(appWithLocale) && typeof appWithLocale.locale === "string" && appWithLocale.locale) || "zh-CN";
     const locale = this.settings.localeOverride || (obsLocale.startsWith("en") ? "en-US" : "zh-CN");
     setLocale(locale);
 
@@ -192,25 +209,25 @@ export default class TopmindPlugin extends Plugin {
     this.addCommand({
       id: CMD_OPEN_WORKBENCH,
       name: t("cmd_open_workbench"),
-      callback: () => this.openWorkbench(),
+      callback: () => { void this.openWorkbench(); },
     });
 
     this.addCommand({
       id: CMD_OPEN_SIDEBAR,
       name: t("cmd_open_sidebar"),
-      callback: () => this.openSidebar(),
+      callback: () => { void this.openSidebar(); },
     });
 
     this.addCommand({
       id: CMD_ORGANIZE_PERIOD,
       name: t("cmd_organize_period"),
-      callback: () => this.organizePeriod(),
+      callback: () => { void this.organizePeriod(); },
     });
 
     this.addCommand({
       id: CMD_REFRESH_SUGGESTIONS,
       name: t("cmd_refresh_suggestions"),
-      callback: () => this.refreshSuggestions(),
+      callback: () => { void this.refreshSuggestions(); },
     });
 
     this.addCommand({
@@ -234,13 +251,13 @@ export default class TopmindPlugin extends Plugin {
     this.addCommand({
       id: CMD_OPEN_PROFILE,
       name: t("cmd_open_profile"),
-      callback: () => this.openMemoryBrowse(),
+      callback: () => { void this.openMemoryBrowse(); },
     });
 
     this.addCommand({
       id: CMD_OPEN_INBOX,
       name: t("cmd_open_inbox"),
-      callback: () => this.openInbox(),
+      callback: () => { void this.openInbox(); },
     });
 
     // ── Settings tab ──
@@ -253,9 +270,9 @@ export default class TopmindPlugin extends Plugin {
     // ── Auto-open workbench + sidebar on startup ──
     if (this.settings.autoOpenWorkbench) {
       this.app.workspace.onLayoutReady(() => {
-        this.openWorkbench();
+        void this.openWorkbench();
         // Also open sidebar for unified AI access
-        this.openSidebar();
+        void this.openSidebar();
       });
     }
 
@@ -263,7 +280,7 @@ export default class TopmindPlugin extends Plugin {
     if (this.settings.autoMaintainTodos && this.kernelService.isWorkspaceReady()) {
       this.app.workspace.onLayoutReady(() => {
         // Queued (not direct) so the task badge/history observes boot work too
-        this.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar", true);
+        void this.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar", true);
       });
     }
   }
@@ -280,7 +297,8 @@ export default class TopmindPlugin extends Plugin {
   // ── Settings ──────────────────────────────────────────────────────────
 
   async loadSettings(): Promise<void> {
-    const raw = (await this.loadData()) as Record<string, unknown> | null;
+    const loaded: unknown = await this.loadData();
+    const raw = isRecord(loaded) ? loaded : null;
     if (raw) {
       this.settings = migrateSettings(raw);
     } else {
@@ -291,23 +309,30 @@ export default class TopmindPlugin extends Plugin {
     }
 
     // ── AI Key Restore: if data.json had no AI keys, try backup ──
-    if (!settingsHaveAiKeys(this.settings)) {
-      try {
-        const backup = await this.loadAiKeysBackup();
-        if (backup) {
-          this.settings = mergeAiBackup(this.settings, backup);
-          if (settingsHaveAiKeys(this.settings)) {
-            // Persist the restored settings so data.json is back in sync
-            await this.saveData(this.settings);
-          }
+    // Also run when backup has keys and data is partial — mergeAiBackup only
+    // fills blanks, so a half-wiped data.json recovers the missing fields.
+    try {
+      const backup = await this.loadAiKeysBackup();
+      if (backup && backupHasAiKeys(backup)) {
+        const before = settingsHaveAiKeys(this.settings);
+        this.settings = mergeAiBackup(this.settings, backup);
+        if (!before && settingsHaveAiKeys(this.settings)) {
+          await this.saveData(this.settings);
+          console.info("[topmind] AI keys restored from", AI_KEYS_BACKUP_PATH);
         }
-      } catch (err) {
-        console.warn("[topmind] AI keys backup restore failed:", err);
       }
+    } catch (err) {
+      console.warn("[topmind] AI keys backup restore failed:", err);
     }
   }
 
   async saveSettings(): Promise<void> {
+    // Defensive: never persist a settings object whose `ai` bag is missing —
+    // that is how a partial in-memory reset used to hit disk.
+    if (!this.settings?.ai?.manual) {
+      console.warn("[topmind] saveSettings skipped: ai.manual missing (refusing to wipe keys)");
+      return;
+    }
     await this.saveData(this.settings);
     this.kernelService?.updateSettings(this.settings);
     // Write backup in background (non-blocking — main data.json is already saved)
@@ -319,10 +344,20 @@ export default class TopmindPlugin extends Plugin {
   /**
    * Save AI keys backup to vault's .topmind/ directory.
    * This survives plugin updates even if data.json is wiped.
+   *
+   * CRITICAL: never overwrite a non-empty backup with empty keys. A transient
+   * settings reset (plugin reload race, settings re-render) used to clobber
+   * both data.json AND the backup in one save — that is how keys "kept
+   * disappearing". The backup is last-known-good, not a mirror of current.
    */
   private async saveAiKeysBackup(): Promise<void> {
     const adapter = this.app.vault.adapter;
     const backupData = extractAiBackup(this.settings);
+    if (!backupHasAiKeys(backupData)) {
+      // Current snapshot is empty — keep any existing non-empty backup.
+      const existing = await this.loadAiKeysBackup();
+      if (existing && backupHasAiKeys(existing)) return;
+    }
     const json = JSON.stringify(backupData, null, 2);
     // Only write inside an existing system plane: a random vault where the
     // plugin is merely enabled must not grow a `.topmind/` machine dir.
@@ -349,9 +384,8 @@ export default class TopmindPlugin extends Plugin {
     try {
       if (!await adapter.exists(AI_KEYS_BACKUP_PATH)) return null;
       const json = await adapter.read(AI_KEYS_BACKUP_PATH);
-      const parsed = JSON.parse(json);
-      if (!parsed || typeof parsed !== "object") return null;
-      return parsed as Record<string, unknown>;
+      const parsed = parseJsonUnknown(json);
+      return isRecord(parsed) ? parsed : null;
     } catch {
       return null;
     }
@@ -366,7 +400,7 @@ export default class TopmindPlugin extends Plugin {
   async openWorkbench(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_STREAM_WORKBENCH);
     if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
+      void this.app.workspace.revealLeaf(existing[0]);
       return;
     }
     // New leaf — never replace the tab the user is currently reading.
@@ -380,7 +414,7 @@ export default class TopmindPlugin extends Plugin {
   async openSidebar(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_SIDEBAR_DOCK);
     if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
+      void this.app.workspace.revealLeaf(existing[0]);
       return;
     }
     const leaf = this.app.workspace.getRightLeaf(false);
@@ -406,7 +440,7 @@ export default class TopmindPlugin extends Plugin {
 
     if (this.settings.autoMaintainTodos) {
       // Queued quiet — badge/history observes it; reconcile itself is sync-scheduled
-      this.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar", true);
+      void this.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar", true);
     }
 
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_STREAM_WORKBENCH);
@@ -437,7 +471,7 @@ export default class TopmindPlugin extends Plugin {
       return;
     }
     new Notice(t("notice_todo_running"));
-    this.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar");
+    void this.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar");
   }
 
   private classifyTopics(): void {
@@ -446,7 +480,7 @@ export default class TopmindPlugin extends Plugin {
       return;
     }
     new Notice(t("notice_classify_running"));
-    this.enqueueAiOperation("topic_classify", "op_label_topic_classify", "notice_classify_done", "suggest");
+    void this.enqueueAiOperation("topic_classify", "op_label_topic_classify", "notice_classify_done", "suggest");
   }
 
   private organizeMemory(): void {
@@ -455,7 +489,7 @@ export default class TopmindPlugin extends Plugin {
       return;
     }
     new Notice(t("notice_memory_running"));
-    this.enqueueAiOperation("memory_organize", "op_label_memory_organize", "notice_memory_done", "all");
+    void this.enqueueAiOperation("memory_organize", "op_label_memory_organize", "notice_memory_done", "all");
   }
 
   // ── Shared AI operation lane ──────────────────────────────────────────
@@ -561,7 +595,7 @@ export default class TopmindPlugin extends Plugin {
     }
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMORY_BROWSE);
     if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
+      void this.app.workspace.revealLeaf(existing[0]);
       const view = existing[0].view;
       if (view instanceof MemoryBrowseView) await view.refresh();
       return;

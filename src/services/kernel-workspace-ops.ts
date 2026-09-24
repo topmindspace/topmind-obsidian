@@ -15,6 +15,9 @@ import {
   normalizeCaptureText,
   mergeCaptureTags,
   mapKernelTodoItem,
+  isRecord,
+  isUnknownArray,
+  parseJsonUnknown,
 } from "../utils.ts";
 import type { StreamPeriod, TodoItem } from "../types.ts";
 import {
@@ -26,6 +29,7 @@ import {
 } from "./pending-writes.ts";
 import { runAgentTool } from "./workspace-agent-tools.ts";
 import { sanitizeAiWriteBody } from "#kernel/ai-content-sanitize.mjs";
+import { resolveEmbeddedTemplate } from "../data/workspace-templates.ts";
 
 export {
   listPendingWrites,
@@ -365,7 +369,8 @@ export function readTodosFromWorkspace(
   try {
     const list = kernel.readTodoList(workspaceRoot);
     if (!list) return [];
-    return ((list.items || []) as Record<string, unknown>[]).map(mapKernelTodoItem);
+    const items = isUnknownArray(list.items) ? list.items.filter(isRecord) : [];
+    return items.map(mapKernelTodoItem);
   } catch {
     return [];
   }
@@ -393,16 +398,28 @@ export function seedFullTemplateIfEmpty(
 
   const sep = "-";
   let categories: Record<string, { name: string }> | null = null;
+  // Prefer disk templates (manual zip / engine refresh); fall back to the
+  // copy bundled into main.js so community installs (3-file download) still seed.
   const tplPath = path.join(engineRoot, "templates", `${templateId}.json`);
   try {
     if (fs.existsSync(tplPath)) {
-      const raw = JSON.parse(fs.readFileSync(tplPath, "utf-8")) as {
-        categories?: Record<string, { name: string }>;
-      };
-      if (raw.categories) categories = raw.categories;
+      const parsed = parseJsonUnknown(fs.readFileSync(tplPath, "utf-8"));
+      if (isRecord(parsed) && isRecord(parsed.categories)) {
+        const cats: Record<string, { name: string }> = {};
+        for (const [slot, def] of Object.entries(parsed.categories)) {
+          if (isRecord(def) && typeof def.name === "string") {
+            cats[slot] = { name: def.name };
+          }
+        }
+        if (Object.keys(cats).length > 0) categories = cats;
+      }
     }
   } catch {
     categories = null;
+  }
+  if (!categories) {
+    const embedded = resolveEmbeddedTemplate(templateId);
+    if (embedded?.categories) categories = embedded.categories;
   }
   if (!categories) {
     categories = {
@@ -504,10 +521,9 @@ export function resolveContractWritebackMode(
   workspaceRoot: string,
 ): "auto" | "confirm" | null {
   try {
-    const contract = kernel.loadContract(workspaceRoot) as {
-      writeback?: { mode?: string };
-    };
-    const mode = contract?.writeback?.mode;
+    const contract = kernel.loadContract(workspaceRoot);
+    const writeback = isRecord(contract.writeback) ? contract.writeback : undefined;
+    const mode = writeback?.mode;
     if (mode === "auto" || mode === "confirm") return mode;
   } catch {
     /* missing or unreadable contract */
@@ -534,12 +550,11 @@ export function mirrorWritebackModeToContract(
     return { ok: false, error: "workspace-not-ready" };
   }
   try {
-    const current = kernel.loadContract(workspaceRoot) as {
-      writeback?: Record<string, unknown>;
-    };
+    const current = kernel.loadContract(workspaceRoot);
+    const prevWriteback = isRecord(current.writeback) ? current.writeback : {};
     kernel.writeContract(workspaceRoot, {
       ...current,
-      writeback: { ...(current.writeback || {}), mode },
+      writeback: { ...prevWriteback, mode },
     });
     return { ok: true };
   } catch (err) {
@@ -896,12 +911,11 @@ export function parseToolCall(text: string): Record<string, unknown> | null {
   if (!cleaned) return null;
   const tryParse = (s: string): Record<string, unknown> | null => {
     try {
-      const obj = JSON.parse(s) as unknown;
-      if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
-      const rec = obj as Record<string, unknown>;
-      const tool = String(rec.tool || rec.name || "");
+      const obj = parseJsonUnknown(s);
+      if (!isRecord(obj)) return null;
+      const tool = String(obj.tool || obj.name || "");
       if (!tool) return null;
-      return rec;
+      return obj;
     } catch {
       return null;
     }
@@ -1172,7 +1186,6 @@ export async function runWorkspaceChatTurn(
   let autoContinues = 0;
   let stepLimitHit = false;
   let finished = false;
-  const mode = modeHint;
 
   const emit = (ev: ChatProgressEvent) => {
     try {

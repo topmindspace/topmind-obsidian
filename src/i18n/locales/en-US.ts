@@ -210,6 +210,7 @@ export const enUS: typeof zhCN = {
   // ── AI settings ──
   settings_ai_status: "AI Status",
   settings_ai_status_desc: "Shows current AI configuration status",
+  settings_ai_board: "AI Copilot",
   settings_ai_ready: "Configured — AI features available",
   settings_ai_not_configured: "Not configured — basic features still work",
   settings_ai_preference: "Default Provider",
@@ -238,7 +239,7 @@ export const enUS: typeof zhCN = {
   settings_ai_model_field: "Model",
   settings_ai_model_field_desc: "Model name to use",
   settings_writeback_mode: "Save Mode",
-  settings_writeback_mode_desc: "Auto-save or ask before save",
+  settings_writeback_mode_desc: "Content saves directly; confirm only before delete/archive",
   settings_max_agent_steps: "Max Tool Steps",
   settings_max_agent_steps_desc: "Agent tool→reason loop iterations per chat turn (3–80, default 32); auto-continues up to 2× on exhaustion",
   settings_auto_suggest: "Auto-prepare AI Suggestions",
@@ -326,7 +327,7 @@ export const enUS: typeof zhCN = {
 
   // ── Writeback modes ──
   writeback_auto: "Auto Save",
-  writeback_confirm: "Ask Before Save",
+  writeback_confirm: "Ask before delete/archive",
 
   // ── Timeline order labels ──
   timeline_desc: "↓ Newest first",
@@ -408,6 +409,8 @@ export const enUS: typeof zhCN = {
   feed_layout_toggle: "Feed layout",
   feed_layout_list: "List",
   feed_layout_card: "Cards",
+  settings_feed_layout: "Feed layout",
+  settings_feed_layout_desc: "Stream feed layout: list or cards",
   memory_browse_empty: "Nothing to browse yet",
   memory_browse_empty_hint: "Jot in Stream; confirmed suggestions land here",
   memory_kind_profile: "Profile",

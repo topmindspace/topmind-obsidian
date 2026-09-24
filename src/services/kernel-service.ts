@@ -11,9 +11,9 @@ import type { App } from "obsidian";
 import { Notice, type Plugin, TFile } from "obsidian";
 import type { TopmindSettings, StreamPeriod, StreamEntry, SuggestionCard, TodoItem } from "../types";
 import type { AiProvider } from "../bridge/ai-provider";
-import { createAiProvider, resolveAiEndpoint } from "../bridge/ai-provider";
-import { createKernelContextFromApp, type KernelContext, getKernel } from "../bridge/kernel-loader";
-import { getVaultBasePath, getEngineRoot } from "../bridge/vault-bridge";
+import { createAiProvider, resolveAiEndpoint } from "../bridge/ai-provider.ts";
+import { createKernelContextFromApp, type KernelContext, getKernel } from "../bridge/kernel-loader.ts";
+import { getVaultBasePath, getEngineRoot } from "../bridge/vault-bridge.ts";
 import {
   parseStreamEntries,
   normalizeSuggestionList,
@@ -21,8 +21,9 @@ import {
   mapApplySuggestionResult,
   mergeSoftSuggestionSession,
   stripFrontmatter,
-} from "../utils";
-import { AI_PROVIDER_PRESETS, PROVIDER_DEFAULT_MODELS } from "../constants";
+  isRecord,
+} from "../utils.ts";
+import { AI_PROVIDER_PRESETS, PROVIDER_DEFAULT_MODELS } from "../constants.ts";
 import {
   captureToWorkspace,
   listStreamPeriodsForWorkspace,
@@ -45,9 +46,9 @@ import {
   type WorkspaceReadOpts,
   type WorkspaceEditOpts,
   type ChatProgressEvent,
-} from "./kernel-workspace-ops";
+} from "./kernel-workspace-ops.ts";
 import { t, getLocale } from "../i18n";
-import { hasConfiguredProvider, getProviderKey } from "../types";
+import { hasConfiguredProvider, getProviderKey } from "../types.ts";
 
 // ── Node.js built-ins ──
 // esbuild platform:'node' keeps these as require() calls (works in Electron).
@@ -385,8 +386,14 @@ export class KernelService {
       const file = this.app.vault.getAbstractFileByPath(relPath);
       let raw = "";
       if (file instanceof TFile) {
-        // Vault readSync fallback if present
-        raw = (this.app.vault as unknown as { readSync?: (f: TFile) => string }).readSync?.(file) ?? "";
+        // Vault readSync fallback if present (internal desktop API)
+        const vault: unknown = this.app.vault;
+        if (isRecord(vault) && typeof vault.readSync === "function") {
+          const read: unknown = Reflect.apply(vault.readSync, vault, [file]);
+          raw = typeof read === "string" ? read : "";
+        } else {
+          raw = "";
+        }
       }
       if (!raw) {
         const workspaceRoot = this.getVaultPath();
@@ -756,8 +763,9 @@ export class KernelService {
     let aiProvider: AiProvider | null = null;
     try {
       const ctx = this.getContext();
-      if (ctx?.aiProvider && typeof (ctx.aiProvider as { generate?: unknown }).generate === "function") {
-        aiProvider = ctx.aiProvider as unknown as AiProvider;
+      const bound = ctx?.aiProvider;
+      if (bound && typeof bound.generate === "function") {
+        aiProvider = { generate: (prompt, context) => bound.generate(prompt, context) };
       }
     } catch {
       // Context creation failed — fall through to manual creation

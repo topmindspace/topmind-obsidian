@@ -487,54 +487,62 @@ System prompt 跟随 UI locale：
 ## 11. 视觉风格
 
 - 使用 Obsidian CSS 变量（`--text-normal`, `--background-primary`, `--interactive-accent` 等）
-- 卡片样式：圆角 + 微阴影 + hover 高亮
+- **单一 Design Token 面**：`styles.css` 顶部 token 块作用于全部 `tm-*` 表面（workbench · sidebar · memory · capture）
+- 卡片样式：圆角 10px + 发丝描边 + 微阴影 + hover 高亮
 - 输入栏：单行高度起，自适应增长
 - AI 建议卡片：左侧带彩色边条（蓝=create_topic/inbox_organize/ai_summary/stream_digest，橙=stale_topic/catch_all，绿=promote_memory/open_profile）。**不用 purple**（Desktop 禁止紫作产品 AI 身份）。`promote_memory` 的 `payload.action` 为 `append_profile` / `update_profile` / `retire_profile`（不是只追加）；聊天注入画像走 Kernel `readProfileActiveBody`（历史段折叠为计数，不 dump 全文）。Inbox 超期走 `inbox_organize` 归位（移入/新建专题），不再发 `inbox_review` 归档卡。
 - AI 对话：用户消息右对齐（强调色背景），AI 消息左对齐（卡片背景）
 - 全中文 UI（可切英文）
-- **与 Desktop 的有意差异**：主 CTA 用宿主 `--interactive-accent`（非 ink）；图标库 Lucide（非 Remix，语义映射见 Desktop DESIGN §0.0.2）；圆角 4/6/8/10；信息流默认宽 `56rem`（对齐 Desktop feed）
+- **与 Desktop 的有意差异**：主 CTA 用宿主 `--interactive-accent`（非 ink）；图标库 Lucide（非 Remix，语义映射见 Desktop DESIGN §0.0.2）；圆角 4/6/10；信息流默认宽 `56rem`（对齐 Desktop feed）
 
-### 11.1 按钮系统规范
+### 11.0 Design Token 与几何（唯一真源 `styles.css`）
 
-统一按钮层级：primary（强调填充）/ secondary（边框轮廓）/ icon-only（纯图标）/ labeled（图标+文本）/ mini（微型）
+| 令牌 | 值 | 用途 |
+|------|----|------|
+| `--tm-hit` / `--tm-hit-sm` / `--tm-hit-lg` / `--tm-hit-xs` | 32 / 28 / 36 / 24 px | 标准控件 / 区块栏 / 主 CTA / chip·mini |
+| `--tm-icon` / `--tm-icon-lg` / `--tm-icon-xs` | 16 / 18 / 14 px | 控件图标 / 底部主操作 / 内联 |
+| `--tm-radius-sm` / `--tm-radius-ctl` / `--tm-radius-card` / `--tm-radius-pill` | 4 / 6 / 10 / 999 px | mini / 控件 / 卡片 / 胶囊 |
+| `--tm-type-display/title/body/label/meta` | 派生自 `--font-ui-*` | 字号阶梯（禁止硬编码 px） |
+| `--tm-gap-xs/sm/md/lg` | 4 / 6 / 10 / 14 px | 间距节奏 |
 
-| 按钮类型 | 用途 | 尺寸 | 说明 |
-|----------|------|------|------|
-| Primary | 提交、确认、初始化 | 32px 高 | 强调色填充，白字 |
-| Secondary | 整理、刷新等 | 32px 高 | 边框轮廓，hover 变强调色 |
-| Labeled | 工具栏、侧边栏头部 | 30-32px 高 | icon + 文本标签，窄屏自动隐藏文本 |
-| Icon-only | 卡片操作、对话按钮 | 26-34px 方 | 纯图标 + tooltip，紧凑区域 |
-| Mini | 卡片内联操作 | 26px 方 | hover 显示，半透明 |
+**Chrome 对齐**：`.tm-toolbar` · `.tm-section-header` · `.tm-sidebar-header` · `.tm-feed-chrome` · `.tm-suggestion-refresh-bar` · `.tm-todo-open-file-bar` 共用 `min-height: var(--tm-hit)` 与 `gap: var(--tm-gap-sm)`，多层标题栏不再错位。
 
-**关键原则**：工具栏和侧边栏头部使用 icon + 文本标签按钮，窄屏（600px 以下）自动隐藏文本只显示图标。卡片操作和对话按钮使用 icon-only + tooltip。建议操作（确认/忽略）保留文字标签。底部操作默认显示文本标签，可切换为纯图标。
+### 11.1 按钮系统规范（互斥角色）
+
+| 角色 | 类名 | 用途 | 几何 |
+|------|------|------|------|
+| **Primary** | `tm-submit-btn` / `tm-btn-primary` / `tm-btn-init-workspace` / `tm-btn-confirm` | 提交、确认执行、初始化 — **每区仅一个** | h36（compose 内 h32）· accent 填充 |
+| **Secondary** | `tm-btn-secondary` / `tm-btn-open` | 整理、全部确认、预览/拒绝、弹窗次操作 | h32（`tm-btn-sm` h28）· 描边 |
+| **Ghost tool** | `tm-btn-ghost` / `tm-toolbar-btn` / `tm-sidebar-icon-btn` | 工具栏/卡片工具，**icon-first** | 方形 h32/h28 · 透明底 |
+| **Labeled ghost** | `tm-toolbar-btn-labeled` / `tm-sidebar-btn-labeled` | 宽容器可选文字；侧栏头 CSS 藏字 | width:auto · 窄容器藏 label |
+| **Chip / Segment** | `tm-feed-layout-btn`（外层 `tm-feed-layout-toggle`） | 列表/卡片、记忆分层筛选 | h24 · 分段控件 |
+| **Mini** | `tm-btn-mini` / `tm-card-action-btn` | 卡片内联操作 | 24 / 28 方 · tooltip |
+
+**关键原则**：
+1. 工具类一律 icon + `title`/`aria-label`；文字只留给「会改变内容/状态」的命令（记下 · 确认执行 · 全部确认 · 整理）。
+2. 同一 chrome 行内禁止混用多种高度；区块工具统一 `tm-btn-sm`。
+3. 底部操作固定 **3 格**（记一下 · 整理 · AI 菜单），等宽 `tm-sidebar-action-label`。
+4. 建议操作栏 `flex-wrap: nowrap`，避免「按钮挤成多行」。
 
 ### 11.2 图标尺寸规范
 
-所有 Lucide 图标（via `setIcon`）使用统一的 SVG 尺寸：
-
-| 上下文 | 尺寸 | 说明 |
+| 上下文 | 尺寸 | 令牌 |
 |--------|------|------|
-| 工具栏按钮 | 18px | 主操作图标（icon + 文本标签） |
-| 侧边栏头部按钮 | 16px | 紧凑型图标（icon + 文本标签） |
-| 标签栏图标 | 16px | 标签指示图标 |
-| 建议卡片图标 | 18px | 建议类型图标 |
-| 卡片操作按钮 | 16px | icon-only + tooltip |
-| 底部操作按钮 | 18px | 快捷操作图标（默认带文本） |
-| 对话消息按钮 | 16px | icon-only + tooltip（复制/重新生成） |
-| 弹窗标题图标 | 20px | 弹窗标识图标 |
-| 对话空状态图标 | 32px | 装饰性大图标 |
-| 空状态图标 | 28px | 装饰性中图标 |
-| 内联图标 | 14px | 时间戳、待办日期等内联图标 |
+| 控件 / 工具栏 / 标签 / 卡片操作 | 16px | `--tm-icon` |
+| 底部主操作 | 18px | `--tm-icon-lg` |
+| 内联（时间戳、mini） | 14px | `--tm-icon-xs` |
+| 弹窗标题 | 20px | 仅 modal title |
+| 空状态装饰 | 28px / 18px | empty / chat empty |
 
 ### 11.3 加载状态规范
 
-所有加载状态使用 CSS spinner（`tm-btn-spinner`），不使用 "..." 文本：
+所有加载状态使用 CSS spinner，不使用 "..." 文本：
 
 | 场景 | Spinner 类型 | 说明 |
 |------|-------------|------|
-| 主按钮（提交/确认） | `tm-btn-spinner` | 白色 spinner（强调色背景上） |
-| 次要按钮（整理） | `tm-btn-spinner tm-btn-spinner-dark` | 深色 spinner（透明背景上） |
-| 区域加载 | `tm-loading-spinner` | 强调色 border spinner |
+| 主按钮（提交/确认） | `tm-btn-spinner` | accent 底上的浅色 spinner |
+| 次要按钮 | `tm-btn-spinning` / `tm-btn-spinner-dark` | 按钮自旋或深色 spinner |
+| 区域加载 | `tm-loading-spinner` | accent border spinner |
 | 内联进度 | `tm-loading-spinner-sm` | 小尺寸 spinner |
 
 ### 11.4 字体规范
@@ -543,10 +551,10 @@ System prompt 跟随 UI locale：
 
 | 变量 | 用途 |
 |------|------|
-| `--tm-type-display` ← `--font-ui-medium` | Hero 标题 |
-| `--tm-type-title` ← `--font-ui-medium` | 区块标题、compose 正文 |
-| `--tm-type-body` ← `--font-ui-small` | 卡片正文、按钮 |
-| `--tm-type-label` ← `--font-ui-small` | 标签、控件文字 |
+| `--tm-type-display` ← `--font-ui-medium * 1.35` | Hero 标题 |
+| `--tm-type-title` ← `--font-ui-medium` | 区块标题、空状态标题 |
+| `--tm-type-body` ← `--font-ui-small` | 卡片正文、列表正文 |
+| `--tm-type-label` ← `--font-ui-small` | 按钮、标签、控件文字 |
 | `--tm-type-meta` ← `--font-ui-smaller` | 时间戳、徽章、辅助 |
 
 ---

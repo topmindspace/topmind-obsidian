@@ -8,16 +8,12 @@
 // — wrong shapes here hide real call bugs from tsc.
 
 import type { AiProvider } from "./ai-provider";
-import { getVaultBasePath, getEngineRoot } from "./vault-bridge";
+import { getVaultBasePath, getEngineRoot } from "./vault-bridge.ts";
 
 // Import Kernel API — esbuild bundles this from ../../lib/kernel-api.mjs
-// We use @ts-expect-error because kernel-api.mjs is a plain ESM .mjs file
-// without .d.ts type declarations. esbuild resolves and bundles the actual
-// implementation at build time. The KernelApi interface below manually declares
-// the type surface and must be kept in sync with lib/kernel-api.mjs exports.
-// Future improvement: generate .d.ts from lib/ JSDoc to eliminate this escape hatch.
+// (flat named exports). The ambient declaration types the namespace as KernelApi
+// and must stay in sync with lib/kernel-api.mjs exports.
 import * as kernelApiNs from "#kernel/kernel-api.mjs";
-const kernelApi = kernelApiNs as unknown as Record<string, unknown>;
 
 // ── Kernel result shapes (aligned with lib/) ───────────────────────────────
 
@@ -68,7 +64,7 @@ export interface KernelContext {
   workspaceRoot: string;
   engineRoot?: string;
   contract: unknown;
-  aiProvider: unknown;
+  aiProvider: { generate: (prompt: string, context?: unknown) => Promise<string> } | null;
   localeOverride?: string | null;
   generateSuggestions(opts?: Record<string, unknown>): unknown[] | Promise<unknown[]>;
   applySuggestion(
@@ -406,7 +402,7 @@ export interface KernelApi {
   }): KernelContext;
 }
 
-const api = kernelApi as unknown as KernelApi;
+const api: KernelApi = kernelApiNs;
 
 export type KernelApiType = KernelApi;
 

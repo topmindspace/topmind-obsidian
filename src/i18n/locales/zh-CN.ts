@@ -208,6 +208,7 @@ export const zhCN = {
   // ── AI settings ──
   settings_ai_status: "AI 状态",
   settings_ai_status_desc: "显示当前 AI 配置状态",
+  settings_ai_board: "AI 副驾",
   settings_ai_ready: "已配置 — AI 功能可用",
   settings_ai_not_configured: "未配置 — 基础功能仍可使用",
   settings_ai_preference: "默认服务商",
@@ -236,7 +237,7 @@ export const zhCN = {
   settings_ai_model_field: "模型",
   settings_ai_model_field_desc: "使用的模型名称",
   settings_writeback_mode: "保存模式",
-  settings_writeback_mode_desc: "「自动保存」或「保存前问我」",
+  settings_writeback_mode_desc: "内容直接保存；仅删除/归档前确认",
   settings_max_agent_steps: "工具步数上限",
   settings_max_agent_steps_desc: "单次对话 agent 工具→推理循环次数（3–80，默认 32）；步数用尽可自动续跑最多 2 次",
   settings_auto_suggest: "自动准备 AI 建议",
@@ -324,7 +325,7 @@ export const zhCN = {
 
   // ── Writeback modes (白话) ──
   writeback_auto: "自动保存",
-  writeback_confirm: "保存前问我",
+  writeback_confirm: "删除/归档前问我",
 
   // ── Timeline order labels ──
   timeline_desc: "↓ 最新在前",
@@ -406,6 +407,8 @@ export const zhCN = {
   feed_layout_toggle: "信息流展示",
   feed_layout_list: "列表",
   feed_layout_card: "卡片",
+  settings_feed_layout: "信息流展示",
+  settings_feed_layout_desc: "动态列表布局：列表或卡片",
   memory_browse_empty: "还没有可浏览的记忆",
   memory_browse_empty_hint: "在动态里记下，确认建议后会出现在这里",
   memory_kind_profile: "画像",

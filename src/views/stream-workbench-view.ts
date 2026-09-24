@@ -182,19 +182,19 @@ export class StreamWorkbenchView extends ItemView {
     this.urlHintEl.createSpan({ text: t("compose_url_hint") });
 
     const composeFoot = compose.createDiv({ cls: "tm-wb-compose-foot" });
-    const hint = composeFoot.createSpan({
+    composeFoot.createSpan({
       cls: "tm-wb-compose-hint",
       text: `${t("quick_capture_hint_enter_note")} · ${t("quick_capture_hint_shift_enter")}`,
     });
 
     const composeActions = composeFoot.createDiv({ cls: "tm-wb-compose-actions" });
     const polishBtn = composeActions.createEl("button", {
-      cls: "tm-btn-ghost",
+      cls: "tm-btn-polish",
       attr: { "aria-label": t("stream_btn_polish"), title: t("stream_btn_polish") },
     });
     setIcon(polishBtn, "sparkles");
     polishBtn.createSpan({ text: t("stream_btn_polish"), cls: "tm-btn-ghost-label" });
-    polishBtn.addEventListener("click", async () => {
+    polishBtn.addEventListener("click", () => { void (async () => {
       const val = this.inputEl.value.trim();
       if (!val) return;
       polishBtn.addClass("tm-btn-spinning");
@@ -208,7 +208,7 @@ export class StreamWorkbenchView extends ItemView {
       } finally {
         polishBtn.removeClass("tm-btn-spinning");
       }
-    });
+    })(); });
 
     this.submitBtn = composeActions.createEl("button", {
       text: t("quick_capture_log_it"),
@@ -240,7 +240,9 @@ export class StreamWorkbenchView extends ItemView {
     this.periodSelect.setAttribute("aria-label", t("stream_switch_period"));
     this.periodSelect.addEventListener("change", () => this.refreshStream());
 
-    const refreshStreamBtn = streamControls.createEl("button", { cls: "tm-btn-ghost tm-btn-icon" });
+    const refreshStreamBtn = streamControls.createEl("button", {
+      cls: "tm-btn-ghost tm-btn-icon tm-btn-sm",
+    });
     setIcon(refreshStreamBtn, "refresh-cw");
     refreshStreamBtn.setAttribute("aria-label", t("toolbar_btn_refresh"));
     refreshStreamBtn.setAttribute("title", t("toolbar_btn_refresh"));
@@ -249,20 +251,18 @@ export class StreamWorkbenchView extends ItemView {
       this.refreshStream().finally(() => refreshStreamBtn.removeClass("tm-btn-spinning"));
     });
 
-    this.organizeBtn = streamControls.createEl("button", { cls: "tm-btn-ghost tm-btn-icon" });
+    this.organizeBtn = streamControls.createEl("button", {
+      cls: "tm-btn-ghost tm-btn-icon tm-btn-sm",
+    });
     setIcon(this.organizeBtn, "wand-2");
     this.organizeBtn.setAttribute("aria-label", t("stream_organize"));
     this.organizeBtn.setAttribute("title", t("stream_organize"));
-    this.organizeBtn.addEventListener("click", () => this.organizePeriod());
+    this.organizeBtn.addEventListener("click", () => {
+      void this.organizePeriod();
+    });
 
     this.renderLayoutToggle(streamControls);
-
-    const memoryBtn = streamControls.createEl("button", { cls: "tm-btn-ghost tm-btn-icon" });
-    setIcon(memoryBtn, "user");
-    memoryBtn.setAttribute("aria-label", t("toolbar_btn_profile"));
-    memoryBtn.setAttribute("title", t("toolbar_btn_profile"));
-    memoryBtn.setAttribute("data-stream-open-memory", "true");
-    memoryBtn.addEventListener("click", () => void this.plugin.openMemoryBrowse());
+    // 我的情况 lives in the page toolbar (single entry) — not repeated here.
 
     this.streamContainer = section.createDiv({ cls: "tm-stream-container tm-wb-timeline" });
     this.applyFeedLayout();
@@ -292,27 +292,39 @@ export class StreamWorkbenchView extends ItemView {
     this.taskPanelEl = container.createDiv({ cls: "tm-task-panel" });
     this.taskPanelEl.hidden = true;
 
+    // IA: stream chrome owns view navigation only. AI status / model live in
+    // the sidebar header + chat switcher — never repeat them here.
+    // 我的情况 lives here as the single entry (not also in the section bar).
     const actionsDiv = toolbar.createDiv({ cls: "tm-toolbar-actions" });
-    const sidebarBtn = actionsDiv.createEl("button", { cls: "tm-btn-ghost tm-btn-icon" });
+
+    const sidebarBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn" });
     setIcon(sidebarBtn, "panel-right");
-    sidebarBtn.createSpan({ text: t("toolbar_btn_sidebar"), cls: "tm-toolbar-btn-label" });
     sidebarBtn.setAttribute("aria-label", t("sidebar_open_sidebar"));
     sidebarBtn.setAttribute("title", t("sidebar_open_sidebar"));
-    sidebarBtn.addEventListener("click", () => this.openSidebar());
+    sidebarBtn.addEventListener("click", () => {
+      void this.openSidebar();
+    });
 
-    const settingsBtn = actionsDiv.createEl("button", { cls: "tm-btn-ghost tm-btn-icon" });
+    const settingsBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn" });
     setIcon(settingsBtn, "settings");
-    settingsBtn.createSpan({ text: t("toolbar_btn_settings"), cls: "tm-toolbar-btn-label" });
     settingsBtn.setAttribute("aria-label", t("sidebar_open_settings"));
     settingsBtn.setAttribute("title", t("sidebar_open_settings"));
     settingsBtn.addEventListener("click", () => this.openSettings());
 
-    const newNoteBtn = actionsDiv.createEl("button", { cls: "tm-btn-ghost tm-btn-icon" });
+    const newNoteBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn" });
     setIcon(newNoteBtn, "file-plus");
-    newNoteBtn.createSpan({ text: t("toolbar_btn_new_note"), cls: "tm-toolbar-btn-label" });
     newNoteBtn.setAttribute("aria-label", t("toolbar_btn_new_note"));
     newNoteBtn.setAttribute("title", t("toolbar_btn_new_note"));
-    newNoteBtn.addEventListener("click", () => this.createNewNote());
+    newNoteBtn.addEventListener("click", () => {
+      void this.createNewNote();
+    });
+
+    const memoryBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn" });
+    setIcon(memoryBtn, "user");
+    memoryBtn.setAttribute("aria-label", t("toolbar_btn_profile"));
+    memoryBtn.setAttribute("title", t("toolbar_btn_profile"));
+    memoryBtn.setAttribute("data-stream-open-memory", "true");
+    memoryBtn.addEventListener("click", () => void this.plugin.openMemoryBrowse());
   }
 
   private currentFeedLayout(): "list" | "card" {
@@ -334,12 +346,12 @@ export class StreamWorkbenchView extends ItemView {
     const current = this.currentFeedLayout();
     for (const id of ["list", "card"] as const) {
       const btn = wrap.createEl("button", {
-        cls: "tm-btn-secondary tm-feed-layout-btn",
+        cls: "tm-feed-layout-btn",
         text: id === "list" ? t("feed_layout_list") : t("feed_layout_card"),
       });
       btn.setAttr("data-layout-option", id);
       if (current === id) btn.setAttr("data-active", "true");
-      btn.addEventListener("click", async () => {
+      btn.addEventListener("click", () => { void (async () => {
         this.plugin.settings.feedLayout = id;
         await this.plugin.saveSettings();
         this.applyFeedLayout();
@@ -350,7 +362,7 @@ export class StreamWorkbenchView extends ItemView {
             (b as HTMLElement).removeAttribute("data-active");
           }
         }
-      });
+      })(); });
     }
   }
 
@@ -450,7 +462,7 @@ export class StreamWorkbenchView extends ItemView {
   private async openSidebar(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_SIDEBAR_DOCK);
     if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
+      void this.app.workspace.revealLeaf(existing[0]);
       return;
     }
     const leaf = this.app.workspace.getRightLeaf(false);
@@ -624,6 +636,9 @@ export class StreamWorkbenchView extends ItemView {
 
   private renderWorkspaceInit(container: HTMLElement): void {
     const emptyDiv = container.createDiv({ cls: "tm-empty-state tm-workspace-init" });
+    const iconWrap = emptyDiv.createDiv({ cls: "tm-empty-icon" });
+    setIcon(iconWrap, "layout-template");
+    emptyDiv.createDiv({ text: t("init_workspace"), cls: "tm-empty-title" });
     emptyDiv.createDiv({ text: t("init_workspace_desc"), cls: "tm-init-desc" });
     const initBtn = emptyDiv.createEl("button", {
       cls: "tm-btn-init-workspace",
@@ -634,7 +649,7 @@ export class StreamWorkbenchView extends ItemView {
       const result = this.plugin.kernelService.initWorkspace("stream");
       if (result.ok) {
         new Notice(t("init_workspace_success"));
-        this.refreshAll();
+        void this.refreshAll();
       } else {
         new Notice(`${t("init_workspace_failed")}: ${result.error || ""}`);
       }
@@ -754,8 +769,10 @@ export class StreamWorkbenchView extends ItemView {
     copyBtn.addEventListener("click", (e: MouseEvent) => {
       e.stopPropagation();
       const copyText = prepareStreamEntryTextForDisplay(entry.text);
-      navigator.clipboard.writeText(copyText).then(() => {
+      void navigator.clipboard.writeText(copyText).then(() => {
         new Notice(t("stream_card_copied"));
+      }).catch(() => {
+        new Notice(t("error"));
       });
     });
 
@@ -797,7 +814,7 @@ export class StreamWorkbenchView extends ItemView {
 
       const appendActions = appendBox.createDiv({ cls: "tm-append-actions" });
       const cancelBtn = appendActions.createEl("button", {
-        cls: "tm-btn-ghost tm-btn-sm",
+        cls: "tm-btn-secondary tm-btn-sm",
         text: t("stream_append_cancel"),
       });
       cancelBtn.addEventListener("click", (ce: MouseEvent) => {
@@ -958,7 +975,7 @@ export class StreamWorkbenchView extends ItemView {
     });
     const openBtn = strip.createEl("button", {
       text: t("suggestions_open_confirm"),
-      cls: "tm-btn-ghost tm-btn-sm tm-suggest-entry-open",
+      cls: "tm-btn-secondary tm-btn-sm tm-suggest-entry-open",
     });
     openBtn.setAttribute("aria-label", t("suggestions_open_confirm"));
     openBtn.addEventListener("click", () => void this.openSidebarSuggestions());

@@ -8,6 +8,44 @@ import type { StreamEntry, SuggestionCard, SuggestionKind, TodoItem, ImpactLevel
 /** Max capture body length (guards pathological filenames / giant pastes). */
 export const MAX_CAPTURE_LEN = 10_000;
 
+/** Narrow `unknown` to a plain object record (rejects arrays and null). */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Narrow `unknown` to `unknown[]`.
+ * Bare `Array.isArray` narrows to `any[]` and taints callers as `any`.
+ */
+export function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
+/** `JSON.parse` result as `unknown` (never `any`). */
+export function parseJsonUnknown(text: string): unknown {
+  const value: unknown = JSON.parse(text);
+  return value;
+}
+
+const SUGGESTION_KINDS: ReadonlySet<string> = new Set([
+  "create_topic",
+  "promote_memory",
+  "ai_summary",
+  "inbox_organize",
+  "stale_topic",
+  "catch_all",
+  "stream_digest",
+  "open_profile",
+]);
+
+export function isSuggestionKind(value: unknown): value is SuggestionKind {
+  return typeof value === "string" && SUGGESTION_KINDS.has(value);
+}
+
+export function isImpactLevel(value: unknown): value is ImpactLevel {
+  return value === "high" || value === "medium" || value === "low";
+}
+
 /**
  * Extract #tags from text. Supports Chinese, alphanumeric, and hyphenated tags.
  *
@@ -59,10 +97,10 @@ export function mapKernelTodoItem(item: Record<string, unknown>): TodoItem {
     id: String(item.id || ""),
     text: String(item.text || ""),
     done: Boolean(item.done),
-    dueDate: item.dueDate as string | undefined,
-    createdAt: item.createdAt as string | undefined,
-    completedAt: item.completedAt as string | undefined,
-    source: item.source as string | undefined,
+    dueDate: typeof item.dueDate === "string" ? item.dueDate : undefined,
+    createdAt: typeof item.createdAt === "string" ? item.createdAt : undefined,
+    completedAt: typeof item.completedAt === "string" ? item.completedAt : undefined,
+    source: typeof item.source === "string" ? item.source : undefined,
   };
 }
 
@@ -70,9 +108,9 @@ export function mapKernelTodoItem(item: Record<string, unknown>): TodoItem {
  * Normalize Kernel generateSuggestions return: direct array or legacy wrapper.
  */
 export function normalizeSuggestionList(raw: unknown): Record<string, unknown>[] {
-  if (Array.isArray(raw)) return raw as Record<string, unknown>[];
-  if (raw && typeof raw === "object" && Array.isArray((raw as { suggestions?: unknown[] }).suggestions)) {
-    return (raw as { suggestions: Record<string, unknown>[] }).suggestions;
+  if (isUnknownArray(raw)) return raw.filter(isRecord);
+  if (isRecord(raw) && isUnknownArray(raw.suggestions)) {
+    return raw.suggestions.filter(isRecord);
   }
   return [];
 }
@@ -83,12 +121,12 @@ export function normalizeSuggestionList(raw: unknown): Record<string, unknown>[]
 export function mapKernelSuggestion(s: Record<string, unknown>): SuggestionCard {
   return {
     id: String(s.id || ""),
-    kind: (s.kind as SuggestionKind) || "promote_memory",
+    kind: isSuggestionKind(s.kind) ? s.kind : "promote_memory",
     title: String(s.title || ""),
     summary: String(s.summary || ""),
-    impact: (s.impact as ImpactLevel) || "low",
-    payload: s.payload as Record<string, unknown> | undefined,
-    targetPath: s.targetPath as string | undefined,
+    impact: isImpactLevel(s.impact) ? s.impact : "low",
+    payload: isRecord(s.payload) ? s.payload : undefined,
+    targetPath: typeof s.targetPath === "string" ? s.targetPath : undefined,
   };
 }
 
@@ -104,7 +142,11 @@ export function mergeSoftSuggestionSession(
 ): SuggestionCard[] {
   const prev = Array.isArray(previous) ? previous : [];
   const incoming = Array.isArray(next) ? next : [];
-  const nextIds = new Set(incoming.map((s) => s?.id).filter(Boolean) as string[]);
+  const nextIds = new Set(
+    incoming
+      .map((s) => s?.id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
   const kept = prev.filter((s) => s?.id && !nextIds.has(s.id) && !dropped.has(s.id));
   return [...incoming.filter((s) => s?.id && !dropped.has(s.id)), ...kept];
 }
@@ -199,7 +241,7 @@ export function mapApplySuggestionResult(
   if (result == null || typeof result !== "object") {
     return { ok: false, error: "empty-result" };
   }
-  const r = result as Record<string, unknown>;
+  const r: Record<string, unknown> = isRecord(result) ? result : {};
   const operation = String(r.operation || "");
   const note = String(r.note || "");
   const targetPath = r.targetPath != null
@@ -231,9 +273,7 @@ export function mapApplySuggestionResult(
   }
 
   if (r.ok === true || r.wroteFiles === true) {
-    const payload = suggestion && typeof suggestion === "object"
-      ? (suggestion as { payload?: Record<string, unknown> }).payload
-      : undefined;
+    const payload = suggestion.payload;
     const digest = typeof payload?.digestPath === "string" ? payload.digestPath.replace(/\\/g, "/") : "";
     const safe = (p?: string) => {
       if (!p) return undefined;
@@ -596,7 +636,7 @@ export function openExternalUrl(url: string): void {
   if (!/^https?:\/\//iu.test(trimmed)) return;
   try {
     // Electron is external at bundle time (esbuild platform:node).
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- Electron shell is external at bundle time (esbuild platform:node), so require is the only way to reach it from CJS output.
     const electron = require("electron") as {
       shell?: { openExternal?: (u: string) => void };
     };

@@ -25,8 +25,9 @@ const root = path.resolve(__dirname);
 const outDir = path.join(root, "dist");
 
 /**
- * Resolve the topmind engine (Kernel lib/ + templates/) after the three-repo split.
- * Order: TOPMIND_SRC env → sibling ../topmind → ./.topmind-src (CI checkout).
+ * Resolve the topmind engine (Kernel lib/ + templates/).
+ * Order: TOPMIND_SRC env → sibling ../topmind → ./.topmind-src (CI) →
+ * vendored ./lib (community clean-build / offline).
  */
 function resolveEngineRoot() {
   const candidates = [
@@ -35,23 +36,27 @@ function resolveEngineRoot() {
     path.resolve(root, ".topmind-src"),
   ].filter(Boolean);
   for (const dir of candidates) {
-    if (existsSync(path.join(dir, "lib", "kernel-api.mjs"))) {
-      return dir;
+    if (dir && existsSync(path.join(dir, "lib", "kernel-api.mjs"))) {
+      return { engineRoot: path.resolve(dir), source: "live" };
     }
   }
+  if (existsSync(path.join(root, "lib", "kernel-api.mjs"))) {
+    return { engineRoot: root, source: "vendored" };
+  }
   console.error(
-    "[topmind-obsidian] Kernel source not found.\n" +
+    "[topmind-obsidian] Kernel source not found and lib/ is not vendored.\n" +
       "  Set TOPMIND_SRC=/path/to/topmind  (repo containing lib/kernel-api.mjs)\n" +
       "  or clone https://github.com/topmindspace/topmind as a sibling directory ../topmind\n" +
-      "  or place a checkout at ./.topmind-src (CI).",
+      "  or place a checkout at ./.topmind-src (CI)\n" +
+      "  or commit a snapshot of lib/ (required for community clean-build).",
   );
   process.exit(1);
 }
 
-const engineRoot = path.resolve(resolveEngineRoot());
+const { engineRoot, source: engineSource } = resolveEngineRoot();
 const libDir = path.resolve(engineRoot, "lib");
 const templatesDir = path.join(engineRoot, "templates");
-console.log(`[topmind-obsidian] engine: ${engineRoot}`);
+console.log(`[topmind-obsidian] engine: ${engineRoot} (${engineSource})`);
 
 // ── esbuild plugin: resolve monorepo-style lib/*.mjs imports to the engine ──
 // Source uses stable relative paths like ../../../lib/kernel-api.mjs so tsc

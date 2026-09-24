@@ -6,9 +6,9 @@
 // cache-honesty live in lib/model-catalog.mjs — the same unit Desktop uses.
 
 import { requestUrl } from "obsidian";
-import { AI_PROVIDER_PRESETS } from "../constants";
+import { AI_PROVIDER_PRESETS } from "../constants.ts";
 import type { AiManualKeys } from "../types";
-import { getProviderKey } from "../types";
+import { getProviderKey } from "../types.ts";
 import {
   parseModelsDevCatalog,
   parseOfficialList,
@@ -111,7 +111,8 @@ async function httpGetJson(
   });
   const res = await Promise.race([requestPromise, timeoutPromise]);
   if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
-  return res.json;
+  const json: unknown = res.json;
+  return json;
 }
 
 async function fetchCommunityCatalog(force: boolean): Promise<{ ok: boolean; catalog: ProviderCatalogEntry[]; error?: string }> {

@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import type { KernelApi } from "../bridge/kernel-loader.ts";
-import { stripFrontmatter, sanitizeFileName } from "../utils.ts";
+import { stripFrontmatter, sanitizeFileName, isRecord, isUnknownArray } from "../utils.ts";
 import { stashPendingWrite } from "./pending-writes.ts";
 import { sanitizeAiWriteBody } from "#kernel/ai-content-sanitize.mjs";
 
@@ -133,11 +133,13 @@ function resolveArchiveDir(kernel: KernelApi, workspaceRoot: string, engineRoot?
 
 function walkFiles(root: string, opts: { maxFiles?: number; skipDirs?: Set<string> } = {}): string[] {
   const maxFiles = opts.maxFiles || 4000;
-  const skip = opts.skipDirs || new Set([".topmind", ".git", "node_modules", ".obsidian"]); // .obsidian is last-resort fallback
+  const skip =
+    opts.skipDirs || new Set([".topmind", ".git", "node_modules", ".obsidian"]);
   const out: string[] = [];
   const stack = [root];
   while (stack.length && out.length < maxFiles) {
-    const dir = stack.pop() as string;
+    const dir = stack.pop();
+    if (dir === undefined) break;
     let entries: string[];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true }).map((e) => e.name);
@@ -403,9 +405,9 @@ export function listTodos(ctx: AgentToolContext, opts: { completed?: boolean; li
     // Kernel readTodoList returns `{ items, rawContent, relPath, … } | null`
     // (Desktop pathOps.listTodos parity) — never a bare array.
     const parsed = ctx.kernel.readTodoList(ctx.workspaceRoot);
-    const raw = Array.isArray(parsed?.items) ? parsed.items : [];
+    const raw = isUnknownArray(parsed?.items) ? parsed.items.filter(isRecord) : [];
     const limit = Math.max(1, Math.min(100, Math.floor(Number(opts.limit) || 50)));
-    const all = (raw as Record<string, unknown>[]).map((t) => ({
+    const all = raw.map((t) => ({
       id: t.id,
       text: t.text,
       done: Boolean(t.done),
@@ -570,7 +572,7 @@ export function toggleTodo(ctx: AgentToolContext, opts: { id?: string; text?: st
     ctx.kernel.ensureTodoFile?.(ctx.workspaceRoot);
     const contract = ctx.kernel.loadContract(ctx.workspaceRoot);
     const parsed = ctx.kernel.readTodoList(ctx.workspaceRoot);
-    const list = Array.isArray(parsed?.items) ? (parsed.items as Record<string, unknown>[]) : [];
+    const list = isUnknownArray(parsed?.items) ? parsed.items.filter(isRecord) : [];
     let id = opts.id ? String(opts.id) : "";
     if (!id && opts.text) {
       const needle = String(opts.text).trim().toLowerCase();

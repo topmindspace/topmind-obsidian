@@ -1,9 +1,9 @@
 {
   "id": "topmind-stream",
   "name": "Topmind Stream",
-  "version": "4.15.0",
+  "version": "4.16.0",
   "minAppVersion": "1.13.0",
-  "description": "Personal stream + AI co-pilot \u2014 jot, confirm suggestions, files stay yours.",
+  "description": "Personal stream + AI co-pilot — jot, confirm suggestions, files stay yours.",
   "author": "TopMindSpace",
   "authorUrl": "https://github.com/topmindspace",
   "fundingUrl": "https://github.com/topmindspace/topmind",

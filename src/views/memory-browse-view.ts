@@ -136,12 +136,16 @@ export class MemoryBrowseView extends ItemView {
     contentEl.setAttr("data-memory-feed", "true");
 
     const header = contentEl.createDiv({ cls: "tm-section-header" });
-    header.createSpan({ text: t("toolbar_btn_profile"), cls: "tm-section-title" });
+    const titleWrap = header.createDiv({ cls: "tm-section-title" });
+    titleWrap.createSpan({ text: t("toolbar_btn_profile"), cls: "tm-section-title-text" });
     const controls = header.createDiv({ cls: "tm-section-controls" });
-    const organizeBtn = controls.createEl("button", { cls: "tm-btn-secondary" });
+    const organizeBtn = controls.createEl("button", {
+      cls: "tm-btn-secondary tm-btn-sm",
+    });
     setIcon(organizeBtn, "list-tree");
     organizeBtn.createSpan({ text: t("memory_browse_organize") });
     organizeBtn.setAttribute("aria-label", t("cmd_memory_organize"));
+    organizeBtn.setAttribute("title", t("cmd_memory_organize"));
     organizeBtn.setAttribute("data-memory-organize", "true");
     organizeBtn.addEventListener("click", () => {
       this.plugin.enqueueAiOperation(
@@ -161,7 +165,10 @@ export class MemoryBrowseView extends ItemView {
       ["topic", t("memory_kind_topic")],
       ["history", t("memory_kind_history")],
     ] as const) {
-      const chip = layers.createEl("button", { cls: "tm-btn-secondary tm-feed-layout-btn", text: label });
+      const chip = layers.createEl("button", {
+        cls: "tm-feed-layout-btn",
+        text: label,
+      });
       chip.setAttr("data-memory-layer", id);
       const active = this.layer === id;
       chip.setAttr("aria-pressed", active ? "true" : "false");
@@ -205,16 +212,16 @@ export class MemoryBrowseView extends ItemView {
     const current = this.plugin.settings.feedLayout === "card" ? "card" : "list";
     for (const id of ["list", "card"] as const) {
       const btn = wrap.createEl("button", {
-        cls: "tm-btn-secondary tm-feed-layout-btn",
+        cls: "tm-feed-layout-btn",
         text: id === "list" ? t("feed_layout_list") : t("feed_layout_card"),
       });
       btn.setAttr("data-layout-option", id);
       if (current === id) btn.setAttr("data-active", "true");
-      btn.addEventListener("click", async () => {
+      btn.addEventListener("click", () => { void (async () => {
         this.plugin.settings.feedLayout = id;
         await this.plugin.saveSettings();
         await this.render();
-      });
+      })(); });
     }
   }
 
@@ -231,8 +238,6 @@ export class MemoryBrowseView extends ItemView {
     card.setAttr("data-memory-path", item.path);
     card.setAttr("data-memory-kind", item.kind);
     const header = card.createDiv({ cls: "tm-card-header" });
-    const icon = header.createSpan({ cls: "tm-card-time-icon" });
-    setIcon(icon, item.kind === "periodic" ? "calendar" : item.kind === "topic" ? "folder" : "user");
     const firstLine = (item.body || "").split("\n").find((l) => l.trim()) || "";
     const firstPlain = firstLine
       .replace(/^\s*[-*+]\s+(\[[ xX]\]\s*)?/u, "")
@@ -240,14 +245,14 @@ export class MemoryBrowseView extends ItemView {
       .replace(/^#{1,6}\s+/u, "")
       .trim();
     const titleDupesBody = Boolean(item.title) && firstPlain === item.title;
+    const icon = header.createSpan({ cls: "tm-card-time-icon" });
+    setIcon(icon, item.kind === "periodic" ? "calendar" : item.kind === "topic" ? "folder" : "user");
     if (!titleDupesBody && item.title) {
       header.createSpan({ text: item.title, cls: "tm-card-time" });
     }
-    if (item.heading && item.heading !== item.title) {
-      header.createSpan({ text: item.heading, cls: "tm-card-tag" });
-    }
     header.createSpan({ text: this.kindLabel(item), cls: "tm-card-tag" });
-    const openBtn = header.createEl("button", {
+    const actions = header.createDiv({ cls: "tm-card-actions" });
+    const openBtn = actions.createEl("button", {
       cls: "tm-card-action-btn",
       attr: { "aria-label": t("stream_open_in_editor"), title: t("stream_open_in_editor") },
     });

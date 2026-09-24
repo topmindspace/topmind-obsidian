@@ -21,6 +21,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 concurrency:
   group: obsidian-release
@@ -107,23 +109,24 @@ jobs:
 
           Kernel engine inlined at build time from topmindspace/topmind.
           "
-          # Community plugin required assets at Release root
+          # Community plugin required assets ONLY at Release root.
+          # Obsidian downloads just these three; extra files (zip / SHA256SUMS /
+          # versions.json) are flagged as "Release contains extra unsupported
+          # files" and never fetched. Manual zip stays in Actions artifacts /
+          # local release/ — versions.json stays at repo root for BRAT.
           gh release create "$TAG" $DRAFT \
             --title "v${VER}" \
             --notes "$NOTES" \
             dist/main.js \
             dist/manifest.json \
             dist/styles.css \
-            release/topmind-obsidian-${VER}.zip \
-            release/topmind-obsidian-${VER}.SHA256SUMS \
             || gh release upload "$TAG" \
               dist/main.js dist/manifest.json dist/styles.css \
-              release/topmind-obsidian-${VER}.zip release/topmind-obsidian-${VER}.SHA256SUMS \
               --clobber
 
-          # versions.json for BRAT / community tooling — MERGE, never clobber
-          # history. The community directory walks this map to pick a compatible
-          # plugin build for older Obsidian versions.
+          # versions.json for BRAT / community tooling — MERGE into the repo root
+          # (not a Release asset). The community directory walks this map from the
+          # repository to pick a compatible plugin build for older Obsidian.
           node -e '
             const fs = require("fs");
             const m = require("./manifest.json");
@@ -136,7 +139,14 @@ jobs:
             );
             fs.writeFileSync("versions.json", JSON.stringify(sorted, null, 2) + "\n");
           '
-          gh release upload "$TAG" versions.json --clobber
+
+      # Provenance: let users verify main.js / styles.css were built from this repo.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/main.js
+            dist/styles.css
 
       # Product policy: keep only the newest 2 GitHub Releases.
       - name: Prune old releases (keep 2)

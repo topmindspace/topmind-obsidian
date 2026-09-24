@@ -73,7 +73,8 @@ export function renderSuggestionCard(
     cls: "tm-btn-confirm",
   });
   confirmBtn.setAttribute("aria-label", primaryLabel);
-  confirmBtn.addEventListener("click", async () => {
+  confirmBtn.setAttribute("title", primaryLabel);
+  confirmBtn.addEventListener("click", () => { void (async () => {
     confirmBtn.disabled = true;
     confirmBtn.empty();
     confirmBtn.createSpan({ cls: "tm-btn-spinner" });
@@ -90,7 +91,7 @@ export function renderSuggestionCard(
       confirmBtn.empty();
       confirmBtn.textContent = primaryLabel;
     }
-  });
+  })(); });
 
   // Secondary 打开 — inspect the target before deciding (Desktop parity).
   if (isWrite && openTarget) {
@@ -99,6 +100,7 @@ export function renderSuggestionCard(
       cls: "tm-btn-open",
     });
     openBtn.setAttribute("aria-label", t("suggestions_open"));
+    openBtn.setAttribute("title", t("suggestions_open"));
     openBtn.addEventListener("click", () => {
       void cb.openVaultPath(openTarget);
     });
@@ -109,6 +111,7 @@ export function renderSuggestionCard(
     cls: "tm-btn-dismiss",
   });
   dismissBtn.setAttribute("aria-label", t("suggestions_dismiss"));
+  dismissBtn.setAttribute("title", t("suggestions_dismiss"));
   dismissBtn.addEventListener("click", () => {
     cb.dismiss(sugg);
     card.classList.add("tm-card-removing");

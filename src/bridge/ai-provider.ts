@@ -22,9 +22,9 @@
 
 import { requestUrl } from "obsidian";
 import type { TopmindSettings } from "../types";
-import { AI_PROVIDER_PRESETS } from "../constants";
-import { isTransientError } from "../utils";
-import { getProviderKey, hasConfiguredProvider } from "../types";
+import { AI_PROVIDER_PRESETS } from "../constants.ts";
+import { isTransientError, isRecord, isUnknownArray } from "../utils.ts";
+import { getProviderKey, hasConfiguredProvider } from "../types.ts";
 
 // Re-export for callers that previously imported from this module
 export { isTransientError };
@@ -146,15 +146,17 @@ export function createAiProvider(settings: TopmindSettings): AiProvider | null {
 
   return {
     async generate(prompt: string, context: unknown = {}): Promise<string> {
-      const ctx = (context || {}) as Record<string, unknown>;
-      const operation = (ctx.operation as string) || "generic";
+      const ctx = isRecord(context) ? context : {};
+      const operation = typeof ctx.operation === "string" ? ctx.operation : "generic";
       const explicitMaxTokens = typeof ctx.maxOutputTokens === "number" && ctx.maxOutputTokens > 0
         ? ctx.maxOutputTokens
         : undefined;
       const explicitTemperature = typeof ctx.temperature === "number"
         ? ctx.temperature
         : undefined;
-      const systemPrompt = (ctx.systemPrompt as string) || resolveSystemPrompt(operation);
+      const systemPrompt = typeof ctx.systemPrompt === "string"
+        ? ctx.systemPrompt
+        : resolveSystemPrompt(operation);
       const maxTokens = explicitMaxTokens ?? resolveMaxTokens(operation);
       const temperature = explicitTemperature ?? resolveTemperature(operation, model);
 
@@ -232,8 +234,11 @@ async function callOpenAICompatible(
   }, opts.operation);
 
   // OpenAI-compatible response: { choices: [{ message: { content: "..." } }] }
-  const choices = (data?.choices as Array<{ message?: { content?: string } }> | undefined) || [];
-  const text = choices[0]?.message?.content || "";
+  const choices = isUnknownArray(data.choices) ? data.choices : [];
+  const first = choices[0];
+  const text = isRecord(first) && isRecord(first.message) && typeof first.message.content === "string"
+    ? first.message.content
+    : "";
   if (!text) {
     console.warn(`[topmind] AI ${opts.operation}: empty response from ${model}`);
   }
@@ -275,8 +280,14 @@ async function callAnthropic(
   }, opts.operation);
 
   // Anthropic response: { content: [{ type: "text", text: "..." }] }
-  const contentBlocks = (data?.content as Array<{ type?: string; text?: string }> | undefined) || [];
-  const text = contentBlocks.find((b) => b.type === "text")?.text || contentBlocks[0]?.text || "";
+  const contentBlocks = isUnknownArray(data.content) ? data.content : [];
+  let text = "";
+  for (const block of contentBlocks) {
+    if (isRecord(block) && typeof block.text === "string") {
+      if (block.type === "text" || !text) text = block.text;
+      if (block.type === "text") break;
+    }
+  }
   if (!text) {
     console.warn(`[topmind] AI ${opts.operation}: empty response from ${model}`);
   }
@@ -317,9 +328,15 @@ async function callGoogleGemini(
   }, opts.operation);
 
   // Gemini response: { candidates: [{ content: { parts: [{ text: "..." }] } }] }
-  const candidates = (data?.candidates as Array<{ content?: { parts?: Array<{ text?: string }> } }> | undefined) || [];
-  const parts = candidates[0]?.content?.parts || [];
-  const text = parts.map((p) => p.text || "").join("") || "";
+  const candidates = isUnknownArray(data.candidates) ? data.candidates : [];
+  const firstCandidate = candidates[0];
+  const parts = isRecord(firstCandidate) && isRecord(firstCandidate.content) && isUnknownArray(firstCandidate.content.parts)
+    ? firstCandidate.content.parts
+    : [];
+  let text = "";
+  for (const part of parts) {
+    if (isRecord(part) && typeof part.text === "string") text += part.text;
+  }
   if (!text) {
     console.warn(`[topmind] AI ${opts.operation}: empty response from ${model}`);
   }
@@ -374,7 +391,8 @@ async function fetchWithRetry(
       }
 
       // Success path: no console noise (Obsidian plugin guidelines).
-      return res.json as Record<string, unknown>;
+      const json: unknown = res.json;
+      return isRecord(json) ? json : {};
     } catch (err) {
       // Retry on network errors and timeouts
       if (attempt < MAX_RETRIES && isTransientError(err)) {
