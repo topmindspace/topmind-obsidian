@@ -24,8 +24,11 @@ import { t } from "../i18n";
 import { VIEW_TYPE_STREAM_WORKBENCH, VIEW_TYPE_SIDEBAR_DOCK } from "../constants";
 import type { StreamEntry, SuggestionCard } from "../types";
 import {
+  bindImeEnterGuard,
   extractTags,
+  isImeEnter,
   isLoneUrlCapture,
+  orderStreamEntriesForFeed,
   prepareStreamEntryTextForDisplay,
   splitStreamPreviewParts,
 } from "../utils";
@@ -35,12 +38,6 @@ import { aiTaskManager, type TaskProgress } from "../services/ai-task-manager";
 /** Format entry count for display (uses i18n, kept in view layer). */
 function formatEntryCount(count: number): string {
   return t("stream_entry_count", { count });
-}
-
-/** Day group for rendering. */
-interface DayGroup {
-  label: string;
-  entries: StreamEntry[];
 }
 
 export class StreamWorkbenchView extends ItemView {
@@ -216,8 +213,10 @@ export class StreamWorkbenchView extends ItemView {
     });
     this.submitBtn.setAttribute("aria-label", t("quick_capture_log_it"));
 
+    const composeIme = bindImeEnterGuard(this.inputEl);
     this.inputEl.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter" && !e.shiftKey) {
+        if (isImeEnter(e, composeIme)) return;
         e.preventDefault();
         this.submitInput();
       }
@@ -254,7 +253,7 @@ export class StreamWorkbenchView extends ItemView {
     this.organizeBtn = streamControls.createEl("button", {
       cls: "tm-btn-ghost tm-btn-icon tm-btn-sm",
     });
-    setIcon(this.organizeBtn, "wand-2");
+    setIcon(this.organizeBtn, "arrow-down-wide-narrow");
     this.organizeBtn.setAttribute("aria-label", t("stream_organize"));
     this.organizeBtn.setAttribute("title", t("stream_organize"));
     this.organizeBtn.addEventListener("click", () => {
@@ -524,6 +523,19 @@ export class StreamWorkbenchView extends ItemView {
 
   /** Full re-render (toolbar + content) — called after settings changes */
   async refresh(): Promise<void> {
+    try {
+      await this.refreshInner();
+    } catch (err) {
+      console.error("[topmind] workbench refresh failed:", err);
+      this.contentEl.empty();
+      this.contentEl.createDiv({
+        cls: "tm-empty-state",
+        text: `Topmind: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  private async refreshInner(): Promise<void> {
     // Preserve unsent draft across settings-driven re-renders.
     const draft = this.inputEl?.value ?? "";
     const selStart = this.inputEl?.selectionStart ?? null;
@@ -612,7 +624,7 @@ export class StreamWorkbenchView extends ItemView {
       this.updateEntryCount(this.currentEntries.length);
 
       // Render entries with day grouping (parse from period note content)
-      this.renderStreamEntries(streamContainer, this.currentEntries, selectedPath, content);
+      this.renderStreamEntries(streamContainer, this.currentEntries, selectedPath);
 
       // Restore scroll position after rendering to eliminate jumping
       if (savedScroll > 0) {
@@ -664,71 +676,19 @@ export class StreamWorkbenchView extends ItemView {
     emptyDiv.createDiv({ text: t("stream_empty_hint"), cls: "tm-empty-hint" });
   }
 
-  /**
-   * Group entries by day heading. The period note may contain `## ` or `### `
-   * headings that separate days. We parse these from the raw content to
-   * create day groups. If no day headings found, entries are grouped by
-   * their time prefix.
-   */
-  private groupByDayHeading(entries: StreamEntry[], fullContent: string): DayGroup[] {
-    if (entries.length === 0) return [];
-
-    // Try to extract ## day headings from content
-    // Use match() per line to avoid stateful regex lastIndex bug with exec()
-    const headings: { title: string; lineOffset: number }[] = [];
-    const lines = fullContent.split("\n");
-    for (let i = 0; i < lines.length; i++) {
-      const match = lines[i].match(/^#{2,3}\s+(.+)$/u);
-      if (match) {
-        headings.push({ title: match[1].trim(), lineOffset: i });
-      }
-    }
-
-    // If we have headings, group entries by the heading they fall under
-    if (headings.length > 0) {
-      const groups: DayGroup[] = [];
-      let currentGroup: DayGroup | null = null;
-      let headingIdx = 0;
-
-      for (const entry of entries) {
-        // Find the heading this entry belongs to
-        while (headingIdx < headings.length && headings[headingIdx].lineOffset < entry.lineOffset) {
-          currentGroup = { label: headings[headingIdx].title, entries: [] };
-          groups.push(currentGroup);
-          headingIdx++;
-        }
-        if (currentGroup) {
-          currentGroup.entries.push(entry);
-        } else {
-          // Entry before any heading — create unnamed group
-          currentGroup = { label: "", entries: [] };
-          groups.push(currentGroup);
-          currentGroup.entries.push(entry);
-        }
-      }
-      return groups;
-    }
-
-    // No headings — try grouping by time pattern (AM/PM or date-ish)
-    // Simple approach: all in one group
-    return [{ label: "", entries }];
-  }
-
   private updateEntryCount(count: number): void {
     if (this.entryCountEl) {
       this.entryCountEl.textContent = count > 0 ? ` · ${formatEntryCount(count)}` : "";
     }
   }
 
-  private renderStreamEntries(container: HTMLElement, entries: StreamEntry[], periodPath: string, fullContent: string): void {
+  private renderStreamEntries(container: HTMLElement, entries: StreamEntry[], periodPath: string): void {
     this.clearCardComponents();
-    const groups = this.groupByDayHeading(entries, fullContent);
-    const ordered = this.plugin.settings.timelineOrder === "desc"
-      ? [...groups].reverse()
-      : groups;
+    const order = this.plugin.settings.timelineOrder === "asc" ? "asc" : "desc";
+    const ordered = orderStreamEntriesForFeed(entries, order);
 
     for (const group of ordered) {
-      if (groups.length > 1 && group.label) {
+      if (ordered.length > 1 && group.label) {
         const dayHeader = container.createDiv({ cls: "tm-day-header" });
         dayHeader.createSpan({ text: group.label, cls: "tm-day-label" });
         dayHeader.createSpan({ text: `${group.entries.length}`, cls: "tm-day-count" });
@@ -811,6 +771,7 @@ export class StreamWorkbenchView extends ItemView {
         },
       });
       appendField.focus();
+      const appendIme = bindImeEnterGuard(appendField);
 
       const appendActions = appendBox.createDiv({ cls: "tm-append-actions" });
       const cancelBtn = appendActions.createEl("button", {
@@ -857,6 +818,7 @@ export class StreamWorkbenchView extends ItemView {
 
       appendField.addEventListener("keydown", (ev: KeyboardEvent) => {
         if (ev.key === "Enter" && !ev.shiftKey) {
+          if (isImeEnter(ev, appendIme)) return;
           ev.preventDefault();
           void doSubmit();
         } else if (ev.key === "Escape") {
@@ -1016,8 +978,6 @@ export class StreamWorkbenchView extends ItemView {
       this.streamContainer.scrollTop = 0;
       // Result notices (written → path / pending / failed) come from
       // kernelService.capture — no duplicate generic toast here.
-    } else {
-      new Notice(t("notice_write_failed"));
     }
     this.inputEl.disabled = false;
     this.submitBtn.disabled = false;
@@ -1060,7 +1020,7 @@ export class StreamWorkbenchView extends ItemView {
       this.organizing = false;
       this.organizeBtn.disabled = false;
       this.organizeBtn.empty();
-      setIcon(this.organizeBtn, "wand-2");
+      setIcon(this.organizeBtn, "arrow-down-wide-narrow");
       this.organizeBtn.createSpan({ text: t("stream_organize") });
     }
   }

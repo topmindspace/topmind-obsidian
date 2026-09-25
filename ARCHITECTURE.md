@@ -1,6 +1,6 @@
 # topmind Obsidian Plugin — 架构
 
-> **用户文档**：[简体中文](README.md) · [English](README.en.md) · **边界**：`../PRODUCT-BOUNDARIES.md` · **内容约定**：`../PROJECT-MODEL.md`  
+> **用户文档**：[简体中文](README.zh-CN.md) · [English](README.en.md) · **边界**：[PRODUCT-BOUNDARIES.md](https://github.com/topmindspace/topmind/blob/main/PRODUCT-BOUNDARIES.md) · **内容约定**：[PROJECT-MODEL.md](https://github.com/topmindspace/topmind/blob/main/PROJECT-MODEL.md)  
 > **版本真源**：本仓根 [`manifest.json`](./manifest.json)  
 > **Desktop-only**：工具与日志面板（⌘⇧L）、ops journal、workspace stats 仅 Desktop；Obsidian 无 ops journal 对等物（非缺口）。恢复仍用 Kernel 高影响 receipts。
 
@@ -137,7 +137,8 @@ topmind-obsidian/              # 本仓根（社区插件仓）
 ├── esbuild.config.mjs         # 构建配置（含 kernel shims）
 ├── styles.css                 # 插件样式
 ├── .gitignore                 # 忽略 node_modules / dist-types / release
-├── README.md                  # 用户文档
+├── README.md                  # 用户文档（English default，社区插件目录）
+├── README.zh-CN.md            # 简体中文
 ├── ARCHITECTURE.md            # 本文件
 ├── DESIGN.md                  # UI/UX 设计
 ├── src/
@@ -220,7 +221,17 @@ export function createKernelContext(
 - **Anthropic 原生**：`/v1/messages`（不同 header `x-api-key`，不同响应格式）
 - **Google Gemini**：`/v1beta/models/{model}:generateContent`
 
-包含瞬态错误重试（5xx + 网络错误，指数退避，最多 2 次重试），与 Kernel AI Provider 的瞬态重试策略对齐。
+**与 Desktop `ai-provider-adapter.mjs` 对齐**（差异只在传输层）：
+
+| 维度 | 约定 |
+|------|------|
+| Token 预算 | `OP_LIMITS` 逐项一致：topic_summary 16K · period/todo/memory_organize 12K · memory_extract/topic_classify 4K |
+| 推理模型 | 紧正则 `^o[134](-mini\|-preview)?` + reasoner/r1/qwq/thinking；禁止 `startsWith("o1")` 误伤 o10-* |
+| temperature | 提取/整理 0.3 · 分析 0.5 · chat 交给 provider · 推理模型不传 |
+| 超时 | 按 operation：chat 480s · 分析 300s · 抽取 60s（非一刀切 30s） |
+| system 自愈 | 推理模型拒 `system` 时折进首条 user 重试（Desktop 同策略） |
+| 取消 | `shouldAbort` 轮询；已产出的 partial 正文/思考保留，附「已停止」 |
+| 瞬态重试 | `fetchWithRetry`（5xx + 网络错误，指数退避，最多 2 次） |
 
 ```typescript
 interface AiProvider {
@@ -258,7 +269,7 @@ interface AiProvider {
 
 **对齐 Desktop 的是行为契约**（唯一片段匹配 / 拒绝 / nearby 诊断 / 写闸 / `en*`→英文指令否则中文 / locked×mode 策略），不是 React UI。confirm 分级：内容编辑直接落盘，仅删/归档待确认；locked 可编辑（任务级首写快照）。
 
-**上下文自动注入**：用户无需手动选择上下文 — 系统自动从工作区数据构建。对话历史保留最近 10 轮。
+**上下文自动注入**：用户无需手动选择上下文 — 系统自动从工作区数据构建。**会话压缩**（Desktop `ai-session-compact` 对齐）：`compactChatMessages` 预算 `maxMessages 60 / keepRecent 24 / maxChars 240K / maxPerMessage 16K`；最近全文、旧消息截断、保尾。磁盘 `chat-history.json` 同预算。
 
 **Locale 感知**：System prompt 跟随 UI locale（`settings.localeOverride`）— 中文模式使用中文 prompt，英文模式使用英文 prompt。留空时跟随 Obsidian 语言。
 
@@ -358,6 +369,25 @@ export function getEngineRoot(plugin: { manifest: { dir?: string } }): string {
 
 **不要**为了满足「Vault API 优先」而把 capture/reconcile/todo 改成 `vault.modify` 绕过 writeback。
 
+### 5.2 官方规约活体守卫（`tests/obsidian-guideline-compliance.test.mjs`）
+
+发布前跑 `npm test`；以下断言锁死，防止回归：
+
+| 规约 | 断言 |
+|------|------|
+| Desktop-only | `manifest.isDesktopOnly === true`（Node `fs`/`path`/`crypto` 前提） |
+| 版本表 | `versions.json` 必须映射 `manifest.version` |
+| 无危险 API | 无 `eval` / `new Function` / `localStorage` / `innerHTML` / `document.write` |
+| CSP 安全 HTTP | 外网只走 `requestUrl`；禁 `fetch`/`XMLHttpRequest` |
+| 设置持久化 | `loadData` / `saveData` |
+| Markdown 渲染 | `MarkdownRenderer.render` 必传 `Component` |
+| 生命周期 | 每个 `onLayoutReady` 有 `_unloaded` 守卫；插件自有 DOM 用 `registerDomEvent` |
+| 热键 | 不设默认 `hotkeys:`（用户在 Settings → Hotkeys 绑定） |
+| 无远程代码 | 无 script 注入 / 远程 `.js|.wasm` |
+| 密钥导入 | 桌面密钥仅用户点击导入，不静默读取 |
+| ItemView 契约 | 三视图齐备 `getViewType/getDisplayText/getIcon/onOpen/onClose` |
+| 渲染错误边界 | 主视图 render/refresh 有 try/catch，不产生 unhandled rejection |
+
 ---
 
 ## 6. 视图架构
@@ -397,7 +427,7 @@ export class StreamWorkbenchView extends ItemView {
 export class SidebarDockView extends ItemView {
   // 标签式布局：清单 | 建议 | 对话 | 历史（动态在主区）
   // 头部：AI 状态 + 模型徽章 + [⚙ 设置]
-  // 底部：[⚡记一下] [🔄整理] [📋清单] [🏷️分类] [🧠整理我的情况] [🖥动态]
+  // 底部：[⚡记一下] [🔄整理] [📋清单] [🏷️分类] [👤整理我的情况] [🖥动态]
   // 
   // 对话标签（新增）：
   //   - 上下文感知：自动注入近期动态 + 当前清单 + 用户画像

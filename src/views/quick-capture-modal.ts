@@ -5,11 +5,11 @@
 // Auto-resize textarea. Visual feedback on submit.
 // Enhanced: better visual polish, keyboard hints, URL detection indicator.
 
-import { Modal, Notice, setIcon } from "obsidian";
+import { Modal, setIcon } from "obsidian";
 import type TopmindPlugin from "../main";
 import { t } from "../i18n";
 import type { CaptureTarget } from "../types";
-import { extractTags, isLoneUrlCapture } from "../utils";
+import { bindImeEnterGuard, extractTags, isImeEnter, isLoneUrlCapture } from "../utils";
 
 export class QuickCaptureModal extends Modal {
   plugin: TopmindPlugin;
@@ -97,9 +97,11 @@ export class QuickCaptureModal extends Modal {
       this.updateUrlHint();
     });
 
-    // Enter submits, Shift+Enter newline
+    // Enter submits, Shift+Enter newline. IME candidate confirm must not submit.
+    const captureIme = bindImeEnterGuard(this.textarea);
     this.textarea.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter" && !e.shiftKey) {
+        if (isImeEnter(e, captureIme)) return;
         e.preventDefault();
         this.submit();
       }
@@ -171,8 +173,8 @@ export class QuickCaptureModal extends Modal {
     const result = this.plugin.kernelService.capture(text, { target, tags });
 
     if (result.ok) {
+      // kernelService.capture already toasts written/pending/failed with path.
       this.modalEl.addClass("tm-modal-submitted");
-      new Notice(t("quick_capture_success"), 2000);
       window.setTimeout(() => this.close(), 120);
     } else {
       this.textarea.disabled = false;

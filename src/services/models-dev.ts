@@ -106,13 +106,17 @@ async function httpGetJson(
     method: "GET",
     headers: { Accept: "application/json", ...headers },
   });
+  let timer = 0;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    window.setTimeout(() => reject(new Error("fetch timeout")), timeoutMs);
+    timer = window.setTimeout(() => reject(new Error("fetch timeout")), timeoutMs);
   });
-  const res = await Promise.race([requestPromise, timeoutPromise]);
-  if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
-  const json: unknown = res.json;
-  return json;
+  try {
+    const res = await Promise.race([requestPromise, timeoutPromise]);
+    if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
+    return res.json;
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 async function fetchCommunityCatalog(force: boolean): Promise<{ ok: boolean; catalog: ProviderCatalogEntry[]; error?: string }> {
@@ -256,14 +260,6 @@ export async function resolveProviderCatalog(
   };
 }
 
-/**
- * Community-only fetch (browse). Does not hit official endpoints.
- * Failed fetches are not stored as live.
- */
-export async function fetchModelsDevCatalog(forceLive = false): Promise<ProviderCatalogEntry[]> {
-  const result = await fetchCommunityCatalog(forceLive);
-  return result.catalog;
-}
 
 export async function getModelsForProvider(
   providerId: string,

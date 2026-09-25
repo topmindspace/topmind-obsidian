@@ -26,6 +26,7 @@ import { renderSuggestionCard } from "./suggestion-card";
 import { hasConfiguredProvider } from "../types";
 import { aiTaskManager, type TaskProgress, type AiTask } from "../services/ai-task-manager";
 import { resolveProviderCatalog, applyModelOptions, credentialsForProvider } from "../services/models-dev";
+import { bindImeEnterGuard, compactChatMessages, isImeEnter } from "../utils";
 
 // ── Node.js built-ins (esbuild platform:'node' converts to require) ──
 import fs from "node:fs";
@@ -57,6 +58,10 @@ export class SidebarDockView extends ItemView {
   private chatThinking = false;
   /** Live agent progress line while a turn is working (step / tool / auto-continue). */
   private chatStatus = "";
+  /** Folded reasoning shown while the turn is still running. */
+  private chatReasoningLive = "";
+  /** Set by the stop button; the in-flight turn checks it between steps. */
+  private chatAbort: { aborted: boolean } | null = null;
   /** Set on user-initiated chat renders (tab open / send) — never on vault-event refreshes. */
   private chatFocusOnRender = false;
   /** Re-entrancy guard for suggestion generation (workbench parity). */
@@ -149,7 +154,10 @@ export class SidebarDockView extends ItemView {
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        this.chatHistory = parsed.slice(-50); // Keep last 50 messages
+        this.chatHistory = compactChatMessages(parsed, {
+          maxMessages: 60,
+          keepRecent: 24,
+        });
       }
     } catch {
       // Corrupt or missing file — start fresh
@@ -164,8 +172,11 @@ export class SidebarDockView extends ItemView {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
-      // Keep last 50 messages to avoid unbounded growth
-      const toSave = this.chatHistory.slice(-50);
+      // Session compact (Desktop parity) — never unbounded growth on disk.
+      const toSave = compactChatMessages(this.chatHistory, {
+        maxMessages: 60,
+        keepRecent: 24,
+      });
       fs.writeFileSync(filePath, JSON.stringify(toSave, null, 2), "utf-8");
     } catch {
       // Disk full / permissions — non-fatal
@@ -189,6 +200,19 @@ export class SidebarDockView extends ItemView {
 
   /** Full re-render (header + tabs + content) */
   private async render(): Promise<void> {
+    try {
+      await this.renderInner();
+    } catch (err) {
+      console.error("[topmind] sidebar render failed:", err);
+      this.contentEl.empty();
+      this.contentEl.createDiv({
+        cls: "tm-empty-state",
+        text: `Topmind: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  private async renderInner(): Promise<void> {
     const { contentEl } = this;
     // Preserve unsent chat draft across settings-driven full re-renders.
     const existingInput = contentEl.querySelector("textarea.tm-chat-input") as HTMLTextAreaElement | null;
@@ -397,6 +421,21 @@ export class SidebarDockView extends ItemView {
   // ── Tab Content Dispatcher ─────────────────────────────────────────────
 
   private async renderActiveTab(): Promise<void> {
+    try {
+      await this.renderActiveTabInner();
+    } catch (err) {
+      console.error("[topmind] sidebar tab render failed:", err);
+      if (this.contentContainer) {
+        this.contentContainer.empty();
+        this.contentContainer.createDiv({
+          cls: "tm-empty-state",
+          text: `Topmind: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    }
+  }
+
+  private async renderActiveTabInner(): Promise<void> {
     if (!this.contentContainer) return;
     // Preserve unsent chat draft when re-rendering the active tab (e.g. thinking indicator).
     const existingChatInput = this.contentContainer.querySelector("textarea.tm-chat-input") as HTMLTextAreaElement | null;
@@ -736,11 +775,11 @@ export class SidebarDockView extends ItemView {
   private renderSuggestionRefreshButton(container: HTMLElement): void {
     const refreshBar = container.createDiv({ cls: "tm-suggestion-refresh-bar" });
 
-    // 1. Organize period button — wand-2 (整理)
+    // 1. Organize period button — sort glyph (整理)
     const organizeBtn = refreshBar.createEl("button", {
       cls: "tm-btn-secondary tm-btn-sm",
     });
-    setIcon(organizeBtn, "wand-2");
+    setIcon(organizeBtn, "arrow-down-wide-narrow");
     organizeBtn.createSpan({ text: t("stream_organize") });
     organizeBtn.setAttribute("aria-label", t("stream_organize"));
     organizeBtn.setAttribute("title", t("stream_organize"));
@@ -772,7 +811,7 @@ export class SidebarDockView extends ItemView {
         const menu = new Menu();
         menu.addItem((item) => {
           item.setTitle(t("sidebar_op_memory"))
-            .setIcon("brain")
+            .setIcon("user")
             .onClick(() => {
               this.plugin.enqueueAiOperation("memory_organize", "op_label_memory_organize", "notice_memory_done", "all");
             });
@@ -868,7 +907,27 @@ export class SidebarDockView extends ItemView {
       thinkingEl.createSpan({
         cls: "tm-chat-thinking-dots",
         text: this.chatStatus || t("chat_thinking"),
+        attr: { "data-chat-status": "true" },
       });
+      if (this.chatReasoningLive.trim()) {
+        const fold = thinkingEl.createEl("details", { cls: "tm-chat-reasoning" });
+        fold.setAttribute("open", "true");
+        const summary = fold.createEl("summary", { cls: "tm-chat-reasoning-summary" });
+        summary.setAttribute("title", t("chat_reasoning_show"));
+        const reasonIcon = summary.createSpan({ cls: "tm-chat-reasoning-icon" });
+        setIcon(reasonIcon, "file-text");
+        summary.createSpan({ cls: "tm-chat-reasoning-label", text: t("chat_reasoning") });
+        summary.createSpan({
+          cls: "tm-chat-reasoning-meta",
+          text: t("chat_reasoning_chars", { count: this.chatReasoningLive.trim().length }),
+          attr: { "data-chat-reasoning-meta": "true" },
+        });
+        const pre = fold.createEl("pre", {
+          cls: "tm-chat-reasoning-body tm-chat-reasoning-live",
+          attr: { "data-chat-reasoning-live": "true" },
+        });
+        pre.setText(this.chatReasoningLive);
+      }
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
@@ -918,15 +977,24 @@ export class SidebarDockView extends ItemView {
       input.setCssStyles({ height: `${Math.min(input.scrollHeight, 100)}px` });
     });
 
-    // Enter to send, Shift+Enter for newline
+    // Enter to send, Shift+Enter for newline. IME confirm must not send.
+    const chatIme = bindImeEnterGuard(input);
     input.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter" && !e.shiftKey) {
+        if (isImeEnter(e, chatIme)) return;
         e.preventDefault();
-        this.sendChatMessage(input);
+        if (!this.chatThinking) this.sendChatMessage(input);
       }
     });
 
-    sendBtn.addEventListener("click", () => this.sendChatMessage(input));
+    if (this.chatThinking) {
+      setIcon(sendBtn, "square");
+      sendBtn.setAttribute("aria-label", t("chat_stop"));
+      sendBtn.setAttribute("title", t("chat_stop"));
+      sendBtn.addEventListener("click", () => this.stopChat());
+    } else {
+      sendBtn.addEventListener("click", () => this.sendChatMessage(input));
+    }
 
     // Focus only on user-initiated renders — vault-event refreshes must not
     // steal focus from the editor while the user is typing elsewhere.
@@ -1030,8 +1098,8 @@ export class SidebarDockView extends ItemView {
       const fold = msgEl.createEl("details", { cls: "tm-chat-reasoning" });
       const summary = fold.createEl("summary", { cls: "tm-chat-reasoning-summary" });
       summary.setAttribute("title", t("chat_reasoning_show"));
-      const brainIcon = summary.createSpan({ cls: "tm-chat-reasoning-icon" });
-      setIcon(brainIcon, "brain");
+      const reasonIcon = summary.createSpan({ cls: "tm-chat-reasoning-icon" });
+      setIcon(reasonIcon, "file-text");
       summary.createSpan({ cls: "tm-chat-reasoning-label", text: t("chat_reasoning") });
       summary.createSpan({
         cls: "tm-chat-reasoning-meta",
@@ -1121,6 +1189,28 @@ export class SidebarDockView extends ItemView {
     }
   }
 
+  private stopChat(): void {
+    if (this.chatAbort) this.chatAbort.aborted = true;
+    this.chatStatus = t("chat_stopped");
+    const statusEl = this.contentContainer?.querySelector("[data-chat-status]");
+    if (statusEl) statusEl.textContent = this.chatStatus;
+  }
+
+  /** Update the working row in place so a progress tick does not rebuild the composer. */
+  private patchChatWorkingRow(): void {
+    const statusEl = this.contentContainer?.querySelector("[data-chat-status]");
+    if (statusEl) statusEl.textContent = this.chatStatus || t("chat_thinking");
+    const live = this.chatReasoningLive.trim();
+    const pre = this.contentContainer?.querySelector("[data-chat-reasoning-live]");
+    if (pre && live) {
+      pre.textContent = live;
+      const meta = this.contentContainer?.querySelector("[data-chat-reasoning-meta]");
+      if (meta) meta.textContent = t("chat_reasoning_chars", { count: live.length });
+      return;
+    }
+    if (!statusEl || (live && !pre)) void this.renderActiveTab();
+  }
+
   private async sendChatMessage(input: HTMLTextAreaElement): Promise<void> {
     const text = input.value.trim();
     if (!text || this.chatThinking) return;
@@ -1131,23 +1221,27 @@ export class SidebarDockView extends ItemView {
     input.value = "";
     input.setCssStyles({ height: "auto" });
 
+    const gate = { aborted: false };
+    this.chatAbort = gate;
     this.chatThinking = true;
     this.chatStatus = t("chat_working");
+    this.chatReasoningLive = "";
     this.chatFocusOnRender = true;
     void this.renderActiveTab();
 
     try {
       const response = await this.plugin.kernelService.chat(text, this.chatHistory.slice(0, -1), {
+        shouldAbort: () => gate.aborted,
         onProgress: (ev) => {
           this.chatStatus = this.formatChatProgress(ev);
-          // Lightweight status refresh without full tab rebuild churn.
-          void this.renderActiveTab();
+          if (ev.reasoning) this.chatReasoningLive = ev.reasoning;
+          this.patchChatWorkingRow();
         },
       });
       this.chatHistory.push({
         role: "assistant",
-        content: response.content || "...",
-        reasoning: response.reasoning || undefined,
+        content: response.content || (gate.aborted ? t("chat_stopped") : "..."),
+        reasoning: response.reasoning || this.chatReasoningLive || undefined,
         prompt: text,
         toolCalls: response.toolCalls,
         steps: response.steps,
@@ -1156,17 +1250,28 @@ export class SidebarDockView extends ItemView {
       });
       this.saveChatHistory();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.chatHistory.push({
-        role: "assistant",
-        content: `${t("chat_error")}: ${msg}`,
-        isError: true,
-        prompt: text,
-      });
+      if (gate.aborted || (err instanceof Error && err.name === "AbortError")) {
+        this.chatHistory.push({
+          role: "assistant",
+          content: t("chat_stopped"),
+          reasoning: this.chatReasoningLive || undefined,
+          prompt: text,
+        });
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.chatHistory.push({
+          role: "assistant",
+          content: `${t("chat_error")}: ${msg}`,
+          isError: true,
+          prompt: text,
+        });
+      }
       this.saveChatHistory();
     } finally {
+      this.chatAbort = null;
       this.chatThinking = false;
       this.chatStatus = "";
+      this.chatReasoningLive = "";
       this.chatFocusOnRender = true;
       void this.renderActiveTab();
     }
@@ -1190,8 +1295,11 @@ export class SidebarDockView extends ItemView {
   private async regenerateResponse(prompt: string): Promise<void> {
     if (this.chatThinking) return;
 
+    const gate = { aborted: false };
+    this.chatAbort = gate;
     this.chatThinking = true;
     this.chatStatus = t("chat_working");
+    this.chatReasoningLive = "";
     void this.renderActiveTab();
 
     try {
@@ -1209,15 +1317,17 @@ export class SidebarDockView extends ItemView {
         ? this.chatHistory.slice(0, lastUserIdx)
         : [...this.chatHistory];
       const response = await this.plugin.kernelService.chat(prompt, history, {
+        shouldAbort: () => gate.aborted,
         onProgress: (ev) => {
           this.chatStatus = this.formatChatProgress(ev);
-          void this.renderActiveTab();
+          if (ev.reasoning) this.chatReasoningLive = ev.reasoning;
+          this.patchChatWorkingRow();
         },
       });
       this.chatHistory.push({
         role: "assistant",
-        content: response.content || "...",
-        reasoning: response.reasoning || undefined,
+        content: response.content || (gate.aborted ? t("chat_stopped") : "..."),
+        reasoning: response.reasoning || this.chatReasoningLive || undefined,
         prompt,
         toolCalls: response.toolCalls,
         steps: response.steps,
@@ -1226,17 +1336,28 @@ export class SidebarDockView extends ItemView {
       });
       this.saveChatHistory();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.chatHistory.push({
-        role: "assistant",
-        content: `${t("chat_error")}: ${msg}`,
-        isError: true,
-        prompt,
-      });
+      if (gate.aborted || (err instanceof Error && err.name === "AbortError")) {
+        this.chatHistory.push({
+          role: "assistant",
+          content: t("chat_stopped"),
+          reasoning: this.chatReasoningLive || undefined,
+          prompt,
+        });
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.chatHistory.push({
+          role: "assistant",
+          content: `${t("chat_error")}: ${msg}`,
+          isError: true,
+          prompt,
+        });
+      }
       this.saveChatHistory();
     } finally {
+      this.chatAbort = null;
       this.chatThinking = false;
       this.chatStatus = "";
+      this.chatReasoningLive = "";
       void this.renderActiveTab();
     }
   }
@@ -1373,7 +1494,7 @@ export class SidebarDockView extends ItemView {
     captureBtn.setAttribute("title", t("sidebar_btn_capture"));
     captureBtn.addEventListener("click", () => this.plugin.openQuickCapture());
 
-    this.addActionButton(actionsBar, "wand-2", t("sidebar_btn_organize"), async () => {
+    this.addActionButton(actionsBar, "arrow-down-wide-narrow", t("sidebar_btn_organize"), async () => {
       new Notice(t("notice_organizing"));
       const streamCtx = await this.plugin.kernelService.getStreamContext();
       if (streamCtx.current) {
@@ -1410,7 +1531,7 @@ export class SidebarDockView extends ItemView {
         });
       });
       menu.addItem((item) => {
-        item.setTitle(t("sidebar_btn_memory")).setIcon("brain").onClick(() => {
+        item.setTitle(t("sidebar_btn_memory")).setIcon("user").onClick(() => {
           this.plugin.enqueueAiOperation("memory_organize", "op_label_memory_organize", "notice_memory_done", "all");
         });
       });

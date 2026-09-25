@@ -161,13 +161,13 @@ export const SUGGESTION_KIND_META: Record<
   { icon: string; border: string }
 > = {
   create_topic: { icon: "folder-plus", border: "blue" },
-  promote_memory: { icon: "brain", border: "green" },
+  promote_memory: { icon: "user", border: "green" },
   /* Reflection/digest use blue (info) — purple is banned as product AI identity */
   ai_summary: { icon: "bar-chart-3", border: "blue" },
   inbox_organize: { icon: "folder-input", border: "blue" },
   stale_topic: { icon: "package", border: "orange" },
-  catch_all: { icon: "brush", border: "orange" },
-  stream_digest: { icon: "scroll-text", border: "blue" },
+  catch_all: { icon: "folder", border: "orange" },
+  stream_digest: { icon: "file-text", border: "blue" },
   open_profile: { icon: "user", border: "green" },
 };
 
@@ -237,7 +237,7 @@ export function mergeCaptureTags(text: string, tags?: string[]): string {
 export function mapApplySuggestionResult(
   result: unknown,
   suggestion: { kind: string; payload?: Record<string, unknown> },
-): { ok: boolean; error?: string; openPath?: string } {
+): { ok: boolean; error?: string; openPath?: string; matchedText?: string; matchExact?: boolean; matchScore?: number } {
   if (result == null || typeof result !== "object") {
     return { ok: false, error: "empty-result" };
   }
@@ -247,6 +247,11 @@ export function mapApplySuggestionResult(
   const targetPath = r.targetPath != null
     ? String(r.targetPath).replace(/\\/g, "/")
     : undefined;
+  const matchInfo = {
+    matchedText: typeof r.matchedText === "string" && r.matchedText ? r.matchedText : undefined,
+    matchExact: typeof r.matchExact === "boolean" ? r.matchExact : undefined,
+    matchScore: typeof r.matchScore === "number" ? r.matchScore : undefined,
+  };
 
   // open-only success (profile exists, or explicit open)
   if (operation === "open" || /open\s*only/i.test(note)) {
@@ -287,13 +292,17 @@ export function mapApplySuggestionResult(
     const openPath = written && /(?:^|\/)memory\/periodic\//u.test(written)
       ? written
       : (digestSafe || written);
-    return openPath ? { ok: true, openPath } : { ok: true };
+    return openPath
+      ? { ok: true, openPath, ...matchInfo }
+      : { ok: true, ...matchInfo };
   }
 
   // Legacy evidence without ok/wroteFiles flags: treat non-skip as success
   if (operation && operation !== "skip") {
     const written = typeof targetPath === "string" ? targetPath : undefined;
-    return written ? { ok: true, openPath: written } : { ok: true };
+    return written
+      ? { ok: true, openPath: written, ...matchInfo }
+      : { ok: true, ...matchInfo };
   }
 
   return { ok: false, error: String(r.reason || r.note || "apply-failed") };
@@ -418,6 +427,123 @@ export function splitStreamPreviewParts(md: string): {
     appends.push({ title, markdown: chunk, body });
   }
   return { main, appends };
+}
+
+/** Ignore Enter that is confirming an IME candidate (中文输入法回车选词). */
+const IME_ENTER_GUARD_MS = 80;
+
+export function isImeEnter(e: KeyboardEvent, guard?: { until: number }): boolean {
+  if (e.isComposing || e.keyCode === 229) return true;
+  if (guard && Date.now() < guard.until) return true;
+  return false;
+}
+
+/** Arm `guard.until` for the candidate-confirm Enter that follows compositionend. */
+export function bindImeEnterGuard(el: HTMLElement): { until: number } {
+  const guard = { until: 0 };
+  el.addEventListener("compositionstart", () => {
+    guard.until = Number.POSITIVE_INFINITY;
+  });
+  el.addEventListener("compositionend", () => {
+    guard.until = Date.now() + IME_ENTER_GUARD_MS;
+  });
+  return guard;
+}
+
+const STREAM_STRUCTURAL_HEADINGS = new Set([
+  "进行中",
+  "记录",
+  "In progress",
+  "In Progress",
+  "Notes",
+  "Log",
+  "日志",
+]);
+
+/** Day bucket for a period heading. Same-day `##` titles share one key. */
+export function streamDayKey(heading?: string): { key: string; label: string } {
+  const h = String(heading || "").trim();
+  const iso = h.match(/(\d{4}-\d{2}-\d{2})/u);
+  if (iso) return { key: iso[1], label: h.length < 28 ? h : iso[1] };
+  const cn = h.match(/(\d{1,2})月(\d{1,2})日/u);
+  if (cn) {
+    const key = `cn-${cn[1].padStart(2, "0")}-${cn[2].padStart(2, "0")}`;
+    return { key, label: `${cn[1]}月${cn[2]}日` };
+  }
+  const md = h.match(/^(\d{2}-\d{2})\b/u);
+  if (md) return { key: `md-${md[1]}`, label: h.length < 28 ? h : md[1] };
+  if (h && STREAM_STRUCTURAL_HEADINGS.has(h)) return { key: `struct-${h}`, label: h };
+  return { key: h ? `h-${h}` : "other", label: h };
+}
+
+function clockMinutes(time: string): number | null {
+  const m = String(time || "").match(/^(\d{1,2}):(\d{2})$/u);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (hh > 23 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+
+export interface StreamFeedGroup<T> {
+  key: string;
+  label: string;
+  entries: T[];
+}
+
+/**
+ * Feed order shared with Desktop:
+ * desc — newest day first; within a day, later clock times first;
+ * notes that share a clock time stay in file order (one capture batch).
+ * asc — oldest day first, file order within the day.
+ */
+export function orderStreamEntriesForFeed<T extends { time?: string; heading?: string }>(
+  entries: T[],
+  order: "asc" | "desc",
+): Array<StreamFeedGroup<T>> {
+  const groups: Array<StreamFeedGroup<T>> = [];
+  const index = new Map<string, number>();
+  for (const entry of entries) {
+    const { key, label } = streamDayKey(entry.heading);
+    let gi = index.get(key);
+    if (gi === undefined) {
+      gi = groups.length;
+      index.set(key, gi);
+      groups.push({ key, label, entries: [] });
+    }
+    groups[gi].entries.push(entry);
+  }
+
+  const dated = (key: string) =>
+    /^\d{4}-\d{2}-\d{2}$/u.test(key) || key.startsWith("md-") || key.startsWith("cn-");
+  const sorted = [...groups].sort((a, b) => {
+    const ad = dated(a.key);
+    const bd = dated(b.key);
+    if (ad && bd) {
+      const cmp = a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+      return order === "desc" ? -cmp : cmp;
+    }
+    if (ad !== bd) return ad ? (order === "desc" ? -1 : 1) : (order === "desc" ? 1 : -1);
+    return 0;
+  });
+
+  if (order === "desc") {
+    for (const group of sorted) {
+      group.entries = group.entries
+        .map((entry, i) => ({ entry, i }))
+        .sort((a, b) => {
+          const ta = clockMinutes(a.entry.time || "");
+          const tb = clockMinutes(b.entry.time || "");
+          if (ta == null && tb == null) return a.i - b.i;
+          if (ta == null) return 1;
+          if (tb == null) return -1;
+          if (tb !== ta) return tb - ta;
+          return a.i - b.i;
+        })
+        .map((row) => row.entry);
+    }
+  }
+  return sorted;
 }
 
 export function parseStreamEntries(content: string): StreamEntry[] {
@@ -703,10 +829,65 @@ export interface MemoryFeedItem {
   history?: boolean;
 }
 
-export interface MemoryFeedSource {
-  profile: { path: string; markdown: string } | null;
-  periodic: Array<{ path: string; markdown: string }>;
-  topics: Array<{ path: string; markdown: string }>;
+// ── Chat session compact (Desktop ai-session-compact parity, simplified) ────
+//
+// Keep recent dialogue intact; older turns are truncated so long sessions stay
+// inside the model window. Defaults match Desktop `COMPACT_DEFAULT_*`.
+
+export const CHAT_COMPACT_DEFAULTS = {
+  maxMessages: 60,
+  keepRecent: 24,
+  maxChars: 240_000,
+  maxPerMessage: 16_000,
+} as const;
+
+/**
+ * Compact a chat transcript for prompt injection / disk persistence.
+ * Recent `keepRecent` messages stay full; older ones are capped per message and
+ * dropped from the head once `maxMessages` / `maxChars` are exceeded.
+ */
+export function compactChatMessages<T extends { content?: string; reasoning?: string }>(
+  messages: T[],
+  opts: Partial<typeof CHAT_COMPACT_DEFAULTS> = {},
+): T[] {
+  const list = Array.isArray(messages) ? messages : [];
+  const maxMessages = opts.maxMessages ?? CHAT_COMPACT_DEFAULTS.maxMessages;
+  const keepRecent = Math.min(
+    opts.keepRecent ?? CHAT_COMPACT_DEFAULTS.keepRecent,
+    maxMessages,
+  );
+  const maxChars = opts.maxChars ?? CHAT_COMPACT_DEFAULTS.maxChars;
+  const maxPerMessage = opts.maxPerMessage ?? CHAT_COMPACT_DEFAULTS.maxPerMessage;
+
+  const trimmed = list.slice(-maxMessages).map((msg, idx, arr) => {
+    const fromEnd = arr.length - 1 - idx;
+    if (fromEnd < keepRecent) return msg;
+    const content = typeof msg.content === "string" ? msg.content : "";
+    const reasoning = typeof msg.reasoning === "string" ? msg.reasoning : "";
+    const next = { ...msg };
+    if (content.length > maxPerMessage) {
+      next.content = `${content.slice(0, maxPerMessage)}…`;
+    }
+    // Older reasoning is the first thing to go — it is not current truth.
+    if (reasoning) {
+      next.reasoning = fromEnd < keepRecent * 2 && reasoning.length <= maxPerMessage
+        ? reasoning
+        : `${reasoning.slice(0, 240)}…`;
+    }
+    return next;
+  });
+
+  // Char budget from the head (oldest first) so the tail (latest) always fits.
+  let total = 0;
+  const fromEnd: T[] = [];
+  for (let i = trimmed.length - 1; i >= 0; i--) {
+    const m = trimmed[i];
+    const size = String(m.content || "").length + String(m.reasoning || "").length;
+    if (total + size > maxChars && fromEnd.length >= keepRecent) break;
+    total += size;
+    fromEnd.unshift(m);
+  }
+  return fromEnd;
 }
 
 export {

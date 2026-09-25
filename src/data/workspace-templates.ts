@@ -212,7 +212,3 @@ export function resolveEmbeddedTemplate(
   return EMBEDDED[primary] ?? EMBEDDED[id] ?? EMBEDDED[`${id}.en-US`] ?? null;
 }
 
-/** All embedded template ids (including locale variants). */
-export function embeddedTemplateIds(): string[] {
-  return Object.keys(EMBEDDED);
-}

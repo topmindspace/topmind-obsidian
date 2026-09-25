@@ -33,18 +33,6 @@ export function getVaultBasePath(app: App): string {
 }
 
 /**
- * Check if the vault has a topmind workspace structure (topmind.yaml).
- */
-export function isTopmindWorkspace(app: App): boolean {
-  try {
-    const basePath = getVaultBasePath(app);
-    return fs.existsSync(path.join(basePath, "topmind.yaml"));
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Get the engine root for template loading.
  * In the Obsidian plugin, the engine root is the plugin's directory,
  * where templates/ are copied alongside main.js.

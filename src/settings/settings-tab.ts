@@ -817,7 +817,7 @@ export class TopmindSettingTab extends PluginSettingTab {
           btn.setDisabled(true);
           try {
             const provider = this.plugin.kernelService.testAiConnection();
-            const reply = await provider.generate("Reply with: OK", { operation: "test" });
+            const reply = await provider.generate("Reply with: OK", { operation: "test", foldReasoning: false });
             if (reply && reply.trim().length > 0) new Notice(t("settings_ai_test_success"));
             else new Notice(`${t("settings_ai_test_failed")}: empty response`);
           } catch (err) {

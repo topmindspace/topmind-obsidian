@@ -18,6 +18,7 @@ import {
   isRecord,
   isUnknownArray,
   parseJsonUnknown,
+  compactChatMessages,
 } from "../utils.ts";
 import type { StreamPeriod, TodoItem } from "../types.ts";
 import {
@@ -845,6 +846,8 @@ export interface ChatProgressEvent {
   tool?: string;
   autoContinues?: number;
   note?: string;
+  /** Folded reasoning so far (API reasoning_content / <think>), not the answer. */
+  reasoning?: string;
 }
 
 export interface WorkspaceChatTurnOpts {
@@ -860,6 +863,8 @@ export interface WorkspaceChatTurnOpts {
   autoContinue?: boolean;
   engineRoot?: string;
   onProgress?: (ev: ChatProgressEvent) => void;
+  /** Return true to stop before the next model call or tool write. */
+  shouldAbort?: () => boolean;
 }
 
 /** Desktop parity: 3–80, default 32. Obsidian uses the same agent step budget. */
@@ -1174,7 +1179,8 @@ export async function runWorkspaceChatTurn(
   };
 
   const conversation: string[] = [];
-  for (const msg of (opts.history || []).slice(-10)) {
+  // Desktop-parity session compact: recent turns intact, older turns capped.
+  for (const msg of compactChatMessages(opts.history || [], { maxMessages: 60, keepRecent: 24 })) {
     conversation.push(`${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`);
   }
   conversation.push(`User: ${opts.userMessage}`);
@@ -1186,6 +1192,19 @@ export async function runWorkspaceChatTurn(
   let autoContinues = 0;
   let stepLimitHit = false;
   let finished = false;
+  let reasoningAcc = "";
+
+  const stoppedBody = chromeZh
+    ? "已停止。这一步之前已经完成的修改会保留。"
+    : "Stopped. Edits that already finished are kept.";
+
+  const noteReasoning = (raw: string) => {
+    if (typeof kernel.splitAssistantVisible !== "function") return;
+    const splitNow = kernel.splitAssistantVisible(raw);
+    const bit = String(splitNow?.reasoning || "").trim();
+    if (!bit || reasoningAcc.includes(bit)) return;
+    reasoningAcc = reasoningAcc ? `${reasoningAcc}\n\n${bit}` : bit;
+  };
 
   const emit = (ev: ChatProgressEvent) => {
     try {
@@ -1202,6 +1221,20 @@ export async function runWorkspaceChatTurn(
         ok: false,
         error: `unknown tool: ${tool}`,
         hint: `Use only: ${[...KNOWN_TOOLS].join(", ")}. Re-emit a single JSON tool call.`,
+      });
+    }
+    // Memory-plane fence (Desktop parity): generic file tools must not raw-
+    // rewrite memory/profile|periodic|topics. Memory writes are proposed in
+    // the answer and applied via the Suggest tab (append/update/retire gates).
+    const rel = String(call.relativePath || call.destRelativePath || "").replace(/\\/g, "/");
+    if (rel && /(^|\/)memory\//u.test(rel) && (tool === "save_file" || tool === "edit_file")) {
+      toolCalls.push({ tool, ok: false, summary: rel });
+      return toolResultForModel({
+        ok: false,
+        error: "write-blocked:memory-plane",
+        note: chromeZh
+          ? "memory/ 受保护。不要用 save_file/edit_file 改记忆平面；请在回答中提出记忆变更，由用户在「建议」tab 确认。"
+          : "memory/ is gated. Do not rewrite the memory plane with save_file/edit_file — propose the change in the answer and let the user confirm it in Suggest.",
       });
     }
     if (tool === "read_file") {
@@ -1266,11 +1299,41 @@ export async function runWorkspaceChatTurn(
   let generateFailures = 0;
   const MAX_GENERATE_FAILURES = 2;
 
+  const finishAborted = () => {
+    emit({
+      kind: "done",
+      step: stepCount,
+      maxSteps,
+      autoContinues,
+      note: "aborted",
+      reasoning: reasoningAcc,
+    });
+    // Keep any partial answer the model already produced (Desktop cancel
+    // semantics) instead of throwing the draft away for a canned string.
+    const partial = typeof kernel.splitAssistantVisible === "function"
+      ? kernel.splitAssistantVisible(lastRaw).body
+      : String(lastRaw || "").trim();
+    const body = partial && !parseToolCall(lastRaw)
+      ? `${partial}\n\n${stoppedBody}`
+      : stoppedBody;
+    return {
+      body,
+      reasoning: reasoningAcc,
+      edits,
+      steps: stepCount,
+      toolCalls,
+      autoContinues,
+      stepLimitHit,
+    };
+  };
+
   for (;;) {
+    if (opts.shouldAbort?.()) return finishAborted();
     let brokeOnFinalText = false;
     for (let step = 0; step < maxSteps; step++) {
+      if (opts.shouldAbort?.()) return finishAborted();
       stepCount += 1;
-      emit({ kind: "step", step: stepCount, maxSteps, autoContinues });
+      emit({ kind: "step", step: stepCount, maxSteps, autoContinues, reasoning: reasoningAcc });
       const prompt = conversation.join("\n\n");
       let raw: unknown;
       try {
@@ -1279,9 +1342,13 @@ export async function runWorkspaceChatTurn(
           systemPrompt: `${opts.systemExtra || ""}\n\n${answerGuide}\n\n${toolGuide}`.trim(),
           maxOutputTokens: 8192,
           temperature: 0.4,
+          shouldAbort: opts.shouldAbort,
         });
         generateFailures = 0;
       } catch (err) {
+        if (opts.shouldAbort?.() || (err instanceof Error && err.name === "AbortError")) {
+          return finishAborted();
+        }
         generateFailures += 1;
         const msg = err instanceof Error ? err.message : String(err);
         emit({ kind: "step", step: stepCount, maxSteps, tool: "retry", autoContinues });
@@ -1301,6 +1368,8 @@ export async function runWorkspaceChatTurn(
         continue;
       }
       lastRaw = String(raw || "");
+      noteReasoning(lastRaw);
+      if (opts.shouldAbort?.()) return finishAborted();
       if (!lastRaw.trim()) {
         // Empty completion — treat as soft failure and re-prompt once.
         generateFailures += 1;
@@ -1323,8 +1392,9 @@ export async function runWorkspaceChatTurn(
         break;
       }
 
+      if (opts.shouldAbort?.()) return finishAborted();
       const tool = String(call.tool || call.name || "");
-      emit({ kind: "tool", step: stepCount, maxSteps, tool, autoContinues });
+      emit({ kind: "tool", step: stepCount, maxSteps, tool, autoContinues, reasoning: reasoningAcc });
       conversation.push(`Assistant: ${lastRaw}`);
       const toolNote = execOneTool(call);
       conversation.push(`Tool result (${tool}):\n${toolNote || ""}`);
@@ -1358,6 +1428,7 @@ export async function runWorkspaceChatTurn(
   const split = typeof kernel.splitAssistantVisible === "function"
     ? kernel.splitAssistantVisible(lastRaw)
     : { body: String(lastRaw || "").trim(), reasoning: "" };
+  noteReasoning(lastRaw);
   let body = split.body;
   if (parseToolCall(lastRaw)) {
     const pending = edits.some((e) => e.pending || e.needsConfirm) || toolCalls.some((t) => t.summary === "pending");
@@ -1383,7 +1454,7 @@ export async function runWorkspaceChatTurn(
   emit({ kind: "done", step: stepCount, maxSteps, autoContinues });
   return {
     body,
-    reasoning: split.reasoning,
+    reasoning: reasoningAcc || split.reasoning,
     edits,
     steps: stepCount,
     toolCalls,
@@ -1458,8 +1529,10 @@ export function appendStreamEntryToWorkspace(
     // pending is not success — UI must distinguish await-confirm from written.
     return { ok: false, path: rel, pending: true, needsConfirm: true, error: "pending-confirmation" };
   }
-  if (!result.ok) {
-    return { ok: false, error: String(result.reason || "Write failed") };
+  // executeWrite surface evidence sets wroteFiles and does not set `ok`.
+  // `if (!result.ok)` treated that successful write as a failure.
+  if (result.wroteFiles === false || result.wrote_files === false || result.operation === "skip") {
+    return { ok: false, error: String(result.reason || result.note || "Write failed") };
   }
   return { ok: true, path: rel };
 }

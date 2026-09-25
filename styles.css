@@ -1481,6 +1481,27 @@ select.tm-tag-input,
   gap: var(--tm-gap-sm);
 }
 
+.tm-memory-scope {
+  margin: 0 0 var(--tm-gap-sm);
+  color: var(--tm-ink-faint);
+  font-size: var(--tm-type-meta);
+  line-height: 1.45;
+}
+
+.tm-memory-feed[data-layout="list"] .tm-memory-card .tm-card-body {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--tm-ink-soft);
+  font-size: var(--tm-type-meta);
+}
+
+.tm-memory-feed[data-layout="card"] .tm-memory-card .tm-card-body {
+  max-height: 8.5em;
+  overflow: hidden;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    9. SIDEBAR DOCK
    ═══════════════════════════════════════════════════════════════════════ */
@@ -2288,6 +2309,18 @@ select.tm-tag-input,
   color: var(--tm-ink-soft);
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+.tm-chat-thinking {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.tm-chat-reasoning-live {
+  flex: 1 0 100%;
+  max-height: 8em;
+  overflow: auto;
+  margin: 0;
 }
 
 .tm-chat-thinking {

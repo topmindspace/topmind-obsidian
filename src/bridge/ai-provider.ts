@@ -37,8 +37,29 @@ export interface AiProvider {
 const MAX_RETRIES = 2;
 /** Base retry delay in ms (exponential backoff: delay * 2^attempt). */
 const RETRY_BASE_DELAY = 500;
-/** Request timeout in ms (30s — generous for slow models). */
-const REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Per-operation request timeout (ms). Non-streaming `requestUrl` must cover the
+ * whole generation — Desktop's 30s floor killed long agent turns mid-task.
+ * Short extraction stays tight; chat / analysis get a real budget.
+ */
+const OP_TIMEOUT_MS: Record<string, number> = {
+  memory_extract: 60_000,
+  topic_classify: 60_000,
+  todo_extract: 60_000,
+  todo_maintain: 120_000,
+  memory_organize: 180_000,
+  inbox_organize: 180_000,
+  period_analysis: 300_000,
+  period_digest: 300_000,
+  topic_summary: 300_000,
+  chat: 480_000,
+};
+const DEFAULT_TIMEOUT_MS = 180_000;
+
+function resolveTimeoutMs(operation: string): number {
+  return OP_TIMEOUT_MS[operation] || DEFAULT_TIMEOUT_MS;
+}
 
 // ── Legacy compat: resolve from old single-provider settings ────────────────
 
@@ -159,8 +180,12 @@ export function createAiProvider(settings: TopmindSettings): AiProvider | null {
         : resolveSystemPrompt(operation);
       const maxTokens = explicitMaxTokens ?? resolveMaxTokens(operation);
       const temperature = explicitTemperature ?? resolveTemperature(operation, model);
+      const shouldAbort = typeof ctx.shouldAbort === "function"
+        ? (ctx.shouldAbort as () => boolean)
+        : undefined;
+      const foldReasoning = ctx.foldReasoning !== false;
 
-      const callOpts: CallOpts = { systemPrompt, maxTokens, temperature, operation };
+      const callOpts: CallOpts = { systemPrompt, maxTokens, temperature, operation, shouldAbort, foldReasoning };
 
       try {
         if (apiType === "anthropic") {
@@ -195,6 +220,26 @@ interface CallOpts {
   maxTokens: number;
   temperature?: number;
   operation: string;
+  shouldAbort?: () => boolean;
+  /** false → return visible body only (no `<think>` fold). Default true (chat). */
+  foldReasoning?: boolean;
+}
+
+/** Keep provider reasoning out of the visible answer; chat UI folds `<think>`.
+ *  `fold: false` returns only the visible body (AI Polish / ops / tests). */
+function foldModelReasoning(text: string, reasoning: string, fold = true): string {
+  const visible = String(text || "");
+  const thought = String(reasoning || "").trim();
+  if (!thought) return visible;
+  if (!fold) return visible;
+  if (visible.includes(thought)) return visible;
+  return `<think>\n${thought}\n</think>\n${visible}`;
+}
+
+function abortError(): Error {
+  const err = new Error("aborted");
+  err.name = "AbortError";
+  return err;
 }
 
 async function callOpenAICompatible(
@@ -227,22 +272,47 @@ async function callOpenAICompatible(
   }
 
   const url = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
-  const data = await fetchWithRetry(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  }, opts.operation);
+  const send = (msgs: Array<{ role: string; content: string }>) =>
+    fetchWithRetry(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...body, messages: msgs }),
+    }, opts.operation, opts.shouldAbort);
 
-  // OpenAI-compatible response: { choices: [{ message: { content: "..." } }] }
+  let data: Record<string, unknown>;
+  try {
+    data = await send(messages);
+  } catch (err) {
+    // Reasoning models (o1 / DeepSeek-R1 / …) reject a `system` role. Desktop
+    // self-heals by folding the system prompt into the first user turn — same
+    // recovery here so Obsidian does not hard-fail where Desktop succeeds.
+    const msg = err instanceof Error ? err.message : String(err);
+    const systemRejected =
+      /does not support.*system|unsupported.*system.*role|invalid.*system.*role|system.*role.*(unsupported|invalid|not supported)|only.*user.*and.*assistant/iu.test(msg) ||
+      (/\bsystem\b/iu.test(msg) && /\b(role|message|prompt)\b/iu.test(msg) && /\b(unsupported|invalid|not supported|not allowed|reject)/iu.test(msg));
+    if (opts.systemPrompt && systemRejected) {
+      data = await send([
+        { role: "user", content: `${opts.systemPrompt}\n\n---\n\n${prompt}` },
+      ]);
+    } else {
+      throw err;
+    }
+  }
+
+  // OpenAI-compatible response: { choices: [{ message: { content, reasoning_content } }] }
   const choices = isUnknownArray(data.choices) ? data.choices : [];
   const first = choices[0];
-  const text = isRecord(first) && isRecord(first.message) && typeof first.message.content === "string"
-    ? first.message.content
+  const message = isRecord(first) && isRecord(first.message) ? first.message : null;
+  const text = message && typeof message.content === "string" ? message.content : "";
+  const reasoning = message
+    ? [message.reasoning_content, message.reasoning]
+        .filter((part) => typeof part === "string")
+        .join("\n\n")
     : "";
-  if (!text) {
+  if (!text && !reasoning) {
     console.warn(`[topmind] AI ${opts.operation}: empty response from ${model}`);
   }
-  return text;
+  return foldModelReasoning(text, reasoning, opts.foldReasoning !== false);
 }
 
 // ── Anthropic native API call (/v1/messages) ────────────────────────────────
@@ -277,21 +347,26 @@ async function callAnthropic(
     method: "POST",
     headers,
     body: JSON.stringify(body),
-  }, opts.operation);
+  }, opts.operation, opts.shouldAbort);
 
   // Anthropic response: { content: [{ type: "text", text: "..." }] }
   const contentBlocks = isUnknownArray(data.content) ? data.content : [];
   let text = "";
+  let reasoning = "";
   for (const block of contentBlocks) {
-    if (isRecord(block) && typeof block.text === "string") {
-      if (block.type === "text" || !text) text = block.text;
-      if (block.type === "text") break;
+    if (!isRecord(block)) continue;
+    if (block.type === "thinking" && typeof block.thinking === "string") {
+      reasoning = reasoning ? `${reasoning}\n\n${block.thinking}` : block.thinking;
+      continue;
+    }
+    if (typeof block.text === "string" && (block.type === "text" || !text)) {
+      text = block.text;
     }
   }
-  if (!text) {
+  if (!text && !reasoning) {
     console.warn(`[topmind] AI ${opts.operation}: empty response from ${model}`);
   }
-  return text;
+  return foldModelReasoning(text, reasoning, opts.foldReasoning !== false);
 }
 
 // ── Google Gemini API call (/v1beta/models/{model}:generateContent) ─────────
@@ -325,7 +400,7 @@ async function callGoogleGemini(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  }, opts.operation);
+  }, opts.operation, opts.shouldAbort);
 
   // Gemini response: { candidates: [{ content: { parts: [{ text: "..." }] } }] }
   const candidates = isUnknownArray(data.candidates) ? data.candidates : [];
@@ -334,13 +409,19 @@ async function callGoogleGemini(
     ? firstCandidate.content.parts
     : [];
   let text = "";
+  let reasoning = "";
   for (const part of parts) {
-    if (isRecord(part) && typeof part.text === "string") text += part.text;
+    if (!isRecord(part) || typeof part.text !== "string") continue;
+    if (part.thought === true) {
+      reasoning = reasoning ? `${reasoning}\n\n${part.text}` : part.text;
+    } else {
+      text += part.text;
+    }
   }
-  if (!text) {
+  if (!text && !reasoning) {
     console.warn(`[topmind] AI ${opts.operation}: empty response from ${model}`);
   }
-  return text;
+  return foldModelReasoning(text, reasoning, opts.foldReasoning !== false);
 }
 
 // ── requestUrl with transient error retry ──────────────────────────────────
@@ -354,12 +435,15 @@ async function fetchWithRetry(
   url: string,
   init: { method: string; headers: Record<string, string>; body: string },
   operation: string,
+  shouldAbort?: () => boolean,
 ): Promise<Record<string, unknown>> {
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (shouldAbort?.()) throw abortError();
     try {
-      // requestUrl doesn't support AbortController; use Promise.race for timeout.
+      // requestUrl can't cancel the socket. Stop still abandons the result
+      // so the agent loop will not run the next tool.
       const requestPromise = requestUrl({
         url,
         method: init.method,
@@ -368,11 +452,32 @@ async function fetchWithRetry(
         throw: false, // Handle HTTP errors manually for retry logic
       });
 
+      let timeoutTimer: number | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
-        window.setTimeout(() => reject(new Error("AI request timeout")), REQUEST_TIMEOUT_MS);
+        timeoutTimer = window.setTimeout(() => reject(new Error("AI request timeout")), resolveTimeoutMs(operation));
       });
+      const racers: Array<Promise<typeof requestPromise extends Promise<infer R> ? R : never>> = [
+        requestPromise,
+        timeoutPromise,
+      ];
+      if (shouldAbort) {
+        racers.push(new Promise<never>((_, reject) => {
+          const timer = window.setInterval(() => {
+            if (shouldAbort()) {
+              window.clearInterval(timer);
+              reject(abortError());
+            }
+          }, 200);
+          void requestPromise.finally(() => window.clearInterval(timer));
+        }));
+      }
 
-      const res = await Promise.race([requestPromise, timeoutPromise]);
+      let res: Awaited<typeof requestPromise>;
+      try {
+        res = await Promise.race(racers);
+      } finally {
+        if (timeoutTimer !== undefined) window.clearTimeout(timeoutTimer);
+      }
 
       if (res.status < 200 || res.status >= 300) {
         const errText = res.text || `HTTP ${res.status}`;
@@ -394,6 +499,7 @@ async function fetchWithRetry(
       const json: unknown = res.json;
       return isRecord(json) ? json : {};
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") throw err;
       // Retry on network errors and timeouts
       if (attempt < MAX_RETRIES && isTransientError(err)) {
         lastError = err instanceof Error ? err : new Error(String(err));
@@ -415,34 +521,33 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Resolve max_tokens based on operation type.
- * Aligned with Desktop's ai-provider-adapter.mjs OP_LIMITS.
+ * Byte-aligned with Desktop's ai-provider-adapter.mjs OP_LIMITS.
  */
 function resolveMaxTokens(operation: string): number {
   switch (operation) {
     case "topic_summary":
-      return 16384;     // Multi-file summaries can be long
+      return 16384;
     case "period_analysis":
     case "period_digest":
-      return 12288;     // Structured Markdown with sections
     case "inbox_organize":
     case "memory_organize":
     case "ai_summary":
     case "write_digest":
-      return 6144;      // JSON with arrays / structured output
-    case "topic_classify":
-    case "todo_maintain":
-      return 4096;      // Small JSON / todo lines
     case "todo_extract":
+    case "todo_maintain":
+      return 12288;
     case "memory_extract":
-      return 2048;      // Short extraction
+    case "topic_classify":
+      return 4096;
     default:
-      return 2048;
+      return 12288;
   }
 }
 
 /**
  * Detect if a model ID is a reasoning / thinking model that prohibits custom temperature.
- * Examples: deepseek-reasoner, deepseek-r1, o1, o1-mini, o3-mini, qwq-32b, etc.
+ * Tight patterns — aligned with Desktop (avoid matching o10-/o30- style ids or
+ * generic thinking ids that accept temperature).
  */
 export function isReasoningModel(modelId?: string): boolean {
   if (!modelId || typeof modelId !== "string") return false;
@@ -450,10 +555,9 @@ export function isReasoningModel(modelId?: string): boolean {
   return (
     lower.includes("reasoner") ||
     lower.includes("deepseek-r1") ||
-    lower.startsWith("o1") ||
-    lower.startsWith("o3") ||
+    /^o[134](-mini|-preview)?(?:[-/]|$)/.test(lower) ||
     lower.includes("qwq") ||
-    lower.includes("thinking")
+    /(^|[-/])thinking([-/]|$)/.test(lower)
   );
 }
 
@@ -467,18 +571,20 @@ function resolveTemperature(operation: string, modelId?: string): number | undef
     case "todo_maintain":
     case "todo_extract":
     case "memory_extract":
+    case "memory_organize":
     case "topic_classify":
-      return 0.3;       // Extraction/classification: deterministic
+    case "inbox_organize":
+      return 0.3;
     case "period_analysis":
     case "period_digest":
+    case "topic_summary":
     case "ai_summary":
-    case "memory_organize":
     case "write_digest":
-      return 0.5;       // Analysis: balanced
+      return 0.5;
     case "chat":
-      return 0.6;       // Chat: slightly creative
+      return undefined;
     default:
-      return 0.4;       // Generic default
+      return undefined;
   }
 }
 

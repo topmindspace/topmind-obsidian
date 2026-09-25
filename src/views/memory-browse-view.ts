@@ -125,6 +125,19 @@ export class MemoryBrowseView extends ItemView {
   }
 
   private async render(): Promise<void> {
+    try {
+      await this.renderInner();
+    } catch (err) {
+      console.error("[topmind] memory browse render failed:", err);
+      this.contentEl.empty();
+      this.contentEl.createDiv({
+        cls: "tm-empty-state",
+        text: `Topmind: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  private async renderInner(): Promise<void> {
     const { contentEl } = this;
     this.renderComp.unload();
     this.renderComp = new Component();
@@ -142,7 +155,7 @@ export class MemoryBrowseView extends ItemView {
     const organizeBtn = controls.createEl("button", {
       cls: "tm-btn-secondary tm-btn-sm",
     });
-    setIcon(organizeBtn, "list-tree");
+    setIcon(organizeBtn, "arrow-down-wide-narrow");
     organizeBtn.createSpan({ text: t("memory_browse_organize") });
     organizeBtn.setAttribute("aria-label", t("cmd_memory_organize"));
     organizeBtn.setAttribute("title", t("cmd_memory_organize"));
@@ -155,6 +168,7 @@ export class MemoryBrowseView extends ItemView {
         "all",
       );
     });
+    contentEl.createDiv({ cls: "tm-memory-scope", text: t("memory_browse_scope") });
     const layers = contentEl.createDiv({ cls: "tm-feed-chrome" });
     layers.setAttr("data-feed-chrome", "true");
     layers.setAttr("role", "tablist");
@@ -199,8 +213,15 @@ export class MemoryBrowseView extends ItemView {
 
     const feed = contentEl.createDiv({ cls: "tm-memory-feed" });
     feed.setAttr("data-layout", layout);
+    let lastHeading = "";
     for (const item of visible) {
-      await this.renderItem(feed, item);
+      const heading = item.kind === "profile" ? (item.heading || "") : "";
+      if (heading && heading !== lastHeading) {
+        const day = feed.createDiv({ cls: "tm-day-header" });
+        day.createSpan({ text: heading, cls: "tm-day-label" });
+        lastHeading = heading;
+      }
+      await this.renderItem(feed, item, layout);
     }
   }
 
@@ -232,7 +253,7 @@ export class MemoryBrowseView extends ItemView {
     return t("memory_kind_profile");
   }
 
-  private async renderItem(container: HTMLElement, item: MemoryFeedItem): Promise<void> {
+  private async renderItem(container: HTMLElement, item: MemoryFeedItem, layout: "list" | "card"): Promise<void> {
     const card = container.createDiv({ cls: "tm-card tm-memory-card" });
     card.setAttr("data-memory-feed-item", "true");
     card.setAttr("data-memory-path", item.path);
@@ -265,13 +286,16 @@ export class MemoryBrowseView extends ItemView {
       void this.app.workspace.openLinkText(item.path, "", false);
     });
     const body = card.createDiv({ cls: "tm-card-body" });
-    const md = String(item.body || "").trim() || item.preview;
-    if (md) {
-      try {
-        await MarkdownRenderer.render(this.app, md.slice(0, 1600), body, item.path, this.renderComp);
-      } catch {
-        body.textContent = md;
-      }
+    const md = String(item.body || "").replace(/<!--[\s\S]*?-->/gu, "").trim() || item.preview;
+    if (!md) return;
+    if (layout === "list") {
+      body.textContent = item.preview || md;
+      return;
+    }
+    try {
+      await MarkdownRenderer.render(this.app, md.slice(0, 1600), body, item.path, this.renderComp);
+    } catch {
+      body.textContent = md;
     }
   }
 }

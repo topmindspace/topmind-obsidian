@@ -148,8 +148,8 @@ describe("Obsidian labeled-button chrome (shipped)", () => {
 
   test("refresh and organize use distinct icons and handlers", () => {
     assert.match(workbench, /setIcon\(refreshStreamBtn,\s*"refresh-cw"\)/);
-    // organize = wand-2 (Desktop RiMagicLine); list-checks is reserved for todos
-    assert.match(workbench, /setIcon\(this\.organizeBtn,\s*"wand-2"\)/);
+    // organize = sort glyph (Desktop RiSortDesc); list-checks is reserved for todos
+    assert.match(workbench, /setIcon\(this\.organizeBtn,\s*"arrow-down-wide-narrow"\)/);
     assert.match(workbench, /stream_unreconciled/);
     assert.match(workbench, /p\.reconciled === false/);
     assert.match(workbench, /refreshStreamBtn\.addEventListener\("click".*refreshStream/s);
@@ -398,6 +398,75 @@ describe("parseStreamEntries (shipped)", () => {
     assert.doesNotMatch(entries[0].text, /third/);
     assert.equal(entries[1].time, "12:00");
     assert.match(entries[1].text, /third/);
+  });
+});
+
+describe("Desktop-parity feed order + IME Enter guard", () => {
+  test("orderStreamEntriesForFeed: newest day first, later clock first, batch stays put", async () => {
+    const { orderStreamEntriesForFeed } = await importShipped("utils.ts");
+    const entries = [
+      { time: "09:00", heading: "2026-07-25", id: "a" },
+      { time: "12:00", heading: "2026-07-25", id: "batch1" },
+      { time: "12:00", heading: "2026-07-25", id: "batch2" },
+      { time: "18:30", heading: "2026-07-25", id: "e" },
+      { time: "10:00", heading: "2026-07-24", id: "old1" },
+      { time: "11:00", heading: "2026-07-24", id: "old2" },
+    ];
+    const groups = orderStreamEntriesForFeed(entries, "desc");
+    assert.equal(groups.length, 2);
+    assert.equal(groups[0].key, "2026-07-25");
+    assert.deepEqual(
+      groups[0].entries.map((e) => e.id),
+      ["e", "batch1", "batch2", "a"],
+    );
+    assert.equal(groups[1].key, "2026-07-24");
+    assert.deepEqual(
+      groups[1].entries.map((e) => e.id),
+      ["old2", "old1"],
+    );
+
+    const asc = orderStreamEntriesForFeed(entries, "asc");
+    assert.equal(asc[0].key, "2026-07-24");
+    assert.deepEqual(
+      asc[0].entries.map((e) => e.id),
+      ["old1", "old2"],
+    );
+  });
+
+  test("isImeEnter blocks composing Enter and post-composition confirm", async () => {
+    const { isImeEnter, bindImeEnterGuard } = await importShipped("utils.ts");
+    assert.equal(isImeEnter({ isComposing: true, keyCode: 13 }), true);
+    assert.equal(isImeEnter({ isComposing: false, keyCode: 229 }), true);
+    assert.equal(isImeEnter({ isComposing: false, keyCode: 13 }), false);
+
+    const guard = { until: Date.now() + 50 };
+    assert.equal(isImeEnter({ isComposing: false, keyCode: 13 }, guard), true);
+    assert.equal(isImeEnter({ isComposing: false, keyCode: 13 }, { until: 0 }), false);
+
+    const handlers = {};
+    const el = {
+      addEventListener(type, fn) {
+        handlers[type] = fn;
+      },
+    };
+    const g = bindImeEnterGuard(el);
+    handlers.compositionstart();
+    assert.equal(isImeEnter({ isComposing: false, keyCode: 13 }, g), true);
+    handlers.compositionend();
+    assert.equal(isImeEnter({ isComposing: false, keyCode: 13 }, g), true);
+    g.until = 0;
+    assert.equal(isImeEnter({ isComposing: false, keyCode: 13 }, g), false);
+  });
+
+  test("workbench + chat + capture all bind the IME guard", () => {
+    for (const rel of [
+      "views/stream-workbench-view.ts",
+      "views/sidebar-dock-view.ts",
+      "views/quick-capture-modal.ts",
+    ]) {
+      const src = fs.readFileSync(path.join(srcDir, rel), "utf8");
+      assert.match(src, /bindImeEnterGuard|isImeEnter/, rel);
+    }
   });
 });
 
@@ -775,8 +844,11 @@ describe("suggestion cache and todo force (Desktop parity)", () => {
     assert.match(dock, /softRefreshSuggestions/);
     const stream = fs.readFileSync(path.join(srcDir, "views", "stream-workbench-view.ts"), "utf8");
     assert.match(stream, /peekSuggestions\(\)/);
-    assert.match(stream, /\[\.\.\.groups\]\.reverse\(\)/);
+    // Desktop-parity feed order lives in utils.orderStreamEntriesForFeed —
+    // days newest-first, later clock times first, same-minute batch stays put.
+    assert.match(stream, /orderStreamEntriesForFeed\(/);
     assert.doesNotMatch(stream, /\[\.\.\.entries\]\.reverse\(\)/);
+    assert.doesNotMatch(stream, /\[\.\.\.groups\]\.reverse\(\)/);
   });
 });
 
@@ -1013,9 +1085,13 @@ describe("AI task manager + chat write-gate hygiene (source)", () => {
 
   test("chat reasoning fold defaults collapsed; host stays Pi-free and ledger-free", () => {
     const sidebar = fs.readFileSync(path.join(srcDir, "views", "sidebar-dock-view.ts"), "utf8");
-    const fold = sidebar.slice(sidebar.indexOf("tm-chat-reasoning"));
     assert.match(sidebar, /createEl\("details", \{ cls: "tm-chat-reasoning" \}\)/);
-    assert.doesNotMatch(fold.slice(0, 800), /setAttribute\(["']open["']/);
+    // Historical turns stay collapsed; the live working row may open so the
+    // user can watch reasoning while the turn is still running.
+    const historyFold = sidebar.slice(sidebar.indexOf("tm-chat-reasoning-body\""));
+    const historyBlock = sidebar.slice(sidebar.indexOf('pre.setText(msg.reasoning)') - 400);
+    assert.doesNotMatch(historyBlock, /setAttribute\(["']open["']/);
+    assert.match(sidebar, /data-chat-reasoning-live/);
     assert.doesNotMatch(sidebar, /pi-agent-core|@earendil-works/);
     const pkg = fs.readFileSync(path.join(srcDir, "..", "package.json"), "utf8");
     assert.doesNotMatch(pkg, /pi-agent-core|pi-coding-agent/);
@@ -1259,5 +1335,54 @@ describe("pending-writes queue (shipped)", () => {
     assert.equal(pw.listPendingWrites().length, 1);
     assert.equal(pw.rejectPendingWrite(e.id), true);
     assert.equal(pw.listPendingWrites().length, 0);
+  });
+});
+
+describe("chat session compact + render error boundaries", () => {
+  test("compactChatMessages keeps recent full and caps older turns", async () => {
+    const { compactChatMessages, CHAT_COMPACT_DEFAULTS } = await importShipped("utils.ts");
+    assert.equal(CHAT_COMPACT_DEFAULTS.maxMessages, 60);
+    assert.equal(CHAT_COMPACT_DEFAULTS.keepRecent, 24);
+    const msgs = Array.from({ length: 80 }, (_, i) => ({
+      role: i % 2 ? "assistant" : "user",
+      content: `msg-${i} ${"x".repeat(200)}`,
+      reasoning: i < 70 ? "r".repeat(500) : "",
+    }));
+    const out = compactChatMessages(msgs, { maxMessages: 60, keepRecent: 24, maxPerMessage: 100 });
+    assert.ok(out.length <= 60);
+    assert.ok(out.length >= 24);
+    const last = out[out.length - 1];
+    assert.match(last.content, /msg-79/);
+    assert.ok(last.content.length > 100, "recent message stays full");
+    const older = out[0];
+    assert.ok(String(older.content).length <= 120, `older message capped, got ${String(older.content).length}`);
+  });
+
+  test("compactChatMessages respects maxChars and never drops the latest turn", async () => {
+    const { compactChatMessages } = await importShipped("utils.ts");
+    const msgs = Array.from({ length: 30 }, (_, i) => ({
+      role: "user",
+      content: `${i}:${"y".repeat(5000)}`,
+    }));
+    const out = compactChatMessages(msgs, { maxMessages: 60, keepRecent: 4, maxChars: 20_000 });
+    assert.ok(out.length >= 4);
+    assert.match(out[out.length - 1].content, /^29:/);
+    const total = out.reduce((n, m) => n + m.content.length, 0);
+    assert.ok(total <= 20_000 + 50, `char budget respected, got ${total}`);
+  });
+
+  test("views wrap render in an error boundary (no unhandled rejection surface)", () => {
+    for (const rel of [
+      "views/sidebar-dock-view.ts",
+      "views/memory-browse-view.ts",
+      "views/stream-workbench-view.ts",
+    ]) {
+      const src = fs.readFileSync(path.join(srcDir, rel), "utf8");
+      assert.match(src, /render failed:|refresh failed:/, rel);
+      assert.match(src, /console\.error\("\[topmind\]/, rel);
+    }
+    const ops = fs.readFileSync(path.join(srcDir, "services", "kernel-workspace-ops.ts"), "utf8");
+    assert.match(ops, /compactChatMessages\(/, "agent prompt uses session compact");
+    assert.doesNotMatch(ops, /\.slice\(-10\)/, "no hard 10-turn window");
   });
 });

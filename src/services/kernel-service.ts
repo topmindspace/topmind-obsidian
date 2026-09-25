@@ -465,12 +465,10 @@ export class KernelService {
       opts,
     );
 
-    if (result.ok) {
-      if (result.pending || result.needsConfirm) {
-        new Notice(t("notice_write_pending"));
-      } else {
-        new Notice(`${t("notice_written")} → ${result.path}`);
-      }
+    if (result.pending || result.needsConfirm || result.error === "pending-confirmation") {
+      new Notice(t("notice_write_pending"));
+    } else if (result.ok) {
+      new Notice(`${t("notice_written")} → ${result.path}`);
     } else {
       new Notice(`${t("notice_write_failed")}: ${result.error || "unknown"}`);
     }
@@ -496,11 +494,11 @@ export class KernelService {
       const prompt = isZh
         ? `请润色以下随手记内容，使其表达更通顺、专业，同时保留原意与信息量。只输出润色后的正文，不要包含任何前置或后置说明解释、不要包含标签符号：\n\n${text}`
         : `Please polish the following note to make it smoother and more professional while preserving its original meaning and details. Output only the polished replacement text without any preamble or explanation:\n\n${text}`;
-      const res = await provider.generate(prompt);
+      const res = await provider.generate(prompt, { operation: "polish", foldReasoning: false });
       const cleaned = String(res || "").trim().replace(/^```[a-z]*\s*/i, "").replace(/\s*```$/i, "").trim();
       return cleaned || null;
     } catch (e) {
-      new Notice(`AI 润色失败: ${e instanceof Error ? e.message : String(e)}`);
+      new Notice(`${t("notice_polish_failed")}: ${e instanceof Error ? e.message : String(e)}`);
       return null;
     }
   }
@@ -603,6 +601,9 @@ export class KernelService {
     ok: boolean;
     error?: string;
     openPath?: string;
+    matchedText?: string;
+    matchExact?: boolean;
+    matchScore?: number;
   }> {
     const silent = opts.silent === true;
     const working = silent
@@ -627,7 +628,14 @@ export class KernelService {
       working?.hide();
       if (mapped.ok) {
         this.dropSuggestion(suggestion.id);
-        if (!silent) new Notice(`${t("notice_executed")}: ${suggestion.title}`);
+        if (!silent) {
+          // Fuzzy update/retire: say which live fact was actually rewritten.
+          const fuzzy = Boolean(mapped.matchedText) && mapped.matchExact === false;
+          const suffix = fuzzy && mapped.matchedText
+            ? ` · ${t("notice_fuzzy_matched", { fact: mapped.matchedText.slice(0, 40) })}`
+            : "";
+          new Notice(`${t("notice_executed")}: ${suggestion.title}${suffix}`);
+        }
         return mapped;
       }
       if (!silent) new Notice(`${t("notice_execute_failed")}: ${mapped.error || suggestion.title}`);
@@ -751,7 +759,10 @@ export class KernelService {
   async chat(
     userMessage: string,
     history: Array<{ role: "user" | "assistant"; content: string }> = [],
-    opts: { onProgress?: (ev: ChatProgressEvent) => void } = {},
+    opts: {
+      onProgress?: (ev: ChatProgressEvent) => void;
+      shouldAbort?: () => boolean;
+    } = {},
   ): Promise<{
     content: string;
     reasoning: string;
@@ -860,6 +871,7 @@ export class KernelService {
       systemExtra: systemPrompt,
       maxSteps: clampMaxAgentSteps(this.settings.maxAgentSteps),
       onProgress: opts.onProgress,
+      shouldAbort: opts.shouldAbort,
       engineRoot: this.getEngineRoot(),
       configDir: this.app.vault.configDir,
     });
@@ -1028,7 +1040,7 @@ export class KernelService {
       return { ok: false, error: t("settings_ai_test_no_key") };
     }
     try {
-      const reply = await provider.generate("Reply with: OK", { operation: "test" });
+      const reply = await provider.generate("Reply with: OK", { operation: "test", foldReasoning: false });
       if (reply && reply.trim().length > 0) {
         return { ok: true };
       }

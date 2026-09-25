@@ -152,6 +152,8 @@ export default class TopmindPlugin extends Plugin {
   private statusBarEl: HTMLElement | null = null;
   private aiTaskUnsub: (() => void) | null = null;
   private settingTab: TopmindSettingTab | null = null;
+  /** Set in onunload — guards onLayoutReady callbacks that outlive the plugin. */
+  private _unloaded = false;
 
   async onload(): Promise<void> {
     try {
@@ -270,6 +272,8 @@ export default class TopmindPlugin extends Plugin {
     // ── Auto-open workbench + sidebar on startup ──
     if (this.settings.autoOpenWorkbench) {
       this.app.workspace.onLayoutReady(() => {
+        // onLayoutReady is not auto-disposed — skip if the plugin already unloaded.
+        if (this._unloaded) return;
         void this.openWorkbench();
         // Also open sidebar for unified AI access
         void this.openSidebar();
@@ -279,6 +283,7 @@ export default class TopmindPlugin extends Plugin {
     // ── Auto-maintain todos if enabled ──
     if (this.settings.autoMaintainTodos && this.kernelService.isWorkspaceReady()) {
       this.app.workspace.onLayoutReady(() => {
+        if (this._unloaded) return;
         // Queued (not direct) so the task badge/history observes boot work too
         void this.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar", true);
       });
@@ -286,6 +291,7 @@ export default class TopmindPlugin extends Plugin {
   }
 
   onunload(): void {
+    this._unloaded = true;
     // Flush any debounced settings keystrokes before tearing down.
     this.settingTab?.flushPending();
     this.settingTab = null;
@@ -561,7 +567,8 @@ export default class TopmindPlugin extends Plugin {
     el.addClass("tm-status-bar-item");
     el.setAttribute("aria-label", t("statusbar_tip"));
     el.setAttribute("data-tooltip-position", "top");
-    el.addEventListener("click", () => void this.openSidebar());
+    // Plugin.registerDomEvent — cleaned up automatically on unload.
+    this.registerDomEvent(el, "click", () => void this.openSidebar());
     this.statusBarEl = el;
     this.aiTaskUnsub = aiTaskManager.subscribe((progress) => this.updateStatusBarItem(progress));
     this.updateStatusBarItem(aiTaskManager.getProgress());

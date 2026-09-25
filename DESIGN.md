@@ -29,7 +29,7 @@
 │  │ 清单 │ 建议 │ 对话 │ 历史 │  ← 4 标签（动态流的家在主区）    │
 │  └──────┴──────┴──────┴──────┘                                │
 │  头部：AI 状态点 | 任务徽章 | [动态] [⚙设置]                     │
-│  底部：[⚡记一下] [🪄整理] [✨AI 操作菜单]                       │
+│  底部：[⚡记一下] [⇩整理] [✨AI 操作菜单]                       │
 │  （模型切换只在「对话」tab + 设置；不复读到头部）                 │
 ├──────────────────────────────────────────────────────────────┤
 │  入口 3: 记一下弹窗                                            │
@@ -172,7 +172,7 @@
 │  ── 建议标签（唯一确认面）──      │
 │  💡 建议专题: "插件开发"          │
 │  📝 待办提取: 2 条新待办          │
-│  🧠 写入「我的情况」              │
+│  👤 写入「我的情况」              │
 │                                  │
 │  ── 对话标签 ──                  │
 │  ┌── 你 ──────────────────┐     │
@@ -192,7 +192,7 @@
 │  🗑️ 已取消 — 用户中止            │
 │                                  │
 ├─────────────────────────────────┤
-│ ⚡  🪄  📋  🏷️  🧠  🌊          │  ← 底部快捷操作（整理=wand-2，动态=打开主区）
+│ ⚡  ⇩  📋  🏷️  👤  🌊          │  ← 底部快捷操作（整理=sort，我的情况=user，动态=打开主区）
 └─────────────────────────────────┘
 ```
 
@@ -217,9 +217,12 @@
 - 与 AI 对话用户笔记、待办和动态
 - 上下文感知：自动注入近期动态 + 当前待办 + 用户画像
 - Markdown 渲染 AI 回复
-- 对话历史（会话内保持）
+- 对话历史（会话内保持 + 磁盘 `.topmind/chat-history.json`）
+- **会话压缩**（Desktop `ai-session-compact` 对齐）：`maxMessages 60 / keepRecent 24 / maxChars 240K`；最近全文，旧消息截断，保尾；agent prompt 同一预算
+- **思考过程**：运行中 live 折叠展示 reasoning；历史消息默认折叠
+- **停止**：工作中发送按钮变为停止；保留已产出半成品 + 已完成修改
+- `Enter` 发送，`Shift+Enter` 换行；**输入法选词回车不发送**
 - 清空对话按钮
-- `Enter` 发送，`Shift+Enter` 换行
 
 #### 动态标签 (Stream)
 - 最近 10 条动态条目（最新在前）
@@ -242,7 +245,7 @@
 | 🔄 | 整理（reconcile + todo_maintain） | 无需 AI | icon-only |
 | 📋 | AI 整理待办（force todo_maintain） | 需要 AI | icon-only |
 | 🏷️ | 专题分类（force topic_classify · 共享队列） | 需要 AI | icon-only |
-| 🧠 | 整理我的情况（force memory_organize） | 需要 AI | icon-only |
+| 👤 | 整理我的情况（force memory_organize） | 需要 AI | icon-only |
 | 👁 | 显示/隐藏操作标签 | — | toggle |
 
 AI 操作按钮仅在 AI 已配置时显示。默认显示文本标签模式（`showActionLabels = true`），用户可切换为纯图标模式。所有按钮有 `title` tooltip。
@@ -490,7 +493,7 @@ System prompt 跟随 UI locale：
 - **单一 Design Token 面**：`styles.css` 顶部 token 块作用于全部 `tm-*` 表面（workbench · sidebar · memory · capture）
 - 卡片样式：圆角 10px + 发丝描边 + 微阴影 + hover 高亮
 - 输入栏：单行高度起，自适应增长
-- AI 建议卡片：左侧带彩色边条（蓝=create_topic/inbox_organize/ai_summary/stream_digest，橙=stale_topic/catch_all，绿=promote_memory/open_profile）。**不用 purple**（Desktop 禁止紫作产品 AI 身份）。`promote_memory` 的 `payload.action` 为 `append_profile` / `update_profile` / `retire_profile`（不是只追加）；聊天注入画像走 Kernel `readProfileActiveBody`（历史段折叠为计数，不 dump 全文）。Inbox 超期走 `inbox_organize` 归位（移入/新建专题），不再发 `inbox_review` 归档卡。
+- AI 建议卡片：左侧带彩色边条（蓝=create_topic/inbox_organize/ai_summary/stream_digest，橙=stale_topic/catch_all，绿=promote_memory/open_profile）。**不用 purple**（Desktop 禁止紫作产品 AI 身份）。`promote_memory` 的 `payload.action` 为 `append_profile` / `update_profile` / `retire_profile` / `compact_history`（不是只追加）；**近重复事实融合为 update（保留最新），历史区可 compact 合并同类项**。聊天注入画像走 Kernel `readProfileActiveBody`（历史段折叠为计数，不 dump 全文）。Inbox 超期走 `inbox_organize` 归位（移入/新建专题），不再发 `inbox_review` 归档卡。模糊命中 update/retire 成功提示「相似命中」。
 - AI 对话：用户消息右对齐（强调色背景），AI 消息左对齐（卡片背景）
 - 全中文 UI（可切英文）
 - **与 Desktop 的有意差异**：主 CTA 用宿主 `--interactive-accent`（非 ink）；图标库 Lucide（非 Remix，语义映射见 Desktop DESIGN §0.0.2）；圆角 4/6/10；信息流默认宽 `56rem`（对齐 Desktop feed）

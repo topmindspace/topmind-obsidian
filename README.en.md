@@ -52,9 +52,9 @@ Capture Instantly  ->  AI Proposes in Background  ->  You Review & Confirm  ->  
 - **Note it**: Open the capture modal (bind a hotkey in Obsidian Settings → Hotkeys). Destinations: this week's stream or Inbox.
 - **Stream view**: A tab in the Obsidian main area with a compose box (**Log it** into the period note), a timeline of cards, and AI suggestions.
 - **AI Copilot Panel** (Sidebar): A tabbed right sidebar unifying all AI capabilities — **Todos**, **Suggestions**, **Chat**, and **History** — in one place. Header is status + task badge only; model switching lives in Chat and Settings.
-- **AI Chat**: Converse with AI about your notes, todos, and stream entries. The chat is context-aware — it automatically injects your recent stream entries, current todos, and personal profile.
+- **AI Chat**: Converse with AI about your notes, todos, and stream entries. Context-aware (recent stream, todos, profile). **Stop** mid-turn (finished edits are kept), **expandable reasoning**, IME-safe Enter, and Desktop-parity **session compact** (60 messages / 24 recent kept full).
 - **Weekly Reconciliation**: Reconcile your weekly logs, extract pending action items, and refresh suggestions with one click.
-- **Background AI Copilot**: Automatically extract todos (`memory/todo.md`), suggest emergent topics, and maintain your personal context profile (`memory/profile.md`).
+- **Background AI Copilot**: Extract todos (`memory/todo.md`), suggest emergent topics, and maintain `memory/profile.md`. Profile writes **fuse near-duplicates** (keep the newest wording — never a second live copy) and can **compact history** — confirm-gated via Suggestions.
 - **Quick Settings Access**: One-click access to plugin settings from both the sidebar header and the workbench toolbar. Toolbar buttons are icon+label at default width (labels hide only when the pane is narrow). Refresh and Organize use distinct icons. Model badge shows the currently active AI provider + model.
 - **Writeback Protection**: Every AI modification goes through the Kernel `writeback-engine` (`open`/`locked`). Backups and receipts are **high-impact only** (locked overwrite; delete/archive of locked/core notes). Ordinary open updates do not create Archive copies.
 
@@ -67,10 +67,10 @@ Topmind Stream reduces mental overhead by focusing on 5 plain-language concepts:
 | Concept | Meaning | Vault Location |
 |---------|---------|----------------|
 | **Capture** (*记一下*) | Save a quick thought / snippet | Weekly Stream Log / `00-Inbox/` |
-| **Stream** (*动态*) | Daily activity & timeline | `10-Stream/` (weekly file per log) |
+| **Stream** (*动态*) | Daily activity & timeline | `10-动态/` (weekly file per log) |
 | **Topic** (*专题*) | Long-term subject folder | `{Category}/{YYYY-Topic}/` |
 | **My Profile** (*我的情况*) | Memory-plane browse (profile / periodic / topic memory) | Files under `memory/` (default portrait `memory/profile.md`) |
-| **Delivery** (*交付*) | Final delivery items & published work | `88-Delivery/` |
+| **Delivery** (*交付*) | Final delivery items & published work | `88-交付/` |
 
 ---
 
@@ -103,7 +103,7 @@ Topmind Stream reduces mental overhead by focusing on 5 plain-language concepts:
 | Manual zip | Download the newer `topmind-obsidian-<ver>.zip`, replace files under `plugins/topmind-stream/`, reload Obsidian |
 | From source | `npm run obsidian:pack` -> install zip as above |
 
-Your vault files (`topmind.yaml`, `10-Stream/` or `10-动态/`, `memory/`) are **not** replaced by the plugin upgrade. Version truth: [`manifest.json`](./manifest.json) (`npm run versions`).
+Your vault files (`topmind.yaml`, `10-动态/`, `memory/`) are **not** replaced by the plugin upgrade. Version truth: [`manifest.json`](./manifest.json) .
 
 ---
 

@@ -170,6 +170,51 @@ describe("Kernel integration — shipped capture / list / reconcile", () => {
     assert.equal(r.ok, true, r.error);
     assert.equal(resolveContractWritebackMode(kernel, tmp), "confirm");
   });
+
+  test("appendStreamEntryToWorkspace treats wroteFiles-without-ok as success (no false write-failed)", async () => {
+    const { appendStreamEntryToWorkspace } = await importShipped("services/kernel-workspace-ops.ts");
+    const periodRel = kernel.resolveStreamTarget({
+      workspaceRoot: tmp,
+      engineRoot: eng,
+    }).periodRelPath;
+    const abs = path.join(tmp, periodRel);
+    const raw = fs.existsSync(abs)
+      ? fs.readFileSync(abs, "utf8")
+      : "# 2026-W34\n\n## 记录\n\n- 10:00 anchor\n";
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, raw, "utf8");
+
+    // executeWrite surface evidence: wroteFiles is set, `ok` is not.
+    // Regressing this check is exactly "提示写入失败，但实际还是写入了".
+    const mockKernel = {
+      appendToStreamEntryDetailed: (body, opts) => ({
+        body: `${body}\n\n#### 续 · 2026-08-24 12:00\n\n${opts.content}\n`,
+        location: { appendedAt: "end" },
+      }),
+      executeWrite: (args) => {
+        fs.writeFileSync(args.targetPath, args.content, "utf8");
+        return {
+          operation: "update",
+          targetPath: args.targetPath,
+          wroteFiles: true,
+          wrote_files: true,
+          affectedFiles: [args.targetPath],
+        };
+      },
+    };
+
+    const res = appendStreamEntryToWorkspace(mockKernel, tmp, undefined, {
+      relativePath: periodRel,
+      content: "评论一条",
+      heading: "10:00 anchor",
+      startLine: 3,
+      endLine: 3,
+      anchorText: "anchor",
+    });
+    assert.equal(res.ok, true, `expected success, got ${JSON.stringify(res)}`);
+    assert.equal(res.error, undefined);
+    assert.ok(fs.readFileSync(abs, "utf8").includes("评论一条"));
+  });
 });
 
 // ── Pure mapApplySuggestionResult / mergeCaptureTags (shipped) ─────────────

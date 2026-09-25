@@ -64,9 +64,15 @@ jobs:
             exit 1
           fi
           echo "version=$VER" >> "$GITHUB_OUTPUT"
-          TAG="${GITHUB_REF_NAME}"
           # Community directory hard rule: GitHub tag MUST equal manifest.version
           # exactly — `4.13.0`, NOT `v4.13.0`. Obsidian matches releases by this tag.
+          # On workflow_dispatch GITHUB_REF_NAME is the branch, so the draft tag
+          # comes from inputs.release_tag instead.
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.release_tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
           if [[ "$TAG" != "$VER" ]]; then
             echo "ERROR: tag $TAG must equal manifest.version $VER (no v prefix) — community directory hard rule"
             exit 1

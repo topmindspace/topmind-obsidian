@@ -657,20 +657,4 @@ export function runAgentTool(
   }
 }
 
-export const AGENT_TOOL_NAMES = Object.freeze([
-  "search",
-  "workspace_overview",
-  "list_categories",
-  "list_topics",
-  "list_topic_files",
-  "list_inbox",
-  "list_outputs",
-  "list_todos",
-  "read_file",
-  "save_file",
-  "edit_file",
-  "add_todo",
-  "toggle_todo",
-]);
-
 export { contentHash, normalizeRel, isSafeRel, stripFrontmatter, sanitizeFileName };

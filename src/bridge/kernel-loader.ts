@@ -404,7 +404,6 @@ export interface KernelApi {
 
 const api: KernelApi = kernelApiNs;
 
-export type KernelApiType = KernelApi;
 
 /**
  * Load the Kernel API module.
