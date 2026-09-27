@@ -27,6 +27,7 @@ import { hasConfiguredProvider } from "../types";
 import { aiTaskManager, type TaskProgress, type AiTask } from "../services/ai-task-manager";
 import { resolveProviderCatalog, applyModelOptions, credentialsForProvider } from "../services/models-dev";
 import { bindImeEnterGuard, compactChatMessages, isImeEnter, resolveChatCompactBudget } from "../utils";
+import { buildResultFooter } from "#kernel/agent-goal-protocol.mjs";
 
 // ── Node.js built-ins (esbuild platform:'node' converts to require) ──
 import fs from "node:fs";
@@ -43,6 +44,9 @@ interface ChatMessage {
   isError?: boolean;
   /** Turn was paused (not abandoned) — keep goal ledger for Resume. */
   paused?: boolean;
+  /** Hard stop / abandon. Distinct from paused. */
+  cancelled?: boolean;
+  stopReason?: "paused" | "cancelled";
   /** The user message that triggered this AI response (for regenerate) */
   prompt?: string;
   /** Agent tool timeline for continuous-work visibility. */
@@ -60,6 +64,8 @@ interface ChatMessage {
     status?: string;
     blockReason?: string | null;
     autoContinues?: number;
+    checksRun?: string[];
+    assumptions?: string[];
   } | null;
 }
 
@@ -999,7 +1005,7 @@ export class SidebarDockView extends ItemView {
 
     // Send button (icon-only)
     const sendBtn = inputArea.createEl("button", {
-      cls: "tm-chat-send-btn",
+      cls: "tm-btn-primary tm-btn-icon",
     });
     setIcon(sendBtn, "send");
     sendBtn.setAttribute("aria-label", t("chat_send"));
@@ -1048,6 +1054,9 @@ export class SidebarDockView extends ItemView {
     });
 
     if (this.chatThinking) {
+      // Pause is an interrupt, not the destructive/error treatment.
+      sendBtn.classList.remove("tm-btn-primary");
+      sendBtn.classList.add("tm-btn-secondary");
       setIcon(sendBtn, "square");
       sendBtn.setAttribute("aria-label", t("chat_pause"));
       sendBtn.setAttribute("title", t("chat_pause"));
@@ -1367,72 +1376,54 @@ export class SidebarDockView extends ItemView {
   }
 
   /**
-   * Result footer: Verified / Assumed / Could not, plus a cheap "N done · M writes"
-   * summary line (stands in for a full tool-timeline collapse).
-   *
-   * Honesty contract — Verified carries only real data (path receipts the kernel
-   * actually harvested). Criteria the agent merely closed are claims, so they land
-   * under Assumed. Open criteria / block reason are what could not be finished.
-   * Empty sections read 无 / none; nothing is invented to fill them.
+   * Result footer: Changes (path footprint) + Verified / Assumed / Could not.
+   * Segments come from the shared protocol helper. Empty segments say none.
+   * Path receipts are never labeled Verified.
    */
   private renderResultFooter(msgEl: HTMLElement, msg: ChatMessage): void {
     const goal = msg.goal;
-    if (!goal) return;
-
-    const receipts = goal.pathReceipts || [];
-    const criteria = goal.criteria || [];
-    const openSet = new Set(goal.openCriteria || []);
-    const assumed = criteria.filter((c) => !openSet.has(c));
-    const couldNot = [...(goal.openCriteria || [])];
-    if (goal.status === "blocked" && goal.blockReason) couldNot.push(goal.blockReason);
+    const model = buildResultFooter(goal);
+    if (!goal || !model) return;
 
     const okTools = (msg.toolCalls || []).filter((tc) => tc.ok).length;
     const footer = msgEl.createDiv({ cls: "tm-goal-footer" });
     footer.createDiv({
       cls: "tm-goal-footer-summary",
-      text: t("chat_result_summary", { done: okTools, writes: receipts.length }),
+      text: t("chat_result_summary", { done: okTools, writes: model.changes.length }),
     });
 
-    const row = (labelKey: "chat_result_verified" | "chat_result_assumed" | "chat_result_could_not") => {
+    const row = (labelKey: "chat_result_changes" | "chat_result_verified" | "chat_result_assumed" | "chat_result_could_not") => {
       const r = footer.createDiv({ cls: "tm-goal-footer-row" });
       r.createSpan({ cls: "tm-goal-footer-label", text: t(labelKey) });
       return r.createDiv({ cls: "tm-goal-footer-vals" });
     };
 
-    const verifiedEl = row("chat_result_verified");
-    if (receipts.length) {
-      for (const rel of receipts.slice(-8)) {
-        const chip = verifiedEl.createEl("button", {
-          cls: "tm-goal-footer-chip",
-          text: rel.length > 36 ? `…${rel.slice(-35)}` : rel,
-          attr: { type: "button", title: rel },
-        });
-        chip.addEventListener("click", (e: MouseEvent) => {
-          e.stopPropagation();
-          void this.app.workspace.openLinkText(rel, "", false);
-        });
+    const fill = (el: HTMLElement, items: string[], asPath = false) => {
+      if (!items.length) {
+        el.createSpan({ cls: "tm-goal-footer-none", text: t("chat_result_none") });
+        return;
       }
-    } else {
-      verifiedEl.createSpan({ cls: "tm-goal-footer-none", text: t("chat_result_none") });
-    }
+      for (const item of items.slice(0, 8)) {
+        if (asPath) {
+          const chip = el.createEl("button", {
+            cls: "tm-goal-footer-chip",
+            text: item.length > 36 ? `…${item.slice(-35)}` : item,
+            attr: { type: "button", title: item },
+          });
+          chip.addEventListener("click", (e: MouseEvent) => {
+            e.stopPropagation();
+            void this.app.workspace.openLinkText(item, "", false);
+          });
+        } else {
+          el.createSpan({ cls: "tm-goal-footer-item", text: item });
+        }
+      }
+    };
 
-    const assumedEl = row("chat_result_assumed");
-    if (assumed.length) {
-      for (const c of assumed.slice(0, 8)) {
-        assumedEl.createSpan({ cls: "tm-goal-footer-item", text: c });
-      }
-    } else {
-      assumedEl.createSpan({ cls: "tm-goal-footer-none", text: t("chat_result_none") });
-    }
-
-    const couldNotEl = row("chat_result_could_not");
-    if (couldNot.length) {
-      for (const c of couldNot.slice(0, 8)) {
-        couldNotEl.createSpan({ cls: "tm-goal-footer-item", text: c });
-      }
-    } else {
-      couldNotEl.createSpan({ cls: "tm-goal-footer-none", text: t("chat_result_none") });
-    }
+    fill(row("chat_result_changes"), model.changes, true);
+    fill(row("chat_result_verified"), model.verified);
+    fill(row("chat_result_assumed"), model.assumed);
+    fill(row("chat_result_could_not"), model.couldNot);
   }
 
   private stopChat(): void {
@@ -1540,6 +1531,7 @@ export class SidebarDockView extends ItemView {
     try {
       const response = await this.plugin.kernelService.chat(text, this.chatHistory.slice(0, -1), {
         shouldAbort: () => gate.aborted,
+        stopKind: () => (gate.pause ? "paused" : "cancelled"),
         contextLimit: this.chatContextLimit,
         priorGoal: this.loadChatGoal(),
         onProgress: (ev) => {
@@ -1548,19 +1540,24 @@ export class SidebarDockView extends ItemView {
           this.patchChatWorkingRow();
         },
       });
+      const stopReason = response.stopReason
+        || (gate.pause ? "paused" as const : gate.aborted ? "cancelled" as const : undefined);
+      const goal = response.goal || (stopReason === "paused" ? this.loadChatGoal() : null);
       this.chatHistory.push({
         role: "assistant",
-        content: response.content || (gate.aborted ? t("chat_stopped") : "..."),
+        content: response.content || (stopReason === "paused" ? t("chat_paused") : stopReason === "cancelled" ? t("chat_stopped") : "..."),
         reasoning: response.reasoning || this.chatReasoningLive || undefined,
         prompt: text,
         toolCalls: response.toolCalls,
         steps: response.steps,
         autoContinues: response.autoContinues,
         stepLimitHit: response.stepLimitHit,
-        paused: gate.pause || undefined,
-        goal: (response as { goal?: ChatMessage["goal"] }).goal || null,
+        paused: stopReason === "paused" || undefined,
+        cancelled: stopReason === "cancelled" || undefined,
+        stopReason,
+        goal,
       });
-      this.saveChatGoal((response as { goal?: ChatMessage["goal"] }).goal || null);
+      this.saveChatGoal(stopReason === "cancelled" ? null : goal);
       this.saveChatHistory();
     } catch (err) {
       if (gate.aborted || (err instanceof Error && err.name === "AbortError")) {

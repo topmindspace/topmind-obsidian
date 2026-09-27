@@ -126,6 +126,7 @@ export const zhCN = {
   chat_goal_open_criteria: "待验收 {{count}}",
   chat_goal_blocked: "需要你",
   chat_result_summary: "{{done}} 项完成 · {{writes}} 次写入",
+  chat_result_changes: "变更",
   chat_result_verified: "已验证",
   chat_result_assumed: "假定",
   chat_result_could_not: "未能",

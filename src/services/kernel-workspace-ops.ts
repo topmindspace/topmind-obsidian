@@ -40,8 +40,9 @@ import {
   createGoalState,
   decideAutoContinue,
   harvestPathReceipts,
-  mergeGoalState,
+  rejectBareDone,
   resolveMaxAutoContinues,
+  restoreSessionGoal,
   type GoalState,
 } from "#kernel/agent-goal-protocol.mjs";
 import { resolveEmbeddedTemplate } from "../data/workspace-templates.ts";
@@ -881,6 +882,11 @@ export interface WorkspaceChatTurnOpts {
   onProgress?: (ev: ChatProgressEvent) => void;
   /** Return true to stop before the next model call or tool write. */
   shouldAbort?: () => boolean;
+  /**
+   * Why the host aborted. Pause keeps the ledger; cancel is the only
+   * cancelled stop. Default when aborted with no kind: cancelled.
+   */
+  stopKind?: () => "paused" | "cancelled";
   /** Host HTTP for fetch_url (Obsidian requestUrl). Never global fetch. */
   fetchPage?: (url: string) => Promise<{ ok: boolean; status?: number; text?: string; error?: string }>;
   /**
@@ -895,6 +901,8 @@ export interface WorkspaceChatTurnOpts {
     pathReceipts?: string[];
     status?: string;
     blockReason?: string | null;
+    /** UI snapshot name for the open list (saved chat-goal.json). */
+    openCriteria?: string[];
   } | null;
 }
 
@@ -1198,11 +1206,6 @@ export function buildObsidianChatToolGuide(
   ].join("\n");
 }
 
-const CHAT_CONTINUE_PROMPT_ZH =
-  "[系统] 上一轮步数用尽，任务可能未完成。请基于最近的工具结果与路径回执，继续完成用户原始目标；若已完成则给出简短结论与路径。";
-const CHAT_CONTINUE_PROMPT_EN =
-  "[System] Step budget was exhausted; the task may be incomplete. Continue from the latest tool results and path receipts toward the user's original goal; if finished, give a short conclusion with paths.";
-
 /**
  * Bounded multi-step read/search/write/edit agent loop (Obsidian chat).
  * Same Kernel matcher + writeback as Desktop; generate() is the host provider.
@@ -1220,6 +1223,8 @@ export async function runWorkspaceChatTurn(
   toolCalls: Array<{ tool: string; ok: boolean; summary?: string; pending?: boolean; needsConfirm?: boolean }>;
   autoContinues: number;
   stepLimitHit: boolean;
+  stopReason?: "paused" | "cancelled";
+  cancelled?: boolean;
   goal?: {
     goal: string;
     plan: string[];
@@ -1270,39 +1275,30 @@ export async function runWorkspaceChatTurn(
   let stepLimitHit = false;
   let finished = false;
   let reasoningAcc = "";
-  let goalState: GoalState = createGoalState(opts.userMessage || "");
-  harvestPathReceipts(opts.userMessage || "", goalState.pathReceipts);
-  // Session goal restore (same-task only): keep plan/criteria across "继续".
-  {
-    const prior = opts.priorGoal;
-    const currentGoal = goalState.goal || "";
-    const priorGoal = String(prior?.goal || "");
-    const sameTask =
-      prior &&
-      priorGoal &&
-      (currentGoal === priorGoal ||
-        currentGoal.startsWith(priorGoal.slice(0, 40)) ||
-        priorGoal.startsWith(currentGoal.slice(0, 40)));
-    if (sameTask) {
-      goalState = mergeGoalState(
-        {
-          ...goalState,
-          goal: priorGoal || goalState.goal,
-          plan: prior.plan || [],
-          criteria: prior.criteria || [],
-          doneCriteria: prior.doneCriteria || [],
-          pathReceipts: prior.pathReceipts || [],
-          status: (prior.status as GoalState["status"]) || goalState.status,
-          blockReason: prior.blockReason ?? null,
-        },
-        goalState,
-      );
-    }
-  }
+  // "继续" and the host resume prompt keep the saved ledger. A new task does not.
+  let goalState: GoalState = restoreSessionGoal(opts.priorGoal, opts.userMessage || "");
 
-  const stoppedBody = chromeZh
-    ? "已停止。这一步之前已经完成的修改会保留。"
-    : "Stopped. Edits that already finished are kept.";
+  const goalPayload = () => ({
+    goal: goalState.goal || "",
+    plan: goalState.plan || [],
+    criteria: goalState.criteria || [],
+    openCriteria: goalState.doneCriteria || [],
+    pathReceipts: (goalState.pathReceipts || []).slice(-12),
+    status: goalState.status || "idle",
+    blockReason: goalState.blockReason || null,
+    autoContinues,
+  });
+
+  const abortCopy = (kind: "paused" | "cancelled") => {
+    if (kind === "paused") {
+      return chromeZh
+        ? "已暂停。任务台账和已经完成的修改都还在，可以继续。"
+        : "Paused. The task ledger and finished edits are kept. You can resume.";
+    }
+    return chromeZh
+      ? "已取消。这一步之前已经完成的修改会保留。"
+      : "Cancelled. Edits that already finished are kept.";
+  };
 
   const noteReasoning = (raw: string) => {
     if (typeof kernel.splitAssistantVisible !== "function") return;
@@ -1441,12 +1437,14 @@ export async function runWorkspaceChatTurn(
   const MAX_GENERATE_FAILURES = 2;
 
   const finishAborted = () => {
+    const kind: "paused" | "cancelled" = opts.stopKind?.() === "paused" ? "paused" : "cancelled";
+    const stoppedBody = abortCopy(kind);
     emit({
       kind: "done",
       step: stepCount,
       maxSteps,
       autoContinues,
-      note: "aborted",
+      note: kind,
       reasoning: reasoningAcc,
     });
     // Keep any partial answer the model already produced (Desktop cancel
@@ -1465,6 +1463,9 @@ export async function runWorkspaceChatTurn(
       toolCalls,
       autoContinues,
       stepLimitHit,
+      stopReason: kind,
+      cancelled: kind === "cancelled",
+      goal: goalPayload(),
     };
   };
 
@@ -1531,6 +1532,10 @@ export async function runWorkspaceChatTurn(
         // Model produced prose — fold into goal ledger and decide if it may stop.
         goalState = applyGoalUpdate(goalState, { text: stripThinking(lastRaw) });
         harvestPathReceipts(lastRaw, goalState.pathReceipts);
+        goalState = rejectBareDone(goalState, {
+          toolCallCount: toolCalls.length,
+          lastBody: stripThinking(lastRaw),
+        });
         const assessment = assessGoalCompletion({
           state: goalState,
           lastBody: stripThinking(lastRaw),
@@ -1664,6 +1669,10 @@ export async function runWorkspaceChatTurn(
     : { body: String(lastRaw || "").trim(), reasoning: "" };
   noteReasoning(lastRaw);
   let body = split.body;
+  goalState = rejectBareDone(goalState, {
+    toolCallCount: toolCalls.length,
+    lastBody: stripThinking(lastRaw),
+  });
   const finalAssessment = assessGoalCompletion({
     state: goalState,
     lastBody: stripThinking(lastRaw),

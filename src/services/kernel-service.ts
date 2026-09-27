@@ -829,6 +829,8 @@ export class KernelService {
     opts: {
       onProgress?: (ev: ChatProgressEvent) => void;
       shouldAbort?: () => boolean;
+      /** Pause keeps the ledger; cancel is the only cancelled stop. */
+      stopKind?: () => "paused" | "cancelled";
       /** Model context window (tokens) for session compact budget. */
       contextLimit?: number | null;
       /** Session goal from the previous turn (same-task restore). */
@@ -840,6 +842,7 @@ export class KernelService {
         pathReceipts?: string[];
         status?: string;
         blockReason?: string | null;
+        openCriteria?: string[];
       } | null;
     } = {},
   ): Promise<{
@@ -849,6 +852,8 @@ export class KernelService {
     toolCalls: Array<{ tool: string; ok: boolean; summary?: string }>;
     autoContinues: number;
     stepLimitHit: boolean;
+    stopReason?: "paused" | "cancelled";
+    cancelled?: boolean;
     goal?: {
       goal: string;
       plan: string[];
@@ -962,6 +967,7 @@ export class KernelService {
       contextLimit: opts.contextLimit,
       onProgress: opts.onProgress,
       shouldAbort: opts.shouldAbort,
+      stopKind: opts.stopKind,
       engineRoot: this.getEngineRoot(),
       configDir: this.app.vault.configDir,
       priorGoal: opts.priorGoal ?? null,
@@ -995,6 +1001,8 @@ export class KernelService {
       toolCalls: turn.toolCalls,
       autoContinues: turn.autoContinues,
       stepLimitHit: turn.stepLimitHit,
+      stopReason: turn.stopReason,
+      cancelled: turn.cancelled,
       goal: turn.goal,
     };
   }

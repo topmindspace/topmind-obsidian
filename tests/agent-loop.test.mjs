@@ -160,6 +160,139 @@ describe("Obsidian agent loop — continuous work", () => {
     assert.equal(turn.stepLimitHit, false);
   });
 
+  test("bare [DONE] after a tool is incomplete until a path receipt exists", async () => {
+    let calls = 0;
+    const generate = async () => {
+      calls += 1;
+      if (calls === 1) return JSON.stringify({ tool: "list_categories" });
+      return "All done [DONE]";
+    };
+    const turn = await ops.runWorkspaceChatTurn(kernel, tmp, {
+      userMessage: "list categories then close",
+      generate,
+      locale: "en",
+      maxSteps: 6,
+      autoContinue: false,
+    });
+    assert.equal(turn.goal.status, "incomplete");
+    assert.equal(turn.goal.blockReason, "missing-path-receipts");
+    assert.equal(turn.goal.pathReceipts.length, 0);
+    assert.match(turn.body, /\[INCOMPLETE/);
+  });
+
+  test("pause keeps the task ledger and is not cancelled", async () => {
+    const turn = await ops.runWorkspaceChatTurn(kernel, tmp, {
+      userMessage: "整理交付稿",
+      generate: async () => JSON.stringify({ tool: "list_categories" }),
+      locale: "zh-CN",
+      maxSteps: 4,
+      shouldAbort: () => true,
+      stopKind: () => "paused",
+      priorGoal: {
+        goal: "整理交付稿",
+        plan: ["读原文", "写成稿"],
+        criteria: ["成稿存在"],
+        openCriteria: ["成稿存在"],
+        status: "working",
+        pathReceipts: ["20-专题/2026-主题/note.md"],
+      },
+    });
+    assert.equal(turn.stopReason, "paused");
+    assert.equal(turn.cancelled, false);
+    assert.deepEqual(turn.goal.plan, ["读原文", "写成稿"]);
+    assert.deepEqual(turn.goal.openCriteria, ["成稿存在"]);
+    assert.ok(turn.goal.pathReceipts.includes("20-专题/2026-主题/note.md"));
+    assert.match(turn.body, /已暂停/);
+  });
+
+  test("cancel is a distinct stop and does not report paused", async () => {
+    const turn = await ops.runWorkspaceChatTurn(kernel, tmp, {
+      userMessage: "整理交付稿",
+      generate: async () => "should not run",
+      locale: "en",
+      maxSteps: 2,
+      shouldAbort: () => true,
+      stopKind: () => "cancelled",
+    });
+    assert.equal(turn.stopReason, "cancelled");
+    assert.equal(turn.cancelled, true);
+    assert.match(turn.body, /Cancelled/);
+  });
+
+  test("resume prompt and 继续 keep the saved ledger, including a pause", async () => {
+    const prior = {
+      goal: "整理交付稿",
+      plan: ["读原文", "写成稿"],
+      criteria: ["成稿存在"],
+      openCriteria: ["成稿存在"],
+      pathReceipts: ["20-专题/2026-主题/note.md"],
+      status: "working",
+    };
+    // Same text sidebar-dock-view resumeChat sends.
+    const resume = [
+      "[系统] 任务被用户暂停后恢复，可能尚未完成。请继续完成用户原始目标；若已完成则给出简短结论与路径回执。",
+      "原目标：整理交付稿",
+      "计划：\n1. 读原文\n2. 写成稿",
+      "未完成验收项：\n- 成稿存在",
+      "先更新/执行剩余步骤，再收尾。收尾时输出结论 + 路径回执 + [DONE]；若无法完成则 [INCOMPLETE 原因]。",
+    ].join("\n");
+    const assertKept = (turn) => {
+      assert.equal(turn.goal.goal, "整理交付稿");
+      assert.deepEqual(turn.goal.plan, ["读原文", "写成稿"]);
+      assert.deepEqual(turn.goal.openCriteria, ["成稿存在"]);
+      assert.ok(turn.goal.pathReceipts.includes("20-专题/2026-主题/note.md"));
+      assert.notEqual(turn.goal.status, "idle");
+    };
+    assertKept(await ops.runWorkspaceChatTurn(kernel, tmp, {
+      userMessage: resume,
+      generate: async () => "仍在写",
+      locale: "zh-CN",
+      maxSteps: 2,
+      autoContinue: false,
+      priorGoal: prior,
+    }));
+    assertKept(await ops.runWorkspaceChatTurn(kernel, tmp, {
+      userMessage: "继续",
+      generate: async () => "仍在写",
+      locale: "zh-CN",
+      maxSteps: 2,
+      autoContinue: false,
+      priorGoal: prior,
+    }));
+    // Pause returns this snapshot; the view saves it. It must not be an empty ledger.
+    const paused = await ops.runWorkspaceChatTurn(kernel, tmp, {
+      userMessage: resume,
+      generate: async () => "should not run",
+      locale: "zh-CN",
+      maxSteps: 2,
+      shouldAbort: () => true,
+      stopKind: () => "paused",
+      priorGoal: prior,
+    });
+    assert.equal(paused.stopReason, "paused");
+    assert.equal(paused.cancelled, false);
+    assertKept(paused);
+  });
+
+  test("open criteria survive restore when the snapshot uses openCriteria", async () => {
+    const turn = await ops.runWorkspaceChatTurn(kernel, tmp, {
+      userMessage: "整理交付稿",
+      generate: async () => "仍在写",
+      locale: "zh-CN",
+      maxSteps: 2,
+      autoContinue: false,
+      priorGoal: {
+        goal: "整理交付稿",
+        plan: ["读原文", "写成稿"],
+        openCriteria: ["成稿存在"],
+        status: "working",
+      },
+    });
+    assert.deepEqual(turn.goal.plan, ["读原文", "写成稿"]);
+    assert.deepEqual(turn.goal.openCriteria, ["成稿存在"]);
+    assert.notEqual(turn.goal.status, "done");
+  });
+
   test("unknown tool does not silently finish the turn", async () => {
     let calls = 0;
     const generate = async () => {

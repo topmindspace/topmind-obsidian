@@ -128,6 +128,7 @@ export const enUS: typeof zhCN = {
   chat_goal_open_criteria: "{{count}} open",
   chat_goal_blocked: "Needs you",
   chat_result_summary: "{{done}} done · {{writes}} writes",
+  chat_result_changes: "Changes",
   chat_result_verified: "Verified",
   chat_result_assumed: "Assumed",
   chat_result_could_not: "Could not",

@@ -138,6 +138,22 @@ test("styles.css: no hardcoded colors", async (t) => {
   });
 });
 
+test("selected controls have no side or bottom accent bar; suggestion kind borders stay", () => {
+  const blocks = [];
+  const ruleRe = /([^{}]+)\{([^{}]*)\}/g;
+  let match;
+  while ((match = ruleRe.exec(css))) blocks.push({ selector: match[1], body: match[2] });
+  const selectedSel = /data-active|tm-tab-active|\.active\b|is-selected/;
+  const strip = /inset\s+[1-9]\d*px\s+0\s+0\s+0|inset\s+0\s+-[1-9]\d*px\s+0\s+0|border-(?:left|bottom)\s*:\s*[1-9]\d*px[^;]*(?:accent|interactive)/;
+  const offenders = blocks
+    .filter((b) => selectedSel.test(b.selector) && strip.test(b.body))
+    .map((b) => b.selector.trim().replace(/\s+/g, " ").slice(0, 100));
+  assert.deepEqual(offenders, []);
+  assert.match(css, /\.tm-suggestion-card\.tm-suggestion-create-topic[\s\S]{0,240}border-left-color:/);
+  assert.match(css, /\.tm-suggestion-card\.tm-suggestion-stale-topic[\s\S]{0,160}border-left-color:/);
+  assert.match(css, /\.tm-pending-write-card\s*\{[^}]*border-left-color:/);
+});
+
 test("DESIGN.md token values match styles.css", async (t) => {
   // The design doc is the IA truth; styles.css is the numeric truth. They
   // drifted once (radius 4/6/10 documented vs 4/8/14 shipped) — lock them.

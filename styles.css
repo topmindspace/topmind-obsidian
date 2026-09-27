@@ -3066,7 +3066,6 @@ button.tm-btn-mini,
 button.tm-feed-layout-btn,
 button.tm-tab-btn,
 button.tm-chat-msg-btn,
-button.tm-chat-send-btn,
 button.tm-chat-clear-btn,
 button.tm-suggestion-path,
 button.tm-sidebar-action-btn:not(.tm-sidebar-capture-primary),
@@ -3093,7 +3092,6 @@ button.tm-btn-mini:hover,
 button.tm-feed-layout-btn:hover,
 button.tm-tab-btn:hover,
 button.tm-chat-msg-btn:hover,
-button.tm-chat-send-btn:hover,
 button.tm-chat-clear-btn:hover,
 button.tm-sidebar-action-btn:not(.tm-sidebar-capture-primary):hover {
   background-color: var(--tm-bg-hover);
@@ -3380,7 +3378,6 @@ button.tm-chat-msg-btn:hover {
   box-shadow: 0 0 0 3px var(--tm-accent-soft);
 }
 
-button.tm-chat-send-btn,
 button.tm-chat-clear-btn {
   width: var(--tm-hit-lg);
   height: var(--tm-hit-lg);
@@ -3396,7 +3393,6 @@ button.tm-chat-clear-btn {
   flex-shrink: 0;
 }
 
-button.tm-chat-send-btn:hover,
 button.tm-chat-clear-btn:hover {
   background-color: var(--tm-bg-hover);
 }
