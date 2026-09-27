@@ -131,6 +131,57 @@ describe("Obsidian plugin guidelines", () => {
     assert.match(css, /\.tm-goal-ledger\.tm-goal-ledger-open\s*\{[^}]*display:\s*block/s);
   });
 
+  test("review defects stay fixed: config dir, settings render, kernel types, vendored build, floating calls", () => {
+    const strip = (text) => text
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    const srcHits = [];
+    for (const f of files) {
+      const code = strip(fs.readFileSync(f, "utf8"));
+      if (code.includes('".obsidian"') || code.includes("'.obsidian'")) {
+        srcHits.push(path.relative(root, f));
+      }
+    }
+    assert.deepEqual(srcHits, [], "use Vault configDir / app config, not a hardcoded .obsidian literal");
+
+    const settings = strip(fs.readFileSync(path.join(src, "settings", "settings-tab.ts"), "utf8"));
+    assert.doesNotMatch(settings, /\bdisplay\s*\(\s*\)\s*:\s*void/);
+    assert.match(settings, /getSettingDefinitions\s*\(/);
+    assert.match(settings, /paintSettings\(setting\.settingEl\)/);
+
+    const loader = fs.readFileSync(path.join(src, "bridge", "kernel-loader.ts"), "utf8");
+    const types = fs.readFileSync(path.join(src, "bridge", "kernel-types.ts"), "utf8");
+    const ambient = fs.readFileSync(path.join(src, "types", "kernel-modules.d.ts"), "utf8");
+    assert.match(types, /export interface KernelApi/);
+    assert.doesNotMatch(loader, /export interface KernelApi/);
+    assert.match(ambient, /from "\.\.\/bridge\/kernel-types\.ts"/);
+    assert.doesNotMatch(ambient, /kernel-loader/);
+
+    const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "release.yml"), "utf8");
+    const buildAt = workflow.indexOf("Build vendored plugin");
+    const engineAt = workflow.indexOf("Checkout topmind engine");
+    assert.ok(buildAt > 0 && engineAt > buildAt, "npm run build must finish before the live engine checkout");
+    assert.doesNotMatch(
+      workflow.slice(0, buildAt),
+      /TOPMIND_SRC/,
+      "the vendored build step must not see TOPMIND_SRC",
+    );
+
+    const floating = [];
+    for (const f of files) {
+      const code = strip(fs.readFileSync(f, "utf8"));
+      code.split("\n").forEach((line, i) => {
+        if (!/\.enqueueAiOperation\s*\(|\.openLinkText\s*\(/.test(line)) return;
+        if (/\b(void|await|return)\b/.test(line)) return;
+        floating.push(`${path.relative(root, f)}:${i + 1}`);
+      });
+    }
+    assert.deepEqual(floating, [], "promise calls must be awaited or voided on the same line");
+
+    const workbench = strip(fs.readFileSync(path.join(src, "views", "stream-workbench-view.ts"), "utf8"));
+    assert.doesNotMatch(workbench, /const\s*\{\s*[^}]*\bcontent\b[^}]*\}\s*=\s*await\s+this\.plugin\.kernelService\.readPeriodNoteAsync/);
+  });
+
   test("no remote code / dynamic script injection", () => {
     assert.doesNotMatch(all, /createElement\(["']script["']\)/iu);
     assert.doesNotMatch(all, /importScripts\s*\(/u);

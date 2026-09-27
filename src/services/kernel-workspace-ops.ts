@@ -37,7 +37,6 @@ import {
   buildContinuePrompt,
   buildGoalProtocolPrompt,
   buildTaskLedger,
-  createGoalState,
   decideAutoContinue,
   harvestPathReceipts,
   rejectBareDone,
@@ -1627,7 +1626,6 @@ export async function runWorkspaceChatTurn(
       }
       break;
     }
-    const lastBody = stripThinking(lastRaw);
     // Skip continue when the last payload already looks like a real finish.
     if (!decision.continue && !openAssessment.reason?.includes("step-limit")) {
       if (openAssessment.finished && openAssessment.confidence !== "low") {

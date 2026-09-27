@@ -1,6 +1,6 @@
 {
   "name": "topmind-obsidian-plugin",
-  "version": "4.16.4",
+  "version": "4.16.5",
   "private": true,
   "description": "topmind Stream for Obsidian — 主区域动态流 + AI 沉淀副驾",
   "type": "module",
@@ -25,10 +25,13 @@
     "ensure-engine": "node scripts/ensure-engine.mjs"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^20.11.0",
     "esbuild": "^0.28.2",
+    "eslint": "^10.11.0",
     "obsidian": "^1.13.0",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.70.1"
   },
   "dependencies": {
     "yaml": "^2.9.0"

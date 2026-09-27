@@ -36,13 +36,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Checkout topmind engine
-        uses: actions/checkout@v5
-        with:
-          repository: topmindspace/topmind
-          ref: main
-          path: .topmind-src
-
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
@@ -78,12 +71,23 @@ jobs:
             exit 1
           fi
 
-      - name: Test + Build + Pack
+      # Build before the live engine checkout. The community scanner runs
+      # `npm run build` on this repo alone and compares main.js byte-for-byte.
+      # A live ../topmind or .topmind-src checkout would bundle a different kernel.
+      - name: Build vendored plugin
+        run: npm run build
+
+      - name: Checkout topmind engine
+        uses: actions/checkout@v5
+        with:
+          repository: topmindspace/topmind
+          ref: main
+          path: .topmind-src
+
+      - name: Test + pack
         env:
           TOPMIND_SRC: ${{ github.workspace }}/.topmind-src
         run: |
-          npm run ensure-engine
-          npm run build
           npm test
           npm run pack:verify
           npm run pack

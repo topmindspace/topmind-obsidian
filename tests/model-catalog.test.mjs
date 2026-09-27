@@ -102,22 +102,18 @@ describe("settings + chat wiring (static, shipped source)", () => {
     assert.match(src, /renderProviderBoard/);
   });
 
-  test("AI settings render via display() with the full provider board", () => {
-    // Obsidian calls display() only when getSettingDefinitions() returns [].
-    // A non-empty declarative list SKIPS display(); putting the AI board in a
-    // `render` hook then got torn down on update — that is how "AI settings
-    // vanished" kept happening. Contract now: empty definitions + imperative
-    // display() draws the complete credential/model surface every time.
+  test("AI settings render via a declarative render row, not deprecated display()", () => {
+    // Obsidian 1.13+ skips display() and flags it. One SettingDefinitionRender
+    // rebuilds the imperative board (including the AI provider surface) on
+    // every pass so an update cannot leave that board torn down.
     const raw = fs.readFileSync(path.join(srcDir, "settings", "settings-tab.ts"), "utf8");
     const src = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
     assert.match(src, /override getSettingDefinitions\s*\(\s*\)\s*:\s*SettingDefinitionItem\[\]/u);
-    // Must return empty so display() runs.
-    assert.match(src, /getSettingDefinitions\s*\(\s*\)\s*:\s*SettingDefinitionItem\[\]\s*\{\s*return\s*\[\s*\]/u);
-    assert.match(src, /display\(\): void/);
+    assert.doesNotMatch(src, /\bdisplay\s*\(\s*\)\s*:\s*void/u);
+    assert.match(src, /paintSettings\(setting\.settingEl\)/);
     assert.match(src, /renderAiSection/);
     assert.match(src, /renderProviderBoard/);
-    // display() must paint every section, including the AI board.
-    assert.match(src, /renderAiInto\(containerEl\)|renderAiSection\(containerEl\)/);
+    assert.match(src, /renderAiSection\(host\)/);
     // Credential board must expose key fields for the major providers.
     assert.match(src, /PROVIDER_KEY_FIELDS/);
     assert.match(src, /settings_ai_key|password/);

@@ -1272,6 +1272,10 @@ describe("write-path contract (structural)", () => {
     path.join(srcDir, "bridge", "kernel-loader.ts"),
     "utf-8",
   );
+  const typeSrc = fs.readFileSync(
+    path.join(srcDir, "bridge", "kernel-types.ts"),
+    "utf-8",
+  );
 
   test("ops use periodRelPath + appendToPeriodBody + executeWrite", () => {
     assert.ok(opsSrc.includes("periodRelPath"), "must use Kernel periodRelPath");
@@ -1307,10 +1311,11 @@ describe("write-path contract (structural)", () => {
   });
 
   test("KernelApi types document real Kernel shapes", () => {
-    assert.ok(loaderSrc.includes("periodRelPath"));
-    assert.ok(loaderSrc.includes("Promise<ListedStreamPeriod[]>"));
-    assert.ok(loaderSrc.includes("changed: boolean"));
-    assert.ok(loaderSrc.includes("reconcilePeriodBody("));
+    assert.ok(typeSrc.includes("periodRelPath"));
+    assert.ok(typeSrc.includes("Promise<ListedStreamPeriod[]>"));
+    assert.ok(typeSrc.includes("changed: boolean"));
+    assert.ok(typeSrc.includes("reconcilePeriodBody("));
+    assert.match(loaderSrc, /from "\.\/kernel-types\.ts"/);
   });
 
   test("stream workbench new-note goes through Kernel writeback", () => {

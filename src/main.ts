@@ -325,7 +325,6 @@ export default class TopmindPlugin extends Plugin {
         this.settings = mergeAiBackup(this.settings, backup);
         if (!before && settingsHaveAiKeys(this.settings)) {
           await this.saveData(this.settings);
-          console.info("[topmind] AI keys restored from", AI_KEYS_BACKUP_PATH);
         }
       }
     } catch (err) {
@@ -664,8 +663,8 @@ export default class TopmindPlugin extends Plugin {
       }
       const fileItem = this.app.vault.getAbstractFileByPath(inboxPath);
       if (fileItem) {
-        // @ts-expect-error — internal API: reveal file/folder in explorer
-        this.app.explorer?.revealFile?.(fileItem);
+        const explorer = this.app as { explorer?: { revealFile?: (file: unknown) => void } };
+        explorer.explorer?.revealFile?.(fileItem);
       }
     } catch {
       // Fallback: just show a notice

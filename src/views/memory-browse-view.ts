@@ -163,7 +163,7 @@ export class MemoryBrowseView extends ItemView {
     organizeBtn.setAttribute("title", t("cmd_memory_organize"));
     organizeBtn.setAttribute("data-memory-organize", "true");
     organizeBtn.addEventListener("click", () => {
-      this.plugin.enqueueAiOperation(
+      void this.plugin.enqueueAiOperation(
         "memory_organize",
         "op_label_memory_organize",
         "notice_memory_done",
@@ -187,7 +187,7 @@ export class MemoryBrowseView extends ItemView {
         chip.setAttribute("title", health.issues.join(" · "));
         chip.setAttribute("aria-label", health.issues.join(" · "));
         chip.addEventListener("click", () => {
-          this.plugin.enqueueAiOperation(
+          void this.plugin.enqueueAiOperation(
             "memory_organize",
             "op_label_memory_organize",
             "notice_memory_done",

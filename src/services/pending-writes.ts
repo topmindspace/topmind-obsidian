@@ -40,16 +40,19 @@ function loadFromDisk(): void {
   if (!abs) return;
   try {
     if (!fs.existsSync(abs)) return;
-    const raw = JSON.parse(fs.readFileSync(abs, "utf8"));
-    const list = Array.isArray(raw?.items) ? raw.items : [];
+    const raw: unknown = JSON.parse(fs.readFileSync(abs, "utf8"));
+    const items = raw && typeof raw === "object" && "items" in raw ? (raw as { items?: unknown }).items : undefined;
+    const list = Array.isArray(items) ? items : [];
     memory.clear();
-    for (const e of list) {
-      if (e && typeof e.id === "string" && e.relativePath && typeof e.content === "string") {
+    for (const entry of list) {
+      if (!entry || typeof entry !== "object") continue;
+      const e = entry as Record<string, unknown>;
+      if (typeof e.id === "string" && typeof e.relativePath === "string" && typeof e.content === "string") {
         memory.set(e.id, {
           id: e.id,
-          relativePath: String(e.relativePath).replace(/\\/g, "/"),
-          content: String(e.content),
-          toolName: e.toolName ? String(e.toolName) : undefined,
+          relativePath: e.relativePath.replace(/\\/g, "/"),
+          content: e.content,
+          toolName: typeof e.toolName === "string" ? e.toolName : undefined,
           createdAt: typeof e.createdAt === "string" ? e.createdAt : new Date().toISOString(),
         });
       }

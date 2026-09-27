@@ -37,7 +37,7 @@
   --tm-type-body: var(--font-ui-small);
   --tm-type-label: var(--font-ui-small);
   --tm-type-meta: var(--font-ui-smaller);
-  --tm-lh-body: 1.65;
+  --tm-lh-body: var(--line-height-normal, 1.5);
 
   /* geometry */
   --tm-hit: 32px;
@@ -60,10 +60,13 @@
   --tm-btn-h: var(--tm-hit);
   --tm-btn-h-sm: var(--tm-hit-sm);
 
-  /* surfaces */
-  --tm-bg-page: transparent;
+  /* surfaces — three host steps, not one white sheet.
+     page = secondary canvas (the sidebar / settings gray), card = primary
+     paper, chrome = secondary-alt. Themes retune all three. */
+  --tm-bg-page: var(--background-secondary);
   --tm-bg-card: var(--background-primary);
-  --tm-bg-soft: var(--background-secondary);
+  --tm-bg-chrome: var(--background-secondary-alt, var(--background-modifier-hover));
+  --tm-bg-soft: var(--background-modifier-form-field, var(--background-primary-alt, var(--background-secondary)));
   --tm-bg-hover: var(--background-modifier-hover);
   --tm-line: var(--background-modifier-border);
   --tm-line-strong: var(--background-modifier-border-hover, var(--background-modifier-border));
@@ -84,8 +87,7 @@
   --tm-state-hover: color-mix(in srgb, var(--text-normal) 8%, transparent);
   --tm-state-pressed: color-mix(in srgb, var(--text-normal) 10%, transparent);
 
-  /* Tonal containers — replace ad-hoc color-mix ratios */
-  --tm-container-accent: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-primary));
+  /* Tonal containers — status chips. Selected controls use the host nav wash. */
   --tm-container-success: color-mix(in srgb, var(--text-success, var(--color-green)) 12%, var(--background-primary));
   --tm-container-warn: color-mix(in srgb, var(--text-warning, var(--color-orange)) 12%, var(--background-primary));
   --tm-container-danger: color-mix(in srgb, var(--text-error, var(--color-red)) 12%, var(--background-primary));
@@ -110,6 +112,28 @@
   --tm-canvas-wash: var(--tm-bg-page);
 }
 
+/* Host type and a real page plane. Cards and chrome opt into the other steps. */
+.tm-stream-workbench,
+.tm-memory-browse,
+.tm-sidebar-dock,
+.tm-quick-capture-content,
+.tm-settings-host {
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-small);
+  line-height: var(--line-height-normal, 1.5);
+  color: var(--text-normal);
+}
+
+.tm-stream-workbench,
+.tm-memory-browse {
+  background: var(--tm-bg-page);
+}
+
+.tm-sidebar-dock {
+  /* The leaf is already the sidebar secondary. Cards use primary paper. */
+  background: transparent;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    2. BUTTON SYSTEM — exclusive roles
    ═══════════════════════════════════════════════════════════════════════ */
@@ -129,6 +153,7 @@
 .tm-sidebar-action-btn,
 .tm-feed-layout-btn {
   box-sizing: border-box;
+  font-family: var(--font-interface);
   height: var(--tm-btn-h);
   border-radius: var(--tm-radius-ctl);
   font-size: var(--tm-type-label);
@@ -438,7 +463,7 @@
 .tm-btn-spinning {
   pointer-events: none;
   position: relative;
-  color: transparent !important;
+  color: transparent;
 }
 
 .tm-btn-spinning::after {
@@ -518,10 +543,9 @@
 
 .tm-toolbar-title-text {
   font-size: var(--tm-type-title);
-  font-weight: 700;
-  letter-spacing: -0.015em;
+  font-weight: var(--font-semibold, 600);
   color: var(--tm-ink);
-  line-height: 1.2;
+  line-height: var(--line-height-tight, 1.2);
   white-space: nowrap;
 }
 
@@ -550,9 +574,8 @@
   align-items: baseline;
   gap: var(--tm-gap-sm);
   font-size: var(--tm-type-body);
-  font-weight: 700;
+  font-weight: var(--font-semibold, 600);
   color: var(--tm-ink);
-  letter-spacing: -0.01em;
   min-width: 0;
 }
 
@@ -576,8 +599,9 @@ select.tm-tag-input,
   padding: 0 8px;
   border-radius: var(--tm-radius-ctl);
   border: 1px solid var(--tm-line);
-  background: var(--tm-bg-card);
-  color: var(--tm-ink-soft);
+  background: var(--tm-bg-soft);
+  color: var(--tm-ink);
+  font-family: var(--font-interface);
   font-size: var(--tm-type-meta);
   font-weight: 550;
 }
@@ -633,8 +657,8 @@ select.tm-tag-input,
   flex-shrink: 0;
 }
 
-.tm-task-badge-hidden {
-  display: none !important;
+.tm-task-badge.tm-task-badge-hidden {
+  display: none;
 }
 
 .tm-task-badge-label {
@@ -765,7 +789,7 @@ select.tm-tag-input,
   width: 100%;
   border-radius: var(--tm-input-radius);
   border: 1px solid var(--tm-line);
-  background: var(--tm-bg-card);
+  background: var(--tm-bg-soft);
   color: var(--tm-ink);
   font-size: var(--tm-type-body);
   font-family: inherit;
@@ -874,7 +898,7 @@ select.tm-tag-input,
   .tm-history-running .tm-history-icon,
   .tm-status-bar-running .tm-status-bar-icon,
   .tm-dot-checking {
-    animation: none !important;
+    animation: none;
   }
 }
 
@@ -1106,8 +1130,7 @@ select.tm-tag-input,
   margin: 0;
   min-height: 100%;
   color: var(--tm-ink);
-  /* Flat tone-on-tone (Desktop family). Brand halo is opt-in via
-     --tm-canvas-wash; default is quiet paper. */
+  /* Secondary canvas. Cards and the compose box are the primary paper. */
   background: var(--tm-canvas-wash);
   container-type: inline-size;
   container-name: tm-workbench;
@@ -1130,14 +1153,9 @@ select.tm-tag-input,
   display: flex;
   flex-direction: column;
   gap: var(--tm-gap-md);
-  /* Web-like workbench hero — soft accent wash + paper lift (theme-aware) */
-  padding: 18px 18px 12px;
-  margin: -4px -4px 8px;
-  border-radius: var(--radius-card);
-  background:
-    radial-gradient(120% 90% at 12% 0%, color-mix(in srgb, var(--interactive-accent) 8%, transparent), transparent 55%),
-    radial-gradient(80% 70% at 92% 8%, color-mix(in srgb, var(--interactive-accent) 4%, transparent), transparent 50%),
-    linear-gradient(180deg, var(--background-primary) 0%, var(--background-secondary) 100%);
+  padding: 0;
+  margin: 0;
+  background: transparent;
 }
 
 .tm-wb-hero-head {
@@ -1156,10 +1174,9 @@ select.tm-tag-input,
 
 .tm-wb-hero-title {
   font-size: var(--tm-type-display);
-  font-weight: 780;
-  letter-spacing: -0.03em;
+  font-weight: var(--font-semibold, 600);
   color: var(--tm-ink);
-  line-height: 1.08;
+  line-height: var(--line-height-tight, 1.2);
 }
 
 .tm-wb-hero-sub {
@@ -1262,7 +1279,7 @@ select.tm-tag-input,
 
 .tm-stream-container[data-layout="list"] .tm-card:hover {
   box-shadow: none;
-  background: var(--tm-accent-softer);
+  background: var(--tm-bg-hover);
 }
 
 .tm-stream-container[data-layout="card"] .tm-card {
@@ -1278,15 +1295,14 @@ select.tm-tag-input,
   grid-template-areas:
     "time head"
     "time body";
-  column-gap: 8px;
-  row-gap: 4px;
+  gap: 4px 8px;
   padding: 16px 18px;
   margin-bottom: var(--tm-gap-sm);
   border-radius: var(--tm-radius-card);
   border: 1px solid var(--tm-line);
-  background: color-mix(in srgb, var(--tm-bg-card) 84%, transparent);
-  box-shadow: none;
-  transition: border-color var(--tm-transition), box-shadow var(--tm-transition), background var(--tm-transition);
+  background: var(--tm-bg-card);
+  box-shadow: var(--tm-shadow-card);
+  transition: border-color var(--tm-transition), box-shadow var(--tm-transition);
 }
 
 .tm-wb-card:hover {
@@ -1304,22 +1320,7 @@ select.tm-tag-input,
   opacity: 1;
 }
 
-.tm-wb-card::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 10px;
-  bottom: 10px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--tm-accent);
-  opacity: 0;
-  transition: opacity var(--tm-transition);
-}
 
-.tm-wb-card:hover::before {
-  opacity: 0.7;
-}
 
 .tm-wb-card .tm-card-header {
   grid-area: head;
@@ -1448,7 +1449,7 @@ select.tm-tag-input,
 
 .tm-memory-feed[data-layout="list"] .tm-memory-card:hover {
   box-shadow: none;
-  background: var(--tm-accent-softer);
+  background: var(--tm-bg-hover);
 }
 
 .tm-memory-feed[data-layout="card"] .tm-memory-card {
@@ -1499,6 +1500,7 @@ select.tm-tag-input,
 /* Header */
 .tm-sidebar-header {
   padding: 6px 8px;
+  background: var(--tm-bg-chrome);
   border-bottom: 1px solid var(--tm-line);
   flex-shrink: 0;
   overflow: hidden;
@@ -1586,8 +1588,8 @@ select.tm-tag-input,
   border-bottom: 1px solid var(--tm-line);
   flex-shrink: 0;
   overflow-x: auto;
-  background: transparent;
-  background-color: transparent;
+  background: var(--tm-bg-chrome);
+  background-color: var(--tm-bg-chrome);
 }
 
 .tm-tab-bar::-webkit-scrollbar {
@@ -1626,11 +1628,11 @@ select.tm-tag-input,
 .tm-tab-btn.tm-tab-active,
 .tm-tab-btn.active,
 .tm-tab-btn[data-active="true"] {
-  background: transparent;
-  background-color: transparent;
-  color: var(--tm-accent-ink);
+  background: var(--nav-item-background-active, var(--background-modifier-hover));
+  background-color: var(--nav-item-background-active, var(--background-modifier-hover));
+  color: var(--nav-item-color-active, var(--text-normal));
   box-shadow: none;
-  font-weight: 700;
+  font-weight: var(--font-semibold, 600);
 }
 
 .tm-tab-icon {
@@ -1677,7 +1679,7 @@ select.tm-tag-input,
   padding: 6px;
   border-top: 1px solid var(--tm-line);
   flex-shrink: 0;
-  background: transparent;
+  background: var(--tm-bg-chrome);
 }
 
 .tm-sidebar-action-btn,
@@ -1930,7 +1932,8 @@ select.tm-tag-input,
 
 .tm-suggestion-card {
   background: var(--tm-bg-card);
-  border: var(--tm-suggestion-left-border);
+  border: 1px solid var(--tm-line);
+  border-left: var(--tm-suggestion-left-border) var(--tm-line);
   border-radius: var(--tm-card-radius);
   padding: 10px 12px;
   margin-bottom: var(--tm-gap-sm);
@@ -3140,21 +3143,19 @@ button.tm-sidebar-action-btn.tm-sidebar-capture-primary:hover {
   filter: brightness(1.06);
 }
 
-/* Segmented active = soft wash, never a slab */
-button.tm-feed-layout-btn[data-active="true"],
-button.tm-tab-btn.tm-tab-active,
-button.tm-tab-btn.active,
-button.tm-tab-btn[data-active="true"] {
-  background-color: var(--tm-container-accent);
-  color: var(--tm-accent-ink);
+/* Segmented active = host nav wash, never a side or bottom accent bar. */
+button.tm-feed-layout-btn[data-active="true"] {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
   box-shadow: none;
 }
 button.tm-tab-btn.tm-tab-active,
 button.tm-tab-btn.active,
 button.tm-tab-btn[data-active="true"] {
-  background-color: var(--tm-container-accent);
-  color: var(--tm-accent-ink);
-  font-weight: 700;
+  background-color: var(--nav-item-background-active, var(--background-modifier-hover));
+  color: var(--nav-item-color-active, var(--text-normal));
+  box-shadow: none;
+  font-weight: var(--font-semibold, 600);
 }
 
 /* MD3 state layers on interactive shells (overlay, not bg-swap) */
@@ -3374,7 +3375,10 @@ button.tm-chat-msg-btn:hover {
   padding: var(--tm-gap-md) var(--tm-bubble-pad-y);
   border-radius: var(--tm-input-radius);
   border: 1px solid var(--tm-line);
-  background: var(--tm-bg-card);
+  background: var(--tm-bg-soft);
+  color: var(--tm-ink);
+  font-family: inherit;
+  font-size: var(--tm-type-body);
   resize: none;
 }
 
@@ -3418,8 +3422,8 @@ button.tm-chat-clear-btn:hover {
   padding: 0 var(--tm-gap-md);
   border: 1px solid var(--tm-line);
   border-radius: var(--tm-radius-ctl);
-  background: var(--tm-bg-card);
-  color: var(--tm-ink-soft);
+  background: var(--tm-bg-soft);
+  color: var(--tm-ink);
   font-size: var(--tm-type-label);
   cursor: pointer;
   transition: var(--tm-transition-ui), box-shadow 120ms ease, transform 120ms ease;
@@ -3470,9 +3474,9 @@ button.tm-chat-clear-btn:hover {
   .tm-wb-card::before,
   .tm-history-abort,
   .tm-todo-item .tm-todo-delete {
-    animation: none !important;
-    transition: none !important;
-    transform: none !important;
+    animation: none;
+    transition: none;
+    transform: none;
   }
 
   /* Removing cards must still leave the layout — hide via opacity only. */
@@ -3491,8 +3495,8 @@ button.tm-chat-clear-btn:hover {
 
 /* ═══════════════════════════════════════════════════════════════════════
    22. TOUCH / NO-HOVER — hover-revealed actions stay reachable
-   Final block: later + !important on opacity only, so it beats the
-   per-section `opacity: 0` rules (§6 workbench cards, §20 chat actions).
+   Final block so it beats earlier opacity: 0 rules (§6 workbench cards,
+   §20 chat actions) by source order alone.
    ═══════════════════════════════════════════════════════════════════════ */
 @media (hover: none) {
   .tm-wb-card .tm-card-actions,
@@ -3501,7 +3505,7 @@ button.tm-chat-clear-btn:hover {
   .tm-chat-error-msg .tm-chat-msg-actions,
   .tm-todo-item .tm-todo-delete,
   .tm-history-item-active .tm-history-abort {
-    opacity: 1 !important;
-    transition: none !important;
+    opacity: 1;
+    transition: none;
   }
 }

@@ -189,8 +189,8 @@ export class SidebarDockView extends ItemView {
   private loadChatGoal(): ChatMessage["goal"] | null {
     try {
       if (!fs.existsSync(this.chatGoalPath)) return null;
-      const parsed = JSON.parse(fs.readFileSync(this.chatGoalPath, "utf-8"));
-      return parsed && typeof parsed === "object" ? parsed : null;
+      const parsed: unknown = JSON.parse(fs.readFileSync(this.chatGoalPath, "utf-8"));
+      return parsed && typeof parsed === "object" ? parsed as ChatMessage["goal"] : null;
     } catch {
       return null;
     }
@@ -202,10 +202,10 @@ export class SidebarDockView extends ItemView {
       const filePath = this.chatHistoryPath;
       if (!fs.existsSync(filePath)) return;
       const raw = fs.readFileSync(filePath, "utf-8");
-      const parsed = JSON.parse(raw);
+      const parsed: unknown = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         const budget = resolveChatCompactBudget(this.chatContextLimit);
-        this.chatHistory = compactChatMessages(parsed, {
+        this.chatHistory = compactChatMessages(parsed as ChatMessage[], {
           maxMessages: budget.maxMessages,
           keepRecent: budget.keepRecent,
         });
@@ -237,7 +237,7 @@ export class SidebarDockView extends ItemView {
 
   private scheduleRefresh(delay: number): void {
     if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
-    this.refreshTimer = window.setTimeout(() => this.refreshActiveTab(), delay);
+    this.refreshTimer = window.setTimeout(() => { void this.refreshActiveTab(); }, delay);
   }
 
   /**
@@ -326,7 +326,7 @@ export class SidebarDockView extends ItemView {
       cls: "tm-status-label",
     });
     statusDiv.addEventListener("click", () => {
-      if (aiReady) this.runAiQuickTest(statusDiv);
+      if (aiReady) void this.runAiQuickTest(statusDiv);
       else this.openSettings();
     });
     statusDiv.addEventListener("keydown", (e: KeyboardEvent) => {
@@ -535,7 +535,7 @@ export class SidebarDockView extends ItemView {
       aiMaintainBtn.setAttribute("aria-label", t("sidebar_op_todo"));
       aiMaintainBtn.setAttribute("title", t("sidebar_op_todo"));
       aiMaintainBtn.addEventListener("click", () => {
-        this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar", true);
+        void this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar", true);
       });
     }
 
@@ -546,7 +546,7 @@ export class SidebarDockView extends ItemView {
     openFileBtn.setAttribute("aria-label", t("todo_open_file"));
     openFileBtn.setAttribute("title", t("todo_open_file"));
     openFileBtn.addEventListener("click", () => {
-      this.app.workspace.openLinkText(this.plugin.kernelService.todoRelPath(), "", false);
+      void this.app.workspace.openLinkText(this.plugin.kernelService.todoRelPath(), "", false);
     });
 
     const todos = this.plugin.kernelService.readTodos();
@@ -594,7 +594,7 @@ export class SidebarDockView extends ItemView {
             const link = streamDir
               ? `${streamDir}/${todo.sourcePeriod}.md`
               : `${todo.sourcePeriod}.md`;
-            this.app.workspace.openLinkText(link, "", false);
+            void this.app.workspace.openLinkText(link, "", false);
           });
         }
         if (todo.dueDate) {
@@ -644,7 +644,7 @@ export class SidebarDockView extends ItemView {
           text: t("sidebar_view_all_todos"),
         });
         viewAllBtn.addEventListener("click", () => {
-          this.app.workspace.openLinkText(this.plugin.kernelService.todoRelPath(), "", false);
+          void this.app.workspace.openLinkText(this.plugin.kernelService.todoRelPath(), "", false);
         });
       }
     }
@@ -845,7 +845,7 @@ export class SidebarDockView extends ItemView {
       const aiQueued = this.plugin.settings.autoMaintainTodos
         && hasConfiguredProvider(this.plugin.settings.ai);
       if (aiQueued) {
-        this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar", true);
+        void this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar", true);
       } else {
         new Notice(t("notice_organize_done"));
       }
@@ -866,14 +866,14 @@ export class SidebarDockView extends ItemView {
           item.setTitle(t("sidebar_op_memory"))
             .setIcon("user")
             .onClick(() => {
-              this.plugin.enqueueAiOperation("memory_organize", "op_label_memory_organize", "notice_memory_done", "all");
+              void this.plugin.enqueueAiOperation("memory_organize", "op_label_memory_organize", "notice_memory_done", "all");
             });
         });
         menu.addItem((item) => {
           item.setTitle(t("sidebar_op_classify"))
             .setIcon("tag")
             .onClick(() => {
-              this.plugin.enqueueAiOperation("topic_classify", "op_label_topic_classify", "notice_classify_done", "suggest");
+              void this.plugin.enqueueAiOperation("topic_classify", "op_label_topic_classify", "notice_classify_done", "suggest");
             });
         });
         menu.showAtMouseEvent(evt);
@@ -1067,7 +1067,7 @@ export class SidebarDockView extends ItemView {
       sendBtn.setAttribute("title", t("chat_resume"));
       sendBtn.addEventListener("click", () => void this.resumeChat(input));
     } else {
-      sendBtn.addEventListener("click", () => this.sendChatMessage(input));
+      sendBtn.addEventListener("click", () => { void this.sendChatMessage(input); });
     }
 
     // Focus only on user-initiated renders — vault-event refreshes must not
@@ -1146,7 +1146,7 @@ export class SidebarDockView extends ItemView {
       await this.plugin.saveSettings();
     })(); });
 
-    this.loadChatModels(activeProvider, modelSelect, currentModel);
+    void this.loadChatModels(activeProvider, modelSelect, currentModel);
   }
 
   /** Resolve official + community + curated and update the chat model select. */
@@ -1342,7 +1342,7 @@ export class SidebarDockView extends ItemView {
           const idx = this.chatHistory.lastIndexOf(msg);
           if (idx >= 0) {
             this.chatHistory.splice(idx, 1);
-            this.regenerateResponse(msg.prompt!);
+            void this.regenerateResponse(msg.prompt!);
           }
         });
       }
@@ -1359,7 +1359,7 @@ export class SidebarDockView extends ItemView {
           const idx = this.chatHistory.lastIndexOf(msg);
           if (idx >= 0) {
             this.chatHistory.splice(idx, 1);
-            this.regenerateResponse(msg.prompt!);
+            void this.regenerateResponse(msg.prompt!);
           }
         });
       }
@@ -1821,7 +1821,7 @@ export class SidebarDockView extends ItemView {
         this.plugin.kernelService.reconcilePeriod(streamCtx.current.relPath);
       }
       if (aiConfigured && this.plugin.settings.autoMaintainTodos) {
-        this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar", true);
+        void this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar", true);
       } else {
         new Notice(t("notice_organize_done"));
       }
@@ -1842,17 +1842,17 @@ export class SidebarDockView extends ItemView {
       const menu = new Menu();
       menu.addItem((item) => {
         item.setTitle(t("sidebar_btn_todo")).setIcon("list-checks").onClick(() => {
-          this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar");
+          void this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar");
         });
       });
       menu.addItem((item) => {
         item.setTitle(t("sidebar_btn_classify")).setIcon("tag").onClick(() => {
-          this.plugin.enqueueAiOperation("topic_classify", "op_label_topic_classify", "notice_classify_done", "suggest");
+          void this.plugin.enqueueAiOperation("topic_classify", "op_label_topic_classify", "notice_classify_done", "suggest");
         });
       });
       menu.addItem((item) => {
         item.setTitle(t("sidebar_btn_memory")).setIcon("user").onClick(() => {
-          this.plugin.enqueueAiOperation("memory_organize", "op_label_memory_organize", "notice_memory_done", "all");
+          void this.plugin.enqueueAiOperation("memory_organize", "op_label_memory_organize", "notice_memory_done", "all");
         });
       });
       menu.showAtMouseEvent(evt);
@@ -1901,7 +1901,7 @@ export class SidebarDockView extends ItemView {
       const result = this.plugin.kernelService.initWorkspace("stream");
       if (result.ok) {
         new Notice(t("init_workspace_success"));
-        this.render();
+        void this.render();
       } else {
         new Notice(`${t("init_workspace_failed")}: ${result.error || ""}`);
       }

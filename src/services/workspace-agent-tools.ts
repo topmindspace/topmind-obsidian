@@ -20,7 +20,7 @@ export interface AgentToolContext {
   engineRoot?: string;
   writebackMode?: AgentWriteMode;
   actor?: "ai" | "user";
-  /** Vault config folder name (Vault#configDir) — not always ".obsidian". */
+  /** Vault config folder name from Vault#configDir. */
   configDir?: string;
   /**
    * HTTP fetch for `fetch_url` — must be host-injected (Obsidian `requestUrl`).
@@ -139,7 +139,7 @@ function resolveArchiveDir(kernel: KernelApi, workspaceRoot: string, engineRoot?
 function walkFiles(root: string, opts: { maxFiles?: number; skipDirs?: Set<string> } = {}): string[] {
   const maxFiles = opts.maxFiles || 4000;
   const skip =
-    opts.skipDirs || new Set([".topmind", ".git", "node_modules", ".obsidian"]);
+    opts.skipDirs || new Set([".topmind", ".git", "node_modules"]);
   const out: string[] = [];
   const stack = [root];
   while (stack.length && out.length < maxFiles) {
@@ -210,7 +210,7 @@ export function searchWorkspace(
   }
 
   const skipDirs = new Set([".topmind", ".git", "node_modules"]);
-  skipDirs.add(ctx.configDir || ".obsidian");
+  if (ctx.configDir) skipDirs.add(ctx.configDir);
   if (!opts.includeArchive) skipDirs.add(archiveName);
 
   const results: Array<{ relativePath: string; line: number; preview: string }> = [];
@@ -710,7 +710,7 @@ export function deletePath(
     if (!rel || !isSafeRel(rel)) return { ok: false, tool, error: "invalid relativePath" };
     const abs = absOf(ctx.workspaceRoot, rel);
     if (!fs.existsSync(abs)) return { ok: false, tool, error: `not found: ${rel}` };
-    const mode = ctx.writebackMode || "auto";
+    const mode = ctx.writebackMode === "confirm" ? "confirm" : "auto";
     // LIFECYCLE: AI never self-confirms. Only an explicit host/user confirm
     // (opts.confirmed === true from a user RPC) may skip the confirm gate.
     const confirmed = opts.confirmed === true;
@@ -727,6 +727,7 @@ export function deletePath(
       contract,
       actor: ctx.actor || "ai",
       confirmed,
+      writebackModeOverride: mode,
     });
     const reversible = Boolean(r?.backupPath);
     return {

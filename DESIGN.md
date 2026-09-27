@@ -480,7 +480,8 @@ System prompt 跟随 UI locale：
 
 ## 11. 视觉风格
 
-- 使用 Obsidian CSS 变量（`--text-normal`, `--background-primary`, `--interactive-accent` 等）
+- 使用 Obsidian CSS 变量（`--text-normal`, `--font-interface`, `--font-ui-*`, `--background-primary`, `--background-secondary`, `--interactive-accent`）
+- **三层表面**：页面 `--background-secondary`（和侧栏、设置页同一层灰底），卡片 `--background-primary`，顶栏/页签 `--background-secondary-alt`。侧栏叶子本身已是灰轨，卡片仍用 primary 浮起。不要整页同一张白底。正文字体是 `--font-interface`，字号走 `--font-ui-*`，行高走 `--line-height-normal`
 - **单一 Design Token 面**：`styles.css` 顶部 token 块作用于全部 `tm-*` 表面（workbench · sidebar · memory · capture）
 - 卡片样式：圆角 `--tm-radius-card`（14px）+ 发丝描边 + 微阴影 + hover 高亮（控件 4/8 · 胶囊 999）
 - 输入栏：单行高度起，自适应增长

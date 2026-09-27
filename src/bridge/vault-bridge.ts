@@ -7,8 +7,6 @@
 // esbuild platform:'node' keeps these as external require() calls.
 
 import type { App } from "obsidian";
-import fs from "node:fs";
-import path from "node:path";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

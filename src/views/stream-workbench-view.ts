@@ -275,7 +275,7 @@ export class StreamWorkbenchView extends ItemView {
     const streamControls = streamHeader.createDiv({ cls: "tm-section-controls" });
     this.periodSelect = streamControls.createEl("select", { cls: "tm-period-select" });
     this.periodSelect.setAttribute("aria-label", t("stream_switch_period"));
-    this.periodSelect.addEventListener("change", () => this.refreshStream());
+    this.periodSelect.addEventListener("change", () => { void this.refreshStream(); });
 
     const refreshStreamBtn = streamControls.createEl("button", {
       cls: "tm-btn-ghost tm-btn-icon tm-btn-sm",
@@ -285,7 +285,7 @@ export class StreamWorkbenchView extends ItemView {
     refreshStreamBtn.setAttribute("title", t("toolbar_btn_refresh"));
     refreshStreamBtn.addEventListener("click", () => {
       refreshStreamBtn.addClass("tm-btn-spinning");
-      this.refreshStream().finally(() => refreshStreamBtn.removeClass("tm-btn-spinning"));
+      void this.refreshStream().finally(() => refreshStreamBtn.removeClass("tm-btn-spinning"));
     });
 
     this.organizeBtn = streamControls.createEl("button", {
@@ -535,7 +535,7 @@ export class StreamWorkbenchView extends ItemView {
    */
   private scheduleStreamRefresh(delay: number): void {
     if (this.streamRefreshTimer) window.clearTimeout(this.streamRefreshTimer);
-    this.streamRefreshTimer = window.setTimeout(() => this.refreshStream(), delay);
+    this.streamRefreshTimer = window.setTimeout(() => { void this.refreshStream(); }, delay);
   }
 
   private autoGrowTextarea(el: HTMLTextAreaElement): void {
@@ -647,8 +647,8 @@ export class StreamWorkbenchView extends ItemView {
         return;
       }
 
-      const { content, entries } = await this.plugin.kernelService.readPeriodNoteAsync(selectedPath);
-      this.currentEntries = entries;
+      const note = await this.plugin.kernelService.readPeriodNoteAsync(selectedPath);
+      this.currentEntries = note.entries;
 
       this.streamLoading = false;
       streamContainer.empty();
@@ -782,7 +782,7 @@ export class StreamWorkbenchView extends ItemView {
     setIcon(editBtn, "square-pen");
     editBtn.addEventListener("click", (e: MouseEvent) => {
       e.stopPropagation();
-      this.app.workspace.openLinkText(periodPath, "", false);
+      void this.app.workspace.openLinkText(periodPath, "", false);
     });
 
     // Append continuation button
@@ -1028,7 +1028,7 @@ export class StreamWorkbenchView extends ItemView {
     if (result.ok) {
       this.inputEl.value = "";
       this.inputEl.setCssStyles({ height: "auto" });
-      this.refreshStream();
+      void this.refreshStream();
       // Scroll to top (newest entry in desc order)
       this.streamContainer.scrollTop = 0;
       // Result notices (written → path / pending / failed) come from
@@ -1060,7 +1060,7 @@ export class StreamWorkbenchView extends ItemView {
       const aiQueued = this.plugin.settings.autoMaintainTodos
         && hasConfiguredProvider(this.plugin.settings.ai);
       if (aiQueued) {
-        this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "all", true);
+        void this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "all", true);
       }
 
       await this.refreshSuggestions({ force: true });

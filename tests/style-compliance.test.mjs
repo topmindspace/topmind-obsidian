@@ -138,6 +138,21 @@ test("styles.css: no hardcoded colors", async (t) => {
   });
 });
 
+test("styles.css: host surface steps, no !important, no multicolumn gap", () => {
+  const code = css
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  assert.doesNotMatch(code, /!important/);
+  assert.doesNotMatch(code, /\bcolumn-gap\s*:/);
+  assert.doesNotMatch(code, /\brow-gap\s*:/);
+  assert.match(css, /--tm-bg-page:\s*var\(--background-secondary\)/);
+  assert.match(css, /--tm-bg-card:\s*var\(--background-primary\)/);
+  assert.match(css, /--tm-bg-chrome:\s*var\(--background-secondary-alt/);
+  assert.match(css, /font-family:\s*var\(--font-interface\)/);
+  assert.match(css, /--tm-lh-body:\s*var\(--line-height-normal/);
+  assert.match(css, /@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)/);
+});
+
 test("selected controls have no side or bottom accent bar; suggestion kind borders stay", () => {
   const blocks = [];
   const ruleRe = /([^{}]+)\{([^{}]*)\}/g;

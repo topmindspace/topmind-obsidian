@@ -115,7 +115,8 @@ function tryImportDesktopSettings(): {
     if (!fs.existsSync(exportPath)) continue;
     try {
       const raw = fs.readFileSync(exportPath, "utf-8");
-      const ai = readDesktopAi(JSON.parse(raw));
+      const parsed: unknown = JSON.parse(raw);
+      const ai = readDesktopAi(parsed);
       if (!ai) continue;
       const m = ai.manual || {};
       const imported: Partial<AiManualKeys> = {};
@@ -154,7 +155,8 @@ function tryImportDesktopSettings(): {
     if (!fs.existsSync(settingsPath)) continue;
     try {
       const raw = fs.readFileSync(settingsPath, "utf-8");
-      const ai = readDesktopAi(JSON.parse(raw));
+      const parsed: unknown = JSON.parse(raw);
+      const ai = readDesktopAi(parsed);
       if (!ai) return null;
 
       const m = ai.manual || {};
@@ -220,16 +222,22 @@ export class TopmindSettingTab extends PluginSettingTab {
   }
 
   /**
-   * Force the classic `display()` path.
-   *
-   * Returning a non-empty `getSettingDefinitions()` makes Obsidian skip
-   * `display()` entirely. The AI provider/model board is imperative and does
-   * not survive the declarative `render` hook (rows get torn down on update),
-   * which is why "AI settings disappeared" kept happening. Empty array →
-   * `display()` renders the full surface every time.
+   * One searchable render row paints the whole tab.
+   * `display()` is deprecated since Obsidian 1.13 (minAppVersion). The row's
+   * `render` rebuilds the imperative board on every pass, so an update cannot
+   * leave a torn-down AI section behind.
    */
   override getSettingDefinitions(): SettingDefinitionItem[] {
-    return [];
+    return [
+      {
+        name: "Topmind",
+        desc: "Workspace, stream, AI providers, and writeback",
+        searchable: true,
+        render: (setting: Setting, _group: SettingGroup) => {
+          this.paintSettings(setting.settingEl);
+        },
+      },
+    ];
   }
 
   override getControlValue(key: string): unknown {
@@ -252,16 +260,16 @@ export class TopmindSettingTab extends PluginSettingTab {
     void this.save();
   }
 
-  /** Full settings surface — always called when getSettingDefinitions() is empty. */
-  display(): void {
-    const { containerEl } = this;
+  /** Full settings surface. Rebuilt on every declarative render. */
+  private paintSettings(host: HTMLElement): void {
     this.hydrateWriteback();
-    containerEl.empty();
+    host.empty();
+    host.addClass("tm-settings-host");
     this.templateSelect = null;
-    this.renderWorkspaceSection(containerEl);
-    this.renderStreamSection(containerEl);
-    this.renderAiSection(containerEl);
-    this.renderSecuritySection(containerEl);
+    this.renderWorkspaceSection(host);
+    this.renderStreamSection(host);
+    this.renderAiSection(host);
+    this.renderSecuritySection(host);
   }
 
   private hydrateWriteback(): void {
