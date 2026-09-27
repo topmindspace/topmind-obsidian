@@ -115,6 +115,22 @@ describe("Obsidian plugin guidelines", () => {
     assert.match(arch, /Vault API|intentional divergence|writeback/iu);
   });
 
+  test("no direct element.style assignment (obsidianmd/no-static-styles-assignment)", () => {
+    const hits = [];
+    for (const f of files) {
+      const code = fs.readFileSync(f, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//gu, "")
+        .replace(/^\s*\/\/.*$/gmu, "");
+      if (/\.style\.[A-Za-z]/u.test(code)) hits.push(path.relative(root, f));
+    }
+    assert.deepEqual(hits, [], "set a CSS class, setCssProps, or setCssStyles instead of element.style");
+    const dock = fs.readFileSync(path.join(src, "views", "sidebar-dock-view.ts"), "utf8");
+    const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+    assert.match(dock, /toggleClass\("tm-goal-ledger-open"/);
+    assert.match(css, /\.tm-goal-ledger\s*\{[^}]*display:\s*none/s);
+    assert.match(css, /\.tm-goal-ledger\.tm-goal-ledger-open\s*\{[^}]*display:\s*block/s);
+  });
+
   test("no remote code / dynamic script injection", () => {
     assert.doesNotMatch(all, /createElement\(["']script["']\)/iu);
     assert.doesNotMatch(all, /importScripts\s*\(/u);

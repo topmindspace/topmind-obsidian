@@ -2266,13 +2266,19 @@ button.tm-suggestion-path:focus-visible {
   background: var(--tm-container-success);
 }
 
-/* Goal ledger (expanded plan + criteria) */
+/* Goal ledger (expanded plan + criteria). Hidden until .tm-goal-ledger-open —
+   do not assign element.style (obsidianmd/no-static-styles-assignment). */
 .tm-goal-ledger {
+  display: none;
   margin-top: var(--tm-gap-sm);
   padding: var(--tm-gap-md);
   border-radius: var(--tm-radius-card);
   border: 1px solid var(--tm-line);
   background: var(--tm-bg-card);
+}
+
+.tm-goal-ledger.tm-goal-ledger-open {
+  display: block;
 }
 
 .tm-goal-plan-list,

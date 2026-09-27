@@ -1223,7 +1223,6 @@ export class SidebarDockView extends ItemView {
             },
           });
           const ledger = msgEl.createDiv({ cls: "tm-goal-ledger" });
-          ledger.style.display = "none";
           if (plan.length) {
             const ol = ledger.createEl("ol", { cls: "tm-goal-plan-list" });
             plan.forEach((step, i) => {
@@ -1245,8 +1244,8 @@ export class SidebarDockView extends ItemView {
           }
           ledgerBtn.addEventListener("click", (e: MouseEvent) => {
             e.stopPropagation();
-            const showing = ledger.style.display !== "none";
-            ledger.style.display = showing ? "none" : "block";
+            const showing = ledger.hasClass("tm-goal-ledger-open");
+            ledger.toggleClass("tm-goal-ledger-open", !showing);
             ledgerBtn.setAttribute("aria-expanded", showing ? "false" : "true");
           });
         }
