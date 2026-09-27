@@ -150,6 +150,7 @@ export default class TopmindPlugin extends Plugin {
   declare settings: TopmindSettings;
   kernelService!: KernelService;
   private statusBarEl: HTMLElement | null = null;
+  private suggestCount = 0;
   private aiTaskUnsub: (() => void) | null = null;
   private settingTab: TopmindSettingTab | null = null;
   /** Set in onunload — guards onLayoutReady callbacks that outlive the plugin. */
@@ -431,6 +432,15 @@ export default class TopmindPlugin extends Plugin {
     });
   }
 
+  /** Open the dock's 建议 tab (status-bar chip / stream strip). */
+  async openSidebarSuggestions(): Promise<void> {
+    await this.openSidebar();
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_SIDEBAR_DOCK);
+    if (leaves.length === 0) return;
+    const view = leaves[0].view as unknown as { revealTab?: (tab: "suggestions") => void };
+    view.revealTab?.("suggestions");
+  }
+
   // ── Command handlers ──────────────────────────────────────────────────
 
   private async organizePeriod(): Promise<void> {
@@ -593,6 +603,29 @@ export default class TopmindPlugin extends Plugin {
         });
       }
     }
+    // Global "work waiting" signal (Desktop showSuggestCountChip parity).
+    if (this.suggestCount > 0) {
+      const chip = el.createEl("button", {
+        cls: "tm-status-badge",
+        text: t("sidebar_suggestions_count", { count: this.suggestCount }),
+        attr: {
+          type: "button",
+          "aria-label": t("suggestions_open_confirm"),
+          title: t("suggestions_open_confirm"),
+        },
+      });
+      this.registerDomEvent(chip, "click", (e: MouseEvent) => {
+        e.stopPropagation();
+        void this.openSidebarSuggestions();
+      });
+    }
+  }
+
+  /** Called when the suggestion surface refreshes — drives the status-bar chip. */
+  setSuggestionCount(count: number): void {
+    if (this.suggestCount === count) return;
+    this.suggestCount = Math.max(0, count);
+    this.updateStatusBarItem(aiTaskManager.getProgress());
   }
 
   async openMemoryBrowse(): Promise<void> {

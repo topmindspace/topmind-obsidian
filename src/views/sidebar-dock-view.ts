@@ -26,7 +26,7 @@ import { renderSuggestionCard } from "./suggestion-card";
 import { hasConfiguredProvider } from "../types";
 import { aiTaskManager, type TaskProgress, type AiTask } from "../services/ai-task-manager";
 import { resolveProviderCatalog, applyModelOptions, credentialsForProvider } from "../services/models-dev";
-import { bindImeEnterGuard, compactChatMessages, isImeEnter } from "../utils";
+import { bindImeEnterGuard, compactChatMessages, isImeEnter, resolveChatCompactBudget } from "../utils";
 
 // ── Node.js built-ins (esbuild platform:'node' converts to require) ──
 import fs from "node:fs";
@@ -48,16 +48,29 @@ interface ChatMessage {
   steps?: number;
   autoContinues?: number;
   stepLimitHit?: boolean;
+  /** Structured goal snapshot (Desktop goalSummary parity). */
+  goal?: {
+    goal?: string;
+    plan?: string[];
+    criteria?: string[];
+    openCriteria?: string[];
+    pathReceipts?: string[];
+    status?: string;
+    blockReason?: string | null;
+    autoContinues?: number;
+  } | null;
 }
 
 export class SidebarDockView extends ItemView {
   plugin: TopmindPlugin;
   private refreshTimer: number | null = null;
-  private activeTab: SidebarTab = "todos";
+  private activeTab: SidebarTab = "chat";
   private chatHistory: ChatMessage[] = [];
   private chatThinking = false;
   /** Live agent progress line while a turn is working (step / tool / auto-continue). */
   private chatStatus = "";
+  /** Turn start timestamp for elapsed progress. */
+  private chatStartedAt = 0;
   /** Folded reasoning shown while the turn is still running. */
   private chatReasoningLive = "";
   /** Set by the stop button; the in-flight turn checks it between steps. */
@@ -72,6 +85,10 @@ export class SidebarDockView extends ItemView {
   private chatProviderOverride = "";
   /** Currently selected model in chat model switcher */
   private chatModelOverride = "";
+  /** Selected model context window (tokens) — drives compact budget (Desktop parity). */
+  private chatContextLimit: number | undefined;
+  /** Last resolved provider model catalog (for contextLimit lookup). */
+  private chatModelCatalog: { id: string; contextLimit?: number }[] = [];
   /** Unsent chat draft preserved across full re-renders (settings refresh). */
   private pendingChatDraft = "";
   /** Markdown children for the current tab paint — unloaded before each rebuild. */
@@ -146,6 +163,29 @@ export class SidebarDockView extends ItemView {
     return path.join(this.plugin.kernelService.getVaultPath(), ".topmind", "chat-history.json");
   }
 
+  /** Session goal snapshot (Desktop .goal.json parity). */
+  private get chatGoalPath(): string {
+    return path.join(this.plugin.kernelService.getVaultPath(), ".topmind", "chat-goal.json");
+  }
+
+  private saveChatGoal(goal: ChatMessage["goal"] | null | undefined): void {
+    try {
+      const dir = path.dirname(this.chatGoalPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(this.chatGoalPath, JSON.stringify(goal || null, null, 2), "utf-8");
+    } catch { /* non-fatal */ }
+  }
+
+  private loadChatGoal(): ChatMessage["goal"] | null {
+    try {
+      if (!fs.existsSync(this.chatGoalPath)) return null;
+      const parsed = JSON.parse(fs.readFileSync(this.chatGoalPath, "utf-8"));
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Load persisted chat history from disk (best-effort, non-fatal). */
   private async loadChatHistory(): Promise<void> {
     try {
@@ -154,9 +194,10 @@ export class SidebarDockView extends ItemView {
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
+        const budget = resolveChatCompactBudget(this.chatContextLimit);
         this.chatHistory = compactChatMessages(parsed, {
-          maxMessages: 60,
-          keepRecent: 24,
+          maxMessages: budget.maxMessages,
+          keepRecent: budget.keepRecent,
         });
       }
     } catch {
@@ -172,10 +213,11 @@ export class SidebarDockView extends ItemView {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
-      // Session compact (Desktop parity) — never unbounded growth on disk.
+      // Session compact (Desktop parity) — scale with model context window.
+      const budget = resolveChatCompactBudget(this.chatContextLimit);
       const toSave = compactChatMessages(this.chatHistory, {
-        maxMessages: 60,
-        keepRecent: 24,
+        maxMessages: budget.maxMessages,
+        keepRecent: budget.keepRecent,
       });
       fs.writeFileSync(filePath, JSON.stringify(toSave, null, 2), "utf-8");
     } catch {
@@ -383,11 +425,12 @@ export class SidebarDockView extends ItemView {
     tabBar.setAttribute("role", "tablist");
 
     // 动态流的家是主区 Stream View，不进 AI Dock（能力单家 · 对齐 Desktop）
+    // Order matches Desktop AI workspace: 对话 first (agent spine), then confirm faces.
     const tabs: { id: SidebarTab; label: string; icon: string }[] = [
-      { id: "todos", label: t("sidebar_tab_todos"), icon: "list-checks" },
-      { id: "suggestions", label: t("sidebar_tab_suggestions"), icon: "lightbulb" },
       { id: "chat", label: t("sidebar_tab_chat"), icon: "bot" },
-      { id: "history", label: t("sidebar_tab_history"), icon: "history" },
+      { id: "suggestions", label: t("sidebar_tab_suggestions"), icon: "lightbulb" },
+      { id: "todos", label: t("sidebar_tab_todos"), icon: "list-checks" },
+      { id: "history", label: t("sidebar_tab_history"), icon: "activity" },
     ];
 
     for (const tab of tabs) {
@@ -888,7 +931,7 @@ export class SidebarDockView extends ItemView {
     if (this.chatHistory.length === 0) {
       const emptyDiv = messagesEl.createDiv({ cls: "tm-chat-empty" });
       const chatIcon = emptyDiv.createDiv({ cls: "tm-chat-empty-icon" });
-      setIcon(chatIcon, "message-circle");
+      setIcon(chatIcon, "bot");
       emptyDiv.createDiv({ text: t("chat_empty"), cls: "tm-chat-empty-title" });
       emptyDiv.createDiv({ text: t("chat_empty_hint"), cls: "tm-chat-empty-hint" });
     } else {
@@ -902,6 +945,8 @@ export class SidebarDockView extends ItemView {
     // Thinking / agent-working indicator
     if (this.chatThinking) {
       const thinkingEl = messagesEl.createDiv({ cls: "tm-chat-message tm-chat-ai tm-chat-thinking" });
+      thinkingEl.setAttribute("role", "status");
+      thinkingEl.setAttribute("aria-live", "polite");
       thinkingEl.createSpan({ cls: "tm-chat-role", text: t("chat_ai") });
       thinkingEl.createDiv({ cls: "tm-loading-spinner tm-loading-spinner-sm" });
       thinkingEl.createSpan({
@@ -978,8 +1023,14 @@ export class SidebarDockView extends ItemView {
     });
 
     // Enter to send, Shift+Enter for newline. IME confirm must not send.
+    // Esc while thinking → stop generation (Desktop / industry parity).
     const chatIme = bindImeEnterGuard(input);
     input.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Escape" && this.chatThinking) {
+        e.preventDefault();
+        this.stopChat();
+        return;
+      }
       if (e.key === "Enter" && !e.shiftKey) {
         if (isImeEnter(e, chatIme)) return;
         e.preventDefault();
@@ -1066,6 +1117,9 @@ export class SidebarDockView extends ItemView {
       this.chatModelOverride = modelSelect.value;
       this.plugin.settings.ai.defaultModel = modelSelect.value;
       this.plugin.settings.aiModel = modelSelect.value;
+      // Track context window for compact-budget scaling.
+      const entry = (this.chatModelCatalog || []).find((m) => m.id === modelSelect.value);
+      this.chatContextLimit = entry?.contextLimit;
       await this.plugin.saveSettings();
     })(); });
 
@@ -1077,12 +1131,15 @@ export class SidebarDockView extends ItemView {
     try {
       const creds = credentialsForProvider(providerId, this.plugin.settings.ai.manual);
       const result = await resolveProviderCatalog(providerId, creds);
+      this.chatModelCatalog = result.models || [];
       const preset = AI_PROVIDER_PRESETS[providerId];
       applyModelOptions(selectEl, result.models, {
         currentValue,
         presetModel: preset?.model || null,
         defaultLabel: t("settings_ai_model_default"),
       });
+      const entry = (result.models || []).find((m) => m.id === (currentValue || selectEl.value));
+      this.chatContextLimit = entry?.contextLimit;
     } catch {
       // Network failed — curated options already on screen
     }
@@ -1115,17 +1172,117 @@ export class SidebarDockView extends ItemView {
         cls: "tm-chat-tools-label",
         text: t("chat_tool_steps", { count }),
       });
-      if (msg.stepLimitHit) {
+      if (msg.stepLimitHit || (msg.autoContinues || 0) > 0) {
         toolsEl.createSpan({
           cls: "tm-chat-tools-limit",
           text: t("chat_auto_continue", { count: msg.autoContinues || 1 }),
         });
       }
-      for (const tc of (msg.toolCalls || []).slice(0, 12)) {
-        toolsEl.createSpan({
+      // Structured goal chip (Desktop Run Card parity). Never claim done from a [DONE] regex.
+      const goal = msg.goal;
+      if (goal) {
+        const open = (goal.openCriteria || []).length;
+        const total = (goal.criteria || []).length || (goal.plan || []).length;
+        const done = (goal.criteria || []).length
+          ? Math.max(0, (goal.criteria || []).length - open)
+          : 0;
+        const plan = goal.plan || [];
+        const criteria = goal.criteria || [];
+        const openSet = new Set(goal.openCriteria || []);
+        if (total > 0) {
+          const ledgerBtn = toolsEl.createEl("button", {
+            cls: "tm-chat-tool-chip",
+            text: t("chat_goal_plan", { done, total }),
+            attr: {
+              type: "button",
+              "aria-expanded": "false",
+              title: t("chat_goal_plan", { done, total }),
+            },
+          });
+          const ledger = msgEl.createDiv({ cls: "tm-goal-ledger" });
+          ledger.style.display = "none";
+          if (plan.length) {
+            const ol = ledger.createEl("ol", { cls: "tm-goal-plan-list" });
+            plan.forEach((step, i) => {
+              const li = ol.createEl("li", { cls: "tm-goal-plan-item" });
+              li.createSpan({ cls: "tm-goal-plan-num", text: String(i + 1) });
+              li.createSpan({ text: step });
+            });
+          }
+          if (criteria.length) {
+            const ul = ledger.createEl("ul", { cls: "tm-goal-criteria-list" });
+            criteria.forEach((c) => {
+              const isDone = !openSet.has(c);
+              const li = ul.createEl("li", {
+                cls: `tm-goal-criterion${isDone ? " tm-goal-criterion-done" : ""}`,
+              });
+              li.createSpan({ text: isDone ? "✓" : "○", attr: { "aria-hidden": "true" } });
+              li.createSpan({ text: c });
+            });
+          }
+          ledgerBtn.addEventListener("click", (e: MouseEvent) => {
+            e.stopPropagation();
+            const showing = ledger.style.display !== "none";
+            ledger.style.display = showing ? "none" : "block";
+            ledgerBtn.setAttribute("aria-expanded", showing ? "false" : "true");
+          });
+        }
+        if (open > 0) {
+          toolsEl.createSpan({
+            cls: "tm-chat-tools-limit",
+            text: t("chat_goal_open_criteria", { count: open }),
+          });
+        }
+        if (goal.status === "blocked") {
+          toolsEl.createSpan({
+            cls: "tm-chat-incomplete",
+            text: t("chat_goal_blocked"),
+            attr: { title: goal.blockReason || t("chat_incomplete_hint") },
+          });
+        } else if (goal.status === "incomplete" || (goal.status !== "done" && open > 0)) {
+          toolsEl.createSpan({
+            cls: "tm-chat-incomplete",
+            text: t("chat_incomplete"),
+            attr: { title: t("chat_incomplete_hint") },
+          });
+        } else if (goal.status === "done") {
+          toolsEl.createSpan({
+            cls: "tm-chat-goal-done",
+            text: t("chat_goal_done"),
+          });
+        }
+      }
+      const allTools = msg.toolCalls || [];
+      const shown = allTools.slice(0, 12);
+      for (const tc of shown) {
+        const rel = String(tc.summary || "").trim();
+        const isPath = tc.ok && rel && /\.(?:md|txt|json|ya?ml|csv|png|jpe?g|webp)$/i.test(rel) && !rel.includes("\n");
+        // Path receipts: show the touched path (head-truncated), tool name as title.
+        // Bare `read_file` as the label is telemetry, not a receipt chip.
+        const label = isPath
+          ? (rel.length > 36 ? `…${rel.slice(-35)}` : rel)
+          : tc.tool;
+        const chip = toolsEl.createEl("button", {
           cls: `tm-chat-tool-chip${tc.ok ? "" : " tm-chat-tool-chip-fail"}`,
-          text: tc.summary ? `${tc.tool}` : tc.tool,
-          attr: { title: tc.summary || tc.tool },
+          text: label,
+          attr: { type: "button", title: isPath ? `${tc.tool} · ${rel}` : tc.summary || tc.tool },
+        });
+        // Clickable path chips (Desktop parity): open the touched file in the vault.
+        if (isPath) {
+          chip.addEventListener("click", (e: MouseEvent) => {
+            e.stopPropagation();
+            void this.app.workspace.openLinkText(rel, "", false);
+          });
+        } else {
+          chip.setAttr("disabled", "true");
+          chip.addClass("tm-chat-tool-chip-static");
+        }
+      }
+      if (allTools.length > shown.length) {
+        toolsEl.createSpan({
+          cls: "tm-chat-tools-label",
+          text: `+${allTools.length - shown.length}`,
+          attr: { title: t("chat_tool_steps", { count: allTools.length }) },
         });
       }
     }
@@ -1187,6 +1344,81 @@ export class SidebarDockView extends ItemView {
     } else {
       bodyEl.textContent = msg.content;
     }
+
+    // Terminal agent result footer (Desktop honesty parity). Renders only when a
+    // real goal snapshot is present — never invented check evidence.
+    if (msg.role === "assistant" && !msg.isError && msg.goal) {
+      this.renderResultFooter(msgEl, msg);
+    }
+  }
+
+  /**
+   * Result footer: Verified / Assumed / Could not, plus a cheap "N done · M writes"
+   * summary line (stands in for a full tool-timeline collapse).
+   *
+   * Honesty contract — Verified carries only real data (path receipts the kernel
+   * actually harvested). Criteria the agent merely closed are claims, so they land
+   * under Assumed. Open criteria / block reason are what could not be finished.
+   * Empty sections read 无 / none; nothing is invented to fill them.
+   */
+  private renderResultFooter(msgEl: HTMLElement, msg: ChatMessage): void {
+    const goal = msg.goal;
+    if (!goal) return;
+
+    const receipts = goal.pathReceipts || [];
+    const criteria = goal.criteria || [];
+    const openSet = new Set(goal.openCriteria || []);
+    const assumed = criteria.filter((c) => !openSet.has(c));
+    const couldNot = [...(goal.openCriteria || [])];
+    if (goal.status === "blocked" && goal.blockReason) couldNot.push(goal.blockReason);
+
+    const okTools = (msg.toolCalls || []).filter((tc) => tc.ok).length;
+    const footer = msgEl.createDiv({ cls: "tm-goal-footer" });
+    footer.createDiv({
+      cls: "tm-goal-footer-summary",
+      text: t("chat_result_summary", { done: okTools, writes: receipts.length }),
+    });
+
+    const row = (labelKey: "chat_result_verified" | "chat_result_assumed" | "chat_result_could_not") => {
+      const r = footer.createDiv({ cls: "tm-goal-footer-row" });
+      r.createSpan({ cls: "tm-goal-footer-label", text: t(labelKey) });
+      return r.createDiv({ cls: "tm-goal-footer-vals" });
+    };
+
+    const verifiedEl = row("chat_result_verified");
+    if (receipts.length) {
+      for (const rel of receipts.slice(-8)) {
+        const chip = verifiedEl.createEl("button", {
+          cls: "tm-goal-footer-chip",
+          text: rel.length > 36 ? `…${rel.slice(-35)}` : rel,
+          attr: { type: "button", title: rel },
+        });
+        chip.addEventListener("click", (e: MouseEvent) => {
+          e.stopPropagation();
+          void this.app.workspace.openLinkText(rel, "", false);
+        });
+      }
+    } else {
+      verifiedEl.createSpan({ cls: "tm-goal-footer-none", text: t("chat_result_none") });
+    }
+
+    const assumedEl = row("chat_result_assumed");
+    if (assumed.length) {
+      for (const c of assumed.slice(0, 8)) {
+        assumedEl.createSpan({ cls: "tm-goal-footer-item", text: c });
+      }
+    } else {
+      assumedEl.createSpan({ cls: "tm-goal-footer-none", text: t("chat_result_none") });
+    }
+
+    const couldNotEl = row("chat_result_could_not");
+    if (couldNot.length) {
+      for (const c of couldNot.slice(0, 8)) {
+        couldNotEl.createSpan({ cls: "tm-goal-footer-item", text: c });
+      }
+    } else {
+      couldNotEl.createSpan({ cls: "tm-goal-footer-none", text: t("chat_result_none") });
+    }
   }
 
   private stopChat(): void {
@@ -1224,6 +1456,7 @@ export class SidebarDockView extends ItemView {
     const gate = { aborted: false };
     this.chatAbort = gate;
     this.chatThinking = true;
+    this.chatStartedAt = Date.now();
     this.chatStatus = t("chat_working");
     this.chatReasoningLive = "";
     this.chatFocusOnRender = true;
@@ -1232,6 +1465,8 @@ export class SidebarDockView extends ItemView {
     try {
       const response = await this.plugin.kernelService.chat(text, this.chatHistory.slice(0, -1), {
         shouldAbort: () => gate.aborted,
+        contextLimit: this.chatContextLimit,
+        priorGoal: this.loadChatGoal(),
         onProgress: (ev) => {
           this.chatStatus = this.formatChatProgress(ev);
           if (ev.reasoning) this.chatReasoningLive = ev.reasoning;
@@ -1247,7 +1482,9 @@ export class SidebarDockView extends ItemView {
         steps: response.steps,
         autoContinues: response.autoContinues,
         stepLimitHit: response.stepLimitHit,
+        goal: (response as { goal?: ChatMessage["goal"] }).goal || null,
       });
+      this.saveChatGoal((response as { goal?: ChatMessage["goal"] }).goal || null);
       this.saveChatHistory();
     } catch (err) {
       if (gate.aborted || (err instanceof Error && err.name === "AbortError")) {
@@ -1279,16 +1516,19 @@ export class SidebarDockView extends ItemView {
 
   private formatChatProgress(ev: { kind: string; step: number; maxSteps: number; tool?: string; autoContinues?: number }): string {
     const stepPart = t("chat_step_progress", { step: ev.step, max: ev.maxSteps });
+    const elapsed = this.chatStartedAt
+      ? ` ${Math.max(0, Math.floor((Date.now() - this.chatStartedAt) / 1000))}s`
+      : "";
     if (ev.kind === "tool" && ev.tool) {
-      return `${stepPart} · ${t("chat_tool_running", { tool: ev.tool })}`;
+      return `${stepPart} · ${t("chat_tool_running", { tool: ev.tool })}${elapsed}`;
     }
     if (ev.kind === "continue") {
-      return `${stepPart} · ${t("chat_auto_continue", { count: ev.autoContinues || 1 })}`;
+      return `${stepPart} · ${t("chat_auto_continue", { count: ev.autoContinues || 1 })}${elapsed}`;
     }
     if (ev.kind === "done") {
       return t("chat_working");
     }
-    return `${stepPart} · ${t("chat_working")}`;
+    return `${stepPart} · ${t("chat_working")}${elapsed}`;
   }
 
   /** Regenerate the AI response for a given prompt */
@@ -1298,6 +1538,7 @@ export class SidebarDockView extends ItemView {
     const gate = { aborted: false };
     this.chatAbort = gate;
     this.chatThinking = true;
+    this.chatStartedAt = Date.now();
     this.chatStatus = t("chat_working");
     this.chatReasoningLive = "";
     void this.renderActiveTab();
@@ -1318,6 +1559,8 @@ export class SidebarDockView extends ItemView {
         : [...this.chatHistory];
       const response = await this.plugin.kernelService.chat(prompt, history, {
         shouldAbort: () => gate.aborted,
+        contextLimit: this.chatContextLimit,
+        priorGoal: this.loadChatGoal(),
         onProgress: (ev) => {
           this.chatStatus = this.formatChatProgress(ev);
           if (ev.reasoning) this.chatReasoningLive = ev.reasoning;
@@ -1333,7 +1576,9 @@ export class SidebarDockView extends ItemView {
         steps: response.steps,
         autoContinues: response.autoContinues,
         stepLimitHit: response.stepLimitHit,
+        goal: (response as { goal?: ChatMessage["goal"] }).goal || null,
       });
+      this.saveChatGoal((response as { goal?: ChatMessage["goal"] }).goal || null);
       this.saveChatHistory();
     } catch (err) {
       if (gate.aborted || (err instanceof Error && err.name === "AbortError")) {

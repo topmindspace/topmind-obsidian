@@ -19,6 +19,7 @@ import {
   isUnknownArray,
   parseJsonUnknown,
   compactChatMessages,
+  resolveChatCompactBudget,
 } from "../utils.ts";
 import type { StreamPeriod, TodoItem } from "../types.ts";
 import {
@@ -30,6 +31,19 @@ import {
 } from "./pending-writes.ts";
 import { runAgentTool } from "./workspace-agent-tools.ts";
 import { sanitizeAiWriteBody } from "#kernel/ai-content-sanitize.mjs";
+import {
+  applyGoalUpdate,
+  assessGoalCompletion,
+  buildContinuePrompt,
+  buildGoalProtocolPrompt,
+  buildTaskLedger,
+  createGoalState,
+  decideAutoContinue,
+  harvestPathReceipts,
+  mergeGoalState,
+  resolveMaxAutoContinues,
+  type GoalState,
+} from "#kernel/agent-goal-protocol.mjs";
 import { resolveEmbeddedTemplate } from "../data/workspace-templates.ts";
 
 export {
@@ -861,10 +875,27 @@ export interface WorkspaceChatTurnOpts {
   maxSteps?: number;
   /** Auto-continue when the step budget is exhausted mid-task (default true). */
   autoContinue?: boolean;
+  /** Model context window (tokens) — scales session compact budget. */
+  contextLimit?: number | null;
   engineRoot?: string;
   onProgress?: (ev: ChatProgressEvent) => void;
   /** Return true to stop before the next model call or tool write. */
   shouldAbort?: () => boolean;
+  /** Host HTTP for fetch_url (Obsidian requestUrl). Never global fetch. */
+  fetchPage?: (url: string) => Promise<{ ok: boolean; status?: number; text?: string; error?: string }>;
+  /**
+   * Session-level GoalState from the previous turn (Desktop .goal.json parity).
+   * Merged only when the user goal text is the same task — a new task starts clean.
+   */
+  priorGoal?: {
+    goal?: string;
+    plan?: string[];
+    criteria?: string[];
+    doneCriteria?: string[];
+    pathReceipts?: string[];
+    status?: string;
+    blockReason?: string | null;
+  } | null;
 }
 
 /** Desktop parity: 3–80, default 32. Obsidian uses the same agent step budget. */
@@ -886,20 +917,36 @@ const KNOWN_TOOLS = new Set([
   "list_categories",
   "list_topics",
   "list_topic_files",
+  "get_topic",
   "list_inbox",
   "list_outputs",
   "list_todos",
+  "list_files",
+  "stat_path",
+  "glob_files",
+  "publish_to_outputs",
+  "move_to_topic",
+  "create_topic",
+  "list_skills",
+  "load_skill",
+  "fetch_url",
+  "workspace_health",
+  "delete_path",
+  "rename_path",
   "read_file",
   "save_file",
+  "save_note",
   "edit_file",
   "capture",
+  // Desktop canonical name — accept as alias so skill/prompt copies don't 404.
+  "capture_to_inbox",
   "add_todo",
   "toggle_todo",
 ]);
 
 function stripThinking(raw: string): string {
   let s = String(raw || "");
-  s = s.replace(/ԇink>[\s\S]*?<\/think>/giu, "\n");
+  s = s.replace(/<think>[\s\S]*?<\/think>/giu, "\n");
   s = s.replace(/<thinking>[\s\S]*?<\/thinking>/giu, "\n");
   s = s.replace(/```(?:thinking|reasoning)\s*[\s\S]*?```/giu, "\n");
   return s.trim();
@@ -1091,6 +1138,14 @@ export function buildObsidianChatToolGuide(
       '{"tool":"list_categories"}',
       '{"tool":"list_topics","category":"20-专题"}',
       '{"tool":"list_topic_files","topicId":"20-专题/2026-主题"}',
+      '{"tool":"get_topic","topicId":"20-专题/2026-主题"}',
+      '{"tool":"list_files","relativePath":"20-专题","limit":50}',
+      '{"tool":"stat_path","relativePath":"memory/profile.md"}',
+      '{"tool":"workspace_health"}',
+      '{"tool":"fetch_url","url":"https://example.com"}',
+      '{"tool":"create_topic","category":"20-专题","name":"主题名"}',
+      '{"tool":"move_to_topic","relativePath":"00-Inbox/a.md","targetTopicId":"20-专题/2026-主题"}',
+      '{"tool":"publish_to_outputs","relativePath":"20-专题/2026-主题/final.md"}',
       '{"tool":"list_inbox"}',
       '{"tool":"list_outputs"}',
       '{"tool":"list_todos","completed":false,"limit":20}',
@@ -1098,12 +1153,15 @@ export function buildObsidianChatToolGuide(
       '{"tool":"save_file","relativePath":"20-专题/2026-主题/note.md","content":"full markdown or text body"}',
       '{"tool":"edit_file","relativePath":"…","oldText":"unique span","newText":"replacement","startLine":12,"endLine":20,"expectedHash":"<optional contentHash>","replaceAll":false,"heading":"Optional section"}',
       '{"tool":"capture","content":"note body","target":"stream"|"inbox","title":"optional"}',
+      '{"tool":"delete_path","relativePath":"00-Inbox/old.md"}',
+      '{"tool":"rename_path","relativePath":"00-Inbox/a.md","newPath":"00-Inbox/b.md"}',
       '{"tool":"add_todo","text":"…","dueDate":"YYYY-MM-DD"}',
       '{"tool":"toggle_todo","id":"…" | "text":"unique todo text"}',
       "Discovery first (workspace_overview / search / list_*), then act. Prefer save_file for new files or multi-section rewrites; edit_file for unique-span edits (match ladder: exact → newline/trailing-space → loose lines). Writable: text notes (.md/.txt/.json/.yaml/.csv/code/config) — not binaries. Multi-step edits: follow postEditWindow + contentHash as expectedHash. No bash or shell.",
       writeback,
       "User profile context is active facts only (history collapsed to a count). Prefer capture/add_todo over inventing memory tools; memory writes are proposed in the answer and applied via the Suggest tab — never invent append_core_memory / update_core_memory / retire_core_memory.",
       "If steps run out mid-task, continue from the latest tool results and path receipts toward the original goal. When done, write only the user-visible answer with paths — no chain-of-thought, <think>, or reasoning fences.",
+      buildGoalProtocolPrompt("en"),
     ].join("\n");
   }
   const writeback = confirm
@@ -1117,6 +1175,10 @@ export function buildObsidianChatToolGuide(
     '{"tool":"list_categories"}',
     '{"tool":"list_topics","category":"20-专题"}',
     '{"tool":"list_topic_files","topicId":"20-专题/2026-主题"}',
+    '{"tool":"get_topic","topicId":"20-专题/2026-主题"}',
+    '{"tool":"list_files","relativePath":"20-专题","limit":50}',
+    '{"tool":"stat_path","relativePath":"memory/profile.md"}',
+    '{"tool":"workspace_health"}',
     '{"tool":"list_inbox"}',
     '{"tool":"list_outputs"}',
     '{"tool":"list_todos","completed":false,"limit":20}',
@@ -1124,12 +1186,15 @@ export function buildObsidianChatToolGuide(
     '{"tool":"save_file","relativePath":"20-专题/2026-主题/note.md","content":"完整 markdown 正文"}',
     '{"tool":"edit_file","relativePath":"…","oldText":"原文唯一片段","newText":"替换","startLine":12,"endLine":20,"expectedHash":"<可选 contentHash>","replaceAll":false,"heading":"可选小节标题"}',
     '{"tool":"capture","content":"正文","target":"stream"|"inbox","title":"可选"}',
+    '{"tool":"delete_path","relativePath":"00-Inbox/旧笔记.md"}',
+    '{"tool":"rename_path","relativePath":"00-Inbox/a.md","newPath":"00-Inbox/b.md"}',
     '{"tool":"add_todo","text":"…","dueDate":"YYYY-MM-DD"}',
     '{"tool":"toggle_todo","id":"…" | "text":"待办原文片段"}',
     "先发现（workspace_overview / search / list_*），再动手。新建或多段重写首选 save_file；小改用 edit_file 唯一片段编辑（匹配阶梯：精确 → 换行/行尾空白 → 行级宽松）。可写文本类（.md/.txt/.json/.yaml/.csv/代码/配置），不写二进制。多步编辑跟 postEditWindow + contentHash 作 expectedHash。没有 bash / shell。",
     writeback,
     "用户画像上下文仅为活跃事实（历史已折叠为计数）。记一下/待办用 capture/add_todo，不要编造 append_core_memory / update_core_memory / retire_core_memory；记忆写入在回答中建议，由用户在「建议」tab 确认。",
     "步数将尽时基于最近工具结果与路径回执继续完成原目标。完成后只写用户可见结论（含路径），不要输出思考过程、<think> 或推理围栏。",
+    buildGoalProtocolPrompt("zh"),
   ].join("\n");
 }
 
@@ -1152,9 +1217,19 @@ export async function runWorkspaceChatTurn(
   reasoning: string;
   edits: Array<Record<string, unknown>>;
   steps: number;
-  toolCalls: Array<{ tool: string; ok: boolean; summary?: string }>;
+  toolCalls: Array<{ tool: string; ok: boolean; summary?: string; pending?: boolean; needsConfirm?: boolean }>;
   autoContinues: number;
   stepLimitHit: boolean;
+  goal?: {
+    goal: string;
+    plan: string[];
+    criteria: string[];
+    openCriteria: string[];
+    pathReceipts: string[];
+    status: string;
+    blockReason: string | null;
+    autoContinues: number;
+  };
 }> {
   const durable = resolveChatDurableLocale(kernel, workspaceRoot, opts.userMessage);
   const chromeZh = resolveChatPromptLocale(opts.locale) === "zh";
@@ -1176,23 +1251,54 @@ export async function runWorkspaceChatTurn(
     writebackMode: contractMode || opts.writebackMode,
     actor: "ai" as const,
     configDir: opts.configDir,
+    fetchPage: opts.fetchPage,
   };
 
   const conversation: string[] = [];
-  // Desktop-parity session compact: recent turns intact, older turns capped.
-  for (const msg of compactChatMessages(opts.history || [], { maxMessages: 60, keepRecent: 24 })) {
+  // Desktop-parity session compact: scale by model contextWindow when known.
+  const compactBudget = resolveChatCompactBudget(opts.contextLimit);
+  for (const msg of compactChatMessages(opts.history || [], compactBudget)) {
     conversation.push(`${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`);
   }
   conversation.push(`User: ${opts.userMessage}`);
 
   const edits: Array<Record<string, unknown>> = [];
-  const toolCalls: Array<{ tool: string; ok: boolean; summary?: string }> = [];
+  const toolCalls: Array<{ tool: string; ok: boolean; summary?: string; pending?: boolean; needsConfirm?: boolean }> = [];
   let lastRaw = "";
   let stepCount = 0;
   let autoContinues = 0;
   let stepLimitHit = false;
   let finished = false;
   let reasoningAcc = "";
+  let goalState: GoalState = createGoalState(opts.userMessage || "");
+  harvestPathReceipts(opts.userMessage || "", goalState.pathReceipts);
+  // Session goal restore (same-task only): keep plan/criteria across "继续".
+  {
+    const prior = opts.priorGoal;
+    const currentGoal = goalState.goal || "";
+    const priorGoal = String(prior?.goal || "");
+    const sameTask =
+      prior &&
+      priorGoal &&
+      (currentGoal === priorGoal ||
+        currentGoal.startsWith(priorGoal.slice(0, 40)) ||
+        priorGoal.startsWith(currentGoal.slice(0, 40)));
+    if (sameTask) {
+      goalState = mergeGoalState(
+        {
+          ...goalState,
+          goal: priorGoal || goalState.goal,
+          plan: prior.plan || [],
+          criteria: prior.criteria || [],
+          doneCriteria: prior.doneCriteria || [],
+          pathReceipts: prior.pathReceipts || [],
+          status: (prior.status as GoalState["status"]) || goalState.status,
+          blockReason: prior.blockReason ?? null,
+        },
+        goalState,
+      );
+    }
+  }
 
   const stoppedBody = chromeZh
     ? "已停止。这一步之前已经完成的修改会保留。"
@@ -1214,7 +1320,7 @@ export async function runWorkspaceChatTurn(
     }
   };
 
-  const execOneTool = (call: Record<string, unknown>): string | null => {
+  const execOneTool = async (call: Record<string, unknown>): Promise<string | null> => {
     const tool = String(call.tool || call.name || "");
     if (!isKnownTool(tool)) {
       return toolResultForModel({
@@ -1223,18 +1329,44 @@ export async function runWorkspaceChatTurn(
         hint: `Use only: ${[...KNOWN_TOOLS].join(", ")}. Re-emit a single JSON tool call.`,
       });
     }
-    // Memory-plane fence (Desktop parity): generic file tools must not raw-
-    // rewrite memory/profile|periodic|topics. Memory writes are proposed in
-    // the answer and applied via the Suggest tab (append/update/retire gates).
-    const rel = String(call.relativePath || call.destRelativePath || "").replace(/\\/g, "/");
-    if (rel && /(^|\/)memory\//u.test(rel) && (tool === "save_file" || tool === "edit_file")) {
+    // Memory-plane fence (Desktop memory-fence.mjs parity): generic file tools
+    // must not raw-rewrite memory/profile|periodic|topics|todo. `memory/ledgers/`
+    // is a sanctioned generic-write plane. Check every path-shaped arg.
+    // Honor contract memory.dir when the kernel can resolve it.
+    let memoryDirRel = "memory";
+    try {
+      const abs = kernel.resolveMemoryDir?.(workspaceRoot);
+      if (typeof abs === "string" && abs) {
+        memoryDirRel = path.relative(workspaceRoot, abs).replace(/\\/g, "/") || "memory";
+      }
+    } catch {
+      /* keep default */
+    }
+    const memPrefix = memoryDirRel.replace(/\/+$/, "");
+    const isFencedMemoryPath = (p: unknown): boolean => {
+      const rel = String(p || "").replace(/\\/g, "/");
+      if (!rel) return false;
+      // ledgers/ is a sanctioned generic-write plane (Desktop parity).
+      if (/(^|\/)memory\/ledgers(\/|$)/u.test(rel)) return false;
+      return rel === memPrefix || rel.startsWith(`${memPrefix}/`) || /(^|\/)memory\//u.test(rel);
+    };
+    const pathArgs = [
+      call.relativePath,
+      call.destRelativePath,
+      call.inboxRelativePath,
+      call.newPath,
+    ] as unknown[];
+    const hitPath = pathArgs.find((p) => isFencedMemoryPath(p));
+    // Memory plane is gated for all path-shaped writes AND lifecycle ops.
+    if (hitPath && (tool === "save_file" || tool === "edit_file" || tool === "delete_path" || tool === "rename_path")) {
+      const rel = String(hitPath).replace(/\\/g, "/");
       toolCalls.push({ tool, ok: false, summary: rel });
       return toolResultForModel({
         ok: false,
         error: "write-blocked:memory-plane",
         note: chromeZh
-          ? "memory/ 受保护。不要用 save_file/edit_file 改记忆平面；请在回答中提出记忆变更，由用户在「建议」tab 确认。"
-          : "memory/ is gated. Do not rewrite the memory plane with save_file/edit_file — propose the change in the answer and let the user confirm it in Suggest.",
+          ? "memory/ 受保护（memory/ledgers/ 除外）。不要用 save_file/edit_file 改记忆平面；请在回答中提出记忆变更，由用户在「建议」tab 确认。"
+          : "memory/ is gated (except memory/ledgers/). Do not rewrite the memory plane with save_file/edit_file — propose the change in the answer and let the user confirm it in Suggest.",
       });
     }
     if (tool === "read_file") {
@@ -1246,11 +1378,14 @@ export async function runWorkspaceChatTurn(
         heading: typeof call.heading === "string" ? call.heading : undefined,
       });
       toolCalls.push({ tool, ok: Boolean(read.ok), summary: String(call.relativePath || "") });
-      return toolResultForModel(
-        read.ok
-          ? { ...read.window, content: read.window?.numbered || read.window?.content, contentHash: read.contentHash }
-          : read,
-      );
+      if (!read.ok) return toolResultForModel(read);
+      // Prefer numbered window; drop the raw twin so the model sees one body.
+      const { numbered, ...windowRest } = read.window || ({} as Record<string, unknown>);
+      return toolResultForModel({
+        ...windowRest,
+        content: (numbered as string) || (read.window as { content?: string })?.content || "",
+        contentHash: read.contentHash,
+      });
     }
     if (tool === "edit_file") {
       const edited = preciseEditWorkspace(kernel, workspaceRoot, {
@@ -1277,19 +1412,25 @@ export async function runWorkspaceChatTurn(
       }
       return editNote;
     }
-    if (tool === "capture") {
+    if (tool === "capture" || tool === "capture_to_inbox") {
       const captured = captureToWorkspace(kernel, workspaceRoot, opts.engineRoot || workspaceRoot, String(call.content || ""), {
         target: call.target === "inbox" ? "inbox" : "stream",
         writebackMode: contractMode || opts.writebackMode,
       });
-      toolCalls.push({ tool, ok: Boolean(captured.ok), summary: captured.path });
-      return toolResultForModel({ ...captured, tool });
+      toolCalls.push({ tool: "capture", ok: Boolean(captured.ok), summary: captured.path });
+      return toolResultForModel({ ...captured, tool: "capture" });
     }
-    const result = runAgentTool(agentCtx, call);
+    const result = await runAgentTool(agentCtx, call);
     if (!result) {
       return toolResultForModel({ ok: false, tool, error: "tool not dispatched", hint: "Re-emit a single JSON tool call." });
     }
-    toolCalls.push({ tool, ok: Boolean(result.ok), summary: String(result.relativePath || result.count || "") });
+    toolCalls.push({
+      tool,
+      ok: Boolean(result.ok),
+      summary: String(result.relativePath || result.count || result.summary || ""),
+      pending: Boolean(result.pending),
+      needsConfirm: Boolean(result.needsConfirm || result.pending),
+    });
     return toolResultForModel(result);
   };
 
@@ -1387,6 +1528,41 @@ export async function runWorkspaceChatTurn(
       }
       const call = parseToolCall(lastRaw);
       if (!call) {
+        // Model produced prose — fold into goal ledger and decide if it may stop.
+        goalState = applyGoalUpdate(goalState, { text: stripThinking(lastRaw) });
+        harvestPathReceipts(lastRaw, goalState.pathReceipts);
+        const assessment = assessGoalCompletion({
+          state: goalState,
+          lastBody: stripThinking(lastRaw),
+          stepLimitHit: false,
+          toolCallCount: toolCalls.length,
+        });
+        if (assessment.finished && assessment.confidence !== "low") {
+          brokeOnFinalText = true;
+          finished = true;
+          break;
+        }
+        // Goal-aware continue decision (Desktop decideAutoContinue parity).
+        const maxContinuesProse = resolveMaxAutoContinues({ assessment, baseMax: MAX_AUTO_CONTINUES });
+        const decisionProse = decideAutoContinue({
+          assessment,
+          autoContinues,
+          maxAutoContinues: maxContinuesProse,
+          hasTools: toolCalls.length > 0,
+          error: false,
+          cancelled: false,
+        });
+        if (opts.autoContinue !== false && decisionProse.continue) {
+          autoContinues += 1;
+          emit({ kind: "continue", step: stepCount, maxSteps, autoContinues });
+          conversation.push(`Assistant: ${lastRaw}`);
+          conversation.push(
+            `User: ${buildContinuePrompt(chromeZh ? "zh-CN" : "en-US", goalState, {
+              extra: chromeZh ? "（继续完成未完成验收项）" : "(continue remaining criteria)",
+            })}`,
+          );
+          continue;
+        }
         brokeOnFinalText = true;
         finished = true;
         break;
@@ -1396,8 +1572,9 @@ export async function runWorkspaceChatTurn(
       const tool = String(call.tool || call.name || "");
       emit({ kind: "tool", step: stepCount, maxSteps, tool, autoContinues, reasoning: reasoningAcc });
       conversation.push(`Assistant: ${lastRaw}`);
-      const toolNote = execOneTool(call);
+      const toolNote = await execOneTool(call);
       conversation.push(`Tool result (${tool}):\n${toolNote || ""}`);
+      if (toolNote) harvestPathReceipts(toolNote, goalState.pathReceipts);
     }
 
     if (finished || brokeOnFinalText) break;
@@ -1408,21 +1585,78 @@ export async function runWorkspaceChatTurn(
       break;
     }
 
-    // Step budget exhausted while still in tool-call mode → auto-continue (bounded).
-    if (autoContinues >= MAX_AUTO_CONTINUES) {
+    // Step budget exhausted → goal-aware continue (Desktop decideAutoContinue parity).
+    const openAssessment = assessGoalCompletion({
+      state: goalState,
+      lastBody: stripThinking(lastRaw),
+      stepLimitHit: true,
+      toolCallCount: toolCalls.length,
+    });
+    const maxContinues = resolveMaxAutoContinues({ assessment: openAssessment, baseMax: MAX_AUTO_CONTINUES });
+    // High-confidence done always stops (never re-close a finished task).
+    if (
+      openAssessment.finished &&
+      openAssessment.confidence === "high" &&
+      (openAssessment.reason === "done-mark" || String(openAssessment.reason || "").startsWith("met"))
+    ) {
+      finished = true;
+      break;
+    }
+    const decision = decideAutoContinue({
+      assessment: openAssessment,
+      autoContinues,
+      maxAutoContinues: maxContinues,
+      hasTools: toolCalls.length > 0,
+      error: false,
+      cancelled: false,
+    });
+    if (autoContinues >= maxContinues) {
       stepLimitHit = true;
+      // Budget exhaustion is terminal — honest incomplete (Desktop G6 parity).
+      if (goalState.status !== "done") {
+        goalState = {
+          ...goalState,
+          status: goalState.status === "blocked" ? "blocked" : "incomplete",
+          blockReason: goalState.blockReason || "budget_exhausted",
+        };
+      }
       break;
     }
     const lastBody = stripThinking(lastRaw);
     // Skip continue when the last payload already looks like a real finish.
-    if (!parseToolCall(lastRaw) && lastBody.length > 80) {
+    if (!decision.continue && !openAssessment.reason?.includes("step-limit")) {
+      if (openAssessment.finished && openAssessment.confidence !== "low") {
+        finished = true;
+        break;
+      }
+    }
+    if (!decision.continue && openAssessment.finished) {
       finished = true;
       break;
     }
     autoContinues += 1;
     stepLimitHit = true;
     emit({ kind: "continue", step: stepCount, maxSteps, autoContinues });
-    conversation.push(`User: ${chromeZh ? CHAT_CONTINUE_PROMPT_ZH : CHAT_CONTINUE_PROMPT_EN}`);
+    // Sticky ledger + open criteria so the continuation cannot lose the goal.
+    conversation.push(`User: ${buildTaskLedger(goalState, chromeZh ? "zh-CN" : "en-US")}`);
+    conversation.push(
+      `User: ${buildContinuePrompt(chromeZh ? "zh-CN" : "en-US", goalState)}`,
+    );
+    // Cap conversation growth across auto-continues (context pressure).
+    if (conversation.length > 80) {
+      const compactedTurns = compactChatMessages(
+        conversation.map((line) => {
+          const m = line.match(/^(User|Assistant|Tool result \([^)]+\)):\n?([\s\S]*)$/u);
+          return m ? { role: m[1].toLowerCase().startsWith("user") ? "user" : "assistant", content: m[2] } : { role: "user", content: line };
+        }),
+        { maxMessages: 40, keepRecent: 16 },
+      );
+      conversation.length = 0;
+      for (const msg of compactedTurns) {
+        conversation.push(`${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`);
+      }
+      conversation.push(`User: ${buildTaskLedger(goalState, chromeZh ? "zh-CN" : "en-US")}`);
+    }
   }
 
   const split = typeof kernel.splitAssistantVisible === "function"
@@ -1430,26 +1664,50 @@ export async function runWorkspaceChatTurn(
     : { body: String(lastRaw || "").trim(), reasoning: "" };
   noteReasoning(lastRaw);
   let body = split.body;
+  const finalAssessment = assessGoalCompletion({
+    state: goalState,
+    lastBody: stripThinking(lastRaw),
+    stepLimitHit,
+    toolCallCount: toolCalls.length,
+  });
+  const incomplete =
+    stepLimitHit ||
+    goalState.status === "incomplete" ||
+    (goalState.doneCriteria?.length > 0 && !finalAssessment.finished);
   if (parseToolCall(lastRaw)) {
-    const pending = edits.some((e) => e.pending || e.needsConfirm) || toolCalls.some((t) => t.summary === "pending");
+    const pending =
+      edits.some((e) => e.pending || e.needsConfirm) ||
+      toolCalls.some((t) => t.pending || t.needsConfirm || t.summary === "pending");
     const applied = edits.some((e) => e.ok) || toolCalls.some((t) => t.ok);
+    const blocked = goalState.status === "blocked";
     if (chromeZh) {
       body = pending
         ? "写入已挂起，请在侧栏「建议」中接受或拒绝。"
-        : applied
-          ? `已完成文件操作（${toolCalls.filter((t) => t.ok).length} 步工具调用${stepLimitHit ? "，步数用尽" : ""}）。`
-          : stepLimitHit
-            ? "步数用尽且修改未完成，请缩小目标或提高工具步数上限后重试。"
-            : "未能完成修改，请根据工具返回的 nearby/context 再试。";
+        : blocked
+          ? `需要你：${goalState.blockReason || "等待输入"}\n\n${buildTaskLedger(goalState, "zh-CN")}`
+          : incomplete
+            ? `任务未完成${stepLimitHit ? "（步数用尽）" : ""}：仍有验收项未达成。已执行 ${toolCalls.filter((t) => t.ok).length} 步工具调用；请继续会话或提高工具步数上限。\n\n${buildTaskLedger(goalState, "zh-CN")}`
+            : applied
+              ? `已完成文件操作（${toolCalls.filter((t) => t.ok).length} 步工具调用）。`
+              : "未能完成修改，请根据工具返回的 nearby/context 再试。";
     } else {
       body = pending
         ? "Write is pending — accept or reject it in the sidebar Suggest tab."
-        : applied
-          ? `Finished workspace operations (${toolCalls.filter((t) => t.ok).length} tool steps${stepLimitHit ? ", step budget exhausted" : ""}).`
-          : stepLimitHit
-            ? "Step budget exhausted and the edit did not complete. Narrow the goal or raise max tool steps and retry."
-            : "Edit did not apply. Use the nearby/context from the tool result and retry.";
+        : blocked
+          ? `Needs you: ${goalState.blockReason || "waiting for input"}\n\n${buildTaskLedger(goalState, "en-US")}`
+          : incomplete
+            ? `Task incomplete${stepLimitHit ? " (step budget exhausted)" : ""}: open acceptance criteria remain. ${toolCalls.filter((t) => t.ok).length} tool steps ran; continue the chat or raise max tool steps.\n\n${buildTaskLedger(goalState, "en-US")}`
+            : applied
+              ? `Finished workspace operations (${toolCalls.filter((t) => t.ok).length} tool steps).`
+              : "Edit did not apply. Use the nearby/context from the tool result and retry.";
     }
+  } else if (incomplete && !finalAssessment.finished) {
+    // Prose close that still has open criteria — do not look like success.
+    const suffix = chromeZh
+      ? `\n\n${buildTaskLedger(goalState, "zh-CN")}\n\n[INCOMPLETE 验收未全部达成]`
+      : `\n\n${buildTaskLedger(goalState, "en-US")}\n\n[INCOMPLETE open criteria remain]`;
+    if (body && !body.includes("[INCOMPLETE")) body = `${body}${suffix}`;
+    else if (!body) body = chromeZh ? `任务未完成。${suffix}` : `Task incomplete.${suffix}`;
   }
   emit({ kind: "done", step: stepCount, maxSteps, autoContinues });
   return {
@@ -1460,6 +1718,18 @@ export async function runWorkspaceChatTurn(
     toolCalls,
     autoContinues,
     stepLimitHit,
+    // Structured goal snapshot (Desktop goalSummary parity) — UI must render
+    // the chip from this, never from a [DONE] regex on the body.
+    goal: {
+      goal: goalState.goal || "",
+      plan: goalState.plan || [],
+      criteria: goalState.criteria || [],
+      openCriteria: goalState.doneCriteria || [],
+      pathReceipts: (goalState.pathReceipts || []).slice(-12),
+      status: goalState.status || "idle",
+      blockReason: goalState.blockReason || null,
+      autoContinues,
+    },
   };
 }
 

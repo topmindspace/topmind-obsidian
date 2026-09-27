@@ -257,11 +257,12 @@ interface AiProvider {
 2. 当前清单（未完成的前 10 条）
 3. 用户画像（契约 memory 平面 global 文件前 3000 字符；默认 memory/profile.md）
 4. 近期周期反思（契约 memory.dir/periodic/，平铺与 {YYYY}/ 双扫描，最新文件前 2000 字符）
-→ runWorkspaceChatTurn（多步 agent 工具环，默认 32 / 最多 80 步 + auto-continue×2；匹配阶梯 + postEditWindow + soft expectedHash）
-   发现工具  workspace_overview · search · list_categories/topics/topic_files · list_inbox/outputs/todos
-   写入工具  save_file · edit_file · capture · add_todo · toggle_todo（文本类 .md/.txt/.json/.yaml/.csv/代码/配置；不写二进制）
+→ runWorkspaceChatTurn（多步 agent 工具环，默认 32 / 最多 80 步；目标协议 `[PLAN]`/`done-when`/`[DONE]`/`[NEEDS-USER]` + 目标感知 auto-continue×2–4 + 任务台账 + 结构化 goal chip；匹配阶梯 + postEditWindow + soft expectedHash）
+   发现工具  workspace_overview · search · list_categories/topics/topic_files · list_inbox/outputs/todos · list_files · stat_path · glob_files · workspace_health · get_topic · list_skills · load_skill · fetch_url
+   写入工具  save_file · save_note · edit_file · capture · capture_to_inbox · add_todo · toggle_todo · delete_path · rename_path · create_topic · move_to_topic · publish_to_outputs（文本类 .md/.txt/.json/.yaml/.csv/代码/配置；不写二进制；生命周期 graded-confirm）
    读取工具  read_file  → formatReadWindow（行号 + around/heading）
    edit_file → applyUniqueSpan + executeWrite（写闸 / confirm|auto；soft hash）
+   记忆写工具不注册（提案 →「建议」tab 确认）
 → 写成功后 KernelService.notifyFilesChanged → vault.trigger("modify") 即时刷新
 → splitAssistantVisible：正文 = 结论；思考折进 reasoning
 → 侧栏 Markdown 渲染正文；`<details>` 折叠思考过程；工具时间线 + 步数进度
@@ -297,7 +298,7 @@ AI 操作的任务管理器，提供多任务队列、进度追踪和中止能�
 **UI 集成**：
 - 动态页签工具栏：AI 任务进度徽章 + 中止按钮
 - 侧边栏头部：AI 任务进度徽章
-- 侧边栏标签页：清单 | 建议 | 对话 | **历史**（动态流的家在主区，不进 Dock）
+- 侧边栏标签页：**对话** · 建议 · 清单 · **历史**（动态流的家在主区，不进 Dock）
 - 底部操作：AI 操作按钮经任务管理器入队
 
 ### 4.3 Pure Ops Layer (`services/kernel-workspace-ops.ts`)
@@ -425,7 +426,7 @@ export class StreamWorkbenchView extends ItemView {
 
 ```typescript
 export class SidebarDockView extends ItemView {
-  // 标签式布局：清单 | 建议 | 对话 | 历史（动态在主区）
+  // 标签式布局：对话 · 建议 · 清单 · 历史（动态在主区）
   // 头部：AI 状态 + 模型徽章 + [⚙ 设置]
   // 底部：[⚡记一下] [🔄整理] [📋清单] [🏷️分类] [👤整理我的情况] [🖥动态]
   // 

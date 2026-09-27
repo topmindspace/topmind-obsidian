@@ -90,7 +90,7 @@ describe("writeback + agent-step policy parity with Desktop", () => {
     const tools = fs.readFileSync(path.join(pluginSrc, "services/workspace-agent-tools.ts"), "utf8");
     assert.match(tools, /export function searchWorkspace/);
     assert.match(tools, /export function saveFile/);
-    assert.match(tools, /export function runAgentTool/);
+    assert.match(tools, /export async function runAgentTool/);
     // Writes still go through the unique write gate.
     assert.match(tools, /executeWrite/);
   });
@@ -120,7 +120,11 @@ describe("writeback + agent-step policy parity with Desktop", () => {
       path.join(engineRoot, "topmind-desktop", "electron", "ai-tools.mjs"),
       "utf8",
     );
-    assert.match(desktop, /confirmed: LIFECYCLE_TOOLS\.has\(toolName\) \? !needsUserConfirm : true/);
+    assert.match(desktop, /CONFIRM_REQUIRED_TOOLS\.has\(toolName\)/);
+    assert.match(desktop, /LIFECYCLE_TOOLS\.has\(toolName\)/);
+    assert.match(desktop, /: true/);
+    // compact_core_memory_history must never auto-confirm from the tool layer.
+    assert.match(desktop, /compact_core_memory_history/);
   });
 
   test("writebackModeOverride never forces a default that forks topmind.yaml", () => {

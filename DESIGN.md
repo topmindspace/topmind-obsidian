@@ -26,7 +26,7 @@
 │  ────────────────────────────────────────────────────────    │
 │  右侧 Leaf，标签页切换                                         │
 │  ┌──────┬──────┬──────┬──────┐                                │
-│  │ 清单 │ 建议 │ 对话 │ 历史 │  ← 4 标签（动态流的家在主区）    │
+│  │ 对话 │ 建议 │ 清单 │ 历史 │  ← 4 标签（动态流的家在主区）    │
 │  └──────┴──────┴──────┴──────┘                                │
 │  头部：AI 状态点 | 任务徽章 | [动态] [⚙设置]                     │
 │  底部：[⚡记一下] [⇩整理] [✨AI 操作菜单]                       │
@@ -116,15 +116,15 @@
 
 | 元素 | 功能 |
 |------|------|
-| AI 状态灯 | 🟢 就绪 / ⚪ 未配置（可点击快速测试） |
-| 模型徽章 | 显示当前 AI 服务商 + 模型（可点击跳转设置） |
 | 侧边栏 | `panel-right` + 文本「侧边栏」，打开/恢复 AI 副驾面板 |
 | 设置 | `settings` + 文本「设置」，跳转插件设置页 |
 | 新笔记 | `file-plus` + 文本「新笔记」，在 Inbox 建 Untitled |
 | 我的情况 | `user` + 文本「我的情况」，打开记忆浏览（画像 + 周期反思 + 专题记忆；点开条目仍落文件） |
 | 列表 / 卡片 | 动态列表旁切换：X 式单列信息流 vs 单列等宽卡片（`settings.feedLayout`，不是多列瀑布） |
 
-默认宽度下 icon+文本必须完整显示（`.tm-toolbar-btn-labeled { width: auto }`，标签 `overflow: visible`）。仅 `@container tm-workbench (max-width: 560px)` 隐藏标签；icon-only 时保留 `aria-label` / `title`。工具栏 `overflow: visible` + 可换行，不用 `overflow: hidden` 裁字。
+> **AI 状态 / 模型徽章不在工具栏**（能力单家 · 对齐 Desktop）：状态在状态栏 / Dock 头；模型唯一切换面 = 对话 tab + 设置。
+
+工具栏为 **icon-only**（`.tm-toolbar-btn`，`aria-label` / `title` 必填）。侧栏头可用 `.tm-sidebar-btn-labeled`（宽容器出字，窄容器 CSS 藏字）。工具栏 `overflow: visible` + 可换行，不用 `overflow: hidden` 裁字。
 
 周期区：**刷新**（`refresh-cw`，icon-only）与 **整理**（`list-tree` + 「整理」）是不同动作、不同图标，不重复。
 
@@ -157,24 +157,12 @@
 
 ```text
 ┌─────────────────────────────────┐
-│ 🟢 AI 就绪  DeepSeek·chat  ⏳  动态 设置 │  ← 头部: 状态 + 模型 + 任务徽章 + 动态/设置（icon+文本；窄侧栏 @container 藏字）
+│  动态  设置                        │  ← 头部: 动态/设置（icon+文本；窄侧栏 @container 藏字）
 ├─────────────────────────────────┤
-│ 📋│ 💡│ 🤖│ 📜│  ← 标签栏 (4 标签: 清单|建议|对话|历史；动态流在主区)
+│ 🤖│ 💡│ 📋│ 📜│  ← 标签栏 (4 标签: 对话|建议|清单|历史；动态流在主区)
 ├─────────────────────────────────┤
 │                                  │
-│  ── 清单标签 ──                  │
-│  ☐ 研究插件架构                  │
-│  ☑ 写设计文档                    │
-│  ☐ 测试 writeback                │
-│  ☐ 更新文档                      │
-│  ✓ 2 已完成                      │
-│                                  │
-│  ── 建议标签（唯一确认面）──      │
-│  💡 建议专题: "插件开发"          │
-│  📝 待办提取: 2 条新待办          │
-│  👤 写入「我的情况」              │
-│                                  │
-│  ── 对话标签 ──                  │
+│  ── 对话标签（agent 脊）──        │
 │  ┌── 你 ──────────────────┐     │
 │  │ 帮我总结本周动态         │     │
 │  └─────────────────────────┘     │
@@ -185,14 +173,21 @@
 │  └─────────────────────────┘     │
 │  [问点什么...           ] [发送] │
 │                                  │
+│  ── 建议标签（唯一确认面）──      │
+│  💡 建议专题: "插件开发"          │
+│  📝 待办提取: 2 条新待办          │
+│  👤 写入「我的情况」              │
+│                                  │
+│  ── 清单标签 ──                  │
+│  ☐ 研究插件架构                  │
+│  ☑ 写设计文档                    │
+│                                  │
 │  ── 任务历史标签 ──              │
 │  ✅ 整理待办 — 完成 · 3.2s       │
 │  ❌ 专题分类 — 失败 · API 超时   │
-│  ⏳ 整理我的情况 — 执行中...     │
-│  🗑️ 已取消 — 用户中止            │
 │                                  │
 ├─────────────────────────────────┤
-│ ⚡  ⇩  📋  🏷️  👤  🌊          │  ← 底部快捷操作（整理=sort，我的情况=user，动态=打开主区）
+│ ⚡  ⇩  ✨                        │  ← 底部 3 格（记一下 · 整理 · AI 菜单）
 └─────────────────────────────────┘
 ```
 
@@ -218,16 +213,14 @@
 - 上下文感知：自动注入近期动态 + 当前待办 + 用户画像
 - Markdown 渲染 AI 回复
 - 对话历史（会话内保持 + 磁盘 `.topmind/chat-history.json`）
-- **会话压缩**（Desktop `ai-session-compact` 对齐）：`maxMessages 60 / keepRecent 24 / maxChars 240K`；最近全文，旧消息截断，保尾；agent prompt 同一预算
+- **会话压缩**（Desktop `ai-session-compact` 同一预算公式）：默认 `maxMessages 60 / keepRecent 24 / maxChars 240K`，按模型 `contextLimit` 经 `resolveChatCompactBudget` 动态缩放（Desktop `resolveCompactBudget` 同式）；最近全文，旧消息截断，保尾；agent prompt 同一预算
 - **思考过程**：运行中 live 折叠展示 reasoning；历史消息默认折叠
 - **停止**：工作中发送按钮变为停止；保留已产出半成品 + 已完成修改
 - `Enter` 发送，`Shift+Enter` 换行；**输入法选词回车不发送**
 - 清空对话按钮
 
-#### 动态标签 (Stream)
-- 最近 10 条动态条目（最新在前）
-- 点击 → 跳转周期本
-- 空状态提示
+#### 动态（主区 Stream View）
+> 能力单家：动态流的家是主区 Stream View，**不进** Dock 标签（对齐 Desktop）。
 
 #### 任务历史标签 (History)
 - AI 任务管理器的操作历史
@@ -237,29 +230,27 @@
 - 清空历史按钮
 - 状态颜色编码：绿色=完成、红色=失败、蓝色=运行中、灰色=已取消
 
-### 3.3 底部快捷操作
+### 3.3 底部快捷操作（3 格）
 
 | 按钮 | 功能 | AI 条件 | 默认模式 |
 |------|------|---------|----------|
 | ⚡ | 记一下弹窗 | 无需 AI | icon-only |
-| 🔄 | 整理（reconcile + todo_maintain） | 无需 AI | icon-only |
-| 📋 | AI 整理待办（force todo_maintain） | 需要 AI | icon-only |
-| 🏷️ | 专题分类（force topic_classify · 共享队列） | 需要 AI | icon-only |
+| ⇩ | 整理（reconcile + todo_maintain） | 无需 AI | icon-only |
+| ✨ | AI 操作菜单（润色 / 待办 / 记忆 / 分类） | 需要 AI | icon-only |
 | 👤 | 整理我的情况（force memory_organize） | 需要 AI | icon-only |
 | 👁 | 显示/隐藏操作标签 | — | toggle |
 
-AI 操作按钮仅在 AI 已配置时显示。默认显示文本标签模式（`showActionLabels = true`），用户可切换为纯图标模式。所有按钮有 `title` tooltip。
+AI 操作按钮仅在 AI 已配置时显示。工具栏为 icon-only（`title` tooltip）；侧栏头 labeled 按钮见 `.tm-sidebar-btn-labeled`。
 
 ### 3.4 头部设计
 
 | 元素 | 功能 |
 |------|------|
 | 状态灯 + 文字 | AI 就绪 / 未配置（可点击快速测试） |
-| 模型徽章 | 当前服务商 + 模型（可点击跳转设置） |
 | 🖥 动态按钮 | icon + 文本标签，打开/恢复动态页签（窄屏隐藏文本） |
 | ⚙ 设置按钮 | icon + 文本标签，一键跳转插件设置页（窄屏隐藏文本） |
 
-> **防溢出**：头部使用 `flex-wrap: nowrap` + `overflow: hidden`，窄屏（600px 以下）自动隐藏文本标签。
+> **防溢出**：头部使用 `flex-wrap: nowrap` + `overflow: hidden`，窄屏（600px 以下）自动隐藏文本标签。**无模型徽章**（能力单家 · 对齐 Desktop）。
 
 > **可恢复性**：侧边栏头部始终显示「打开动态」按钮，即使动态页签被关闭也能一键恢复。
 
@@ -420,7 +411,7 @@ AI 对话自动注入以下上下文（无需用户手动选择）：
 | 用户画像 | 前 3000 字符 | `memory/profile.md` |
 | 对话历史 | 最近 10 轮 | 保持对话连贯性 |
 
-对话可经 Kernel 多步工具环（`workspace_overview` / `search` / `list_*` / `read_file` / `save_file` / `edit_file` / `capture` / `add_todo` / `toggle_todo`）持续工作直到目标完成（默认 32 步，步数用尽 auto-continue×2）；**文本类可写**（engine `lib/text-note.mjs` 单源白名单，.md/.txt/.json/.yaml/.csv/代码/配置，二进制除外）；与 Desktop 同一匹配与写闸契约：匹配阶梯 + postEditWindow + **soft expectedHash**（hash 过期但 unique-span 仍匹配则放行）。写回跟随 `topmind.yaml`（**分级 confirm**：内容新建/更新/编辑直接落盘且工具层 `confirmed:true`，仅删除/归档待确认；locked 可编辑，任务级首写快照；契约未读到时**不**用默认值覆盖 yaml）。Agent 写成功后 `notifyFilesChanged` 主动 `vault.trigger("modify")`，视图即时刷新。指令语言：`en*` → 英文，否则中文。
+对话可经 Kernel 多步工具环（`workspace_overview` / `search` / `list_*` / `get_topic` / `list_files` / `stat_path` / `glob_files` / `workspace_health` / `fetch_url` / `list_skills` / `load_skill` / `read_file` / `save_file` / `save_note` / `edit_file` / `capture` / `add_todo` / `toggle_todo` / `delete_path` / `rename_path` / `create_topic` / `move_to_topic` / `publish_to_outputs`）持续工作直到目标完成（默认 32 步；**目标协议** `[PLAN]`/`done-when`/`[DONE]`/`[NEEDS-USER]`；步数用尽走目标感知 auto-continue：基座 2 次、验收未达最多 4 次，续跑带任务台账与路径回执；未完成时文案明确「任务未完成」而非 Finished；结构化 goal chip 禁止 `[DONE]` 正则假成功）；**结果说明页脚**（终态消息下 **Verified / Assumed / Could not** 三段 + `N done · M writes` 摘要；空段写「无」；Verified 只列真实路径回执芯片，不编造检查证据）；路径回执可点击打开；tool chip 命中高 `--tm-hit-sm`（28px）；聊天气泡圆角 `--tm-radius-bubble`、用户泡最大宽 `--tm-bubble-user-max`。**文本类可写**（engine `lib/text-note.mjs` 单源白名单，.md/.txt/.json/.yaml/.csv/代码/配置，二进制除外）；与 Desktop 同一匹配与写闸契约：匹配阶梯 + postEditWindow + **soft expectedHash**（hash 过期但 unique-span 仍匹配则放行）。写回跟随 `topmind.yaml`（**分级 confirm**：内容新建/更新/编辑直接落盘且工具层 `confirmed:true`，仅删除/归档待确认；locked 可编辑，任务级首写快照；契约未读到时**不**用默认值覆盖 yaml）。Agent 写成功后 `notifyFilesChanged` 主动 `vault.trigger("modify")`，视图即时刷新。指令语言：`en*` → 英文，否则中文。
 
 ### 8.2 对话交互
 
@@ -491,12 +482,12 @@ System prompt 跟随 UI locale：
 
 - 使用 Obsidian CSS 变量（`--text-normal`, `--background-primary`, `--interactive-accent` 等）
 - **单一 Design Token 面**：`styles.css` 顶部 token 块作用于全部 `tm-*` 表面（workbench · sidebar · memory · capture）
-- 卡片样式：圆角 10px + 发丝描边 + 微阴影 + hover 高亮
+- 卡片样式：圆角 `--tm-radius-card`（14px）+ 发丝描边 + 微阴影 + hover 高亮（控件 4/8 · 胶囊 999）
 - 输入栏：单行高度起，自适应增长
 - AI 建议卡片：左侧带彩色边条（蓝=create_topic/inbox_organize/ai_summary/stream_digest，橙=stale_topic/catch_all，绿=promote_memory/open_profile）。**不用 purple**（Desktop 禁止紫作产品 AI 身份）。`promote_memory` 的 `payload.action` 为 `append_profile` / `update_profile` / `retire_profile` / `compact_history`（不是只追加）；**近重复事实融合为 update（保留最新），历史区可 compact 合并同类项**。聊天注入画像走 Kernel `readProfileActiveBody`（历史段折叠为计数，不 dump 全文）。Inbox 超期走 `inbox_organize` 归位（移入/新建专题），不再发 `inbox_review` 归档卡。模糊命中 update/retire 成功提示「相似命中」。
 - AI 对话：用户消息右对齐（强调色背景），AI 消息左对齐（卡片背景）
 - 全中文 UI（可切英文）
-- **与 Desktop 的有意差异**：主 CTA 用宿主 `--interactive-accent`（非 ink）；图标库 Lucide（非 Remix，语义映射见 Desktop DESIGN §0.0.2）；圆角 4/6/10；信息流默认宽 `56rem`（对齐 Desktop feed）
+- **与 Desktop 的有意差异**：主 CTA 用宿主 `--interactive-accent`（非 ink）；图标库 Lucide（非 Remix，语义映射见 Desktop DESIGN §0.0.2）；圆角 4/8/14/999（`--tm-radius-*`）；信息流默认宽 `56rem`（对齐 Desktop feed）
 
 ### 11.0 Design Token 与几何（唯一真源 `styles.css`）
 
@@ -504,7 +495,7 @@ System prompt 跟随 UI locale：
 |------|----|------|
 | `--tm-hit` / `--tm-hit-sm` / `--tm-hit-lg` / `--tm-hit-xs` | 32 / 28 / 36 / 24 px | 标准控件 / 区块栏 / 主 CTA / chip·mini |
 | `--tm-icon` / `--tm-icon-lg` / `--tm-icon-xs` | 16 / 18 / 14 px | 控件图标 / 底部主操作 / 内联 |
-| `--tm-radius-sm` / `--tm-radius-ctl` / `--tm-radius-card` / `--tm-radius-pill` | 4 / 6 / 10 / 999 px | mini / 控件 / 卡片 / 胶囊 |
+| `--tm-radius-sm` / `--tm-radius-ctl` / `--tm-radius-card` / `--tm-radius-pill` | 4 / 8 / 14 / 999 px | mini / 控件 / 卡片 / 胶囊 |
 | `--tm-type-display/title/body/label/meta` | 派生自 `--font-ui-*` | 字号阶梯（禁止硬编码 px） |
 | `--tm-gap-xs/sm/md/lg` | 4 / 6 / 10 / 14 px | 间距节奏 |
 
@@ -554,7 +545,7 @@ System prompt 跟随 UI locale：
 
 | 变量 | 用途 |
 |------|------|
-| `--tm-type-display` ← `--font-ui-medium * 1.35` | Hero 标题 |
+| `--tm-type-display` ← `--font-ui-medium * 1.55` | Hero 标题 |
 | `--tm-type-title` ← `--font-ui-medium` | 区块标题、空状态标题 |
 | `--tm-type-body` ← `--font-ui-small` | 卡片正文、列表正文 |
 | `--tm-type-label` ← `--font-ui-small` | 按钮、标签、控件文字 |

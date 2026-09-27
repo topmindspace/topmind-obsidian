@@ -54,15 +54,38 @@ export function renderSuggestionCard(
     header.createSpan({ cls: `tm-impact-badge tm-impact-${sugg.impact}`, text: impactLabel });
   }
 
-  card.createDiv({ cls: "tm-suggestion-body", text: sugg.summary, attr: { title: sugg.summary } });
+  // Summary is clamped visually but the full text stays in the DOM (SR-safe).
+  // Click/Enter expands the clamp so non-hover (keyboard/touch) can read it all.
+  const body = card.createDiv({
+    cls: "tm-suggestion-body",
+    text: sugg.summary,
+    attr: { title: sugg.summary, tabindex: "0", role: "button", "aria-expanded": "false" },
+  });
+  const toggleBody = () => {
+    const open = body.classList.toggle("is-expanded");
+    body.setAttribute("aria-expanded", open ? "true" : "false");
+  };
+  body.addEventListener("click", toggleBody);
+  body.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggleBody();
+    }
+  });
 
-  // Target breadcrumb (Desktop parity: friendly path under the summary)
+  // Target breadcrumb (Desktop parity: friendly path under the summary).
+  // Clickable — opens the target so the receipt is inspectable, not just a label.
   const openTarget = suggestionOpenPath(sugg);
   if (openTarget) {
-    card.createDiv({
+    const pathLabel = friendlySuggestionPath(openTarget) || openTarget;
+    const pathBtn = card.createEl("button", {
       cls: "tm-suggestion-path",
-      text: friendlySuggestionPath(openTarget) || openTarget,
-      attr: { title: openTarget },
+      text: pathLabel,
+      attr: { type: "button", title: openTarget },
+    });
+    pathBtn.setAttribute("aria-label", t("suggestions_open"));
+    pathBtn.addEventListener("click", () => {
+      void cb.openVaultPath(openTarget);
     });
   }
 

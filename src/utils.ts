@@ -740,6 +740,8 @@ const WRITE_SUGGESTION_KINDS: ReadonlySet<string> = new Set([
   "stream_digest",
   "ai_summary",
   "promote_memory",
+  // Compatibility kind — product no longer emits it (Inbox age → inbox_organize).
+  // Kept so already-persisted session cards can still confirm-apply.
   "inbox_review",
   "stale_topic",
   "catch_all",
@@ -841,6 +843,37 @@ export const CHAT_COMPACT_DEFAULTS = {
   maxPerMessage: 16_000,
 } as const;
 
+export type ChatCompactOptions = {
+  maxMessages?: number;
+  keepRecent?: number;
+  maxChars?: number;
+  maxPerMessage?: number;
+};
+
+/**
+ * Scale chat compaction budgets by the model's real context window
+ * (Desktop `resolveCompactBudget` parity). Unknown window → shipped defaults.
+ */
+export function resolveChatCompactBudget(contextWindow?: number | null): Required<ChatCompactOptions> {
+  const cw = Number(contextWindow);
+  const known = Number.isFinite(cw) && cw > 0;
+  if (!known) {
+    return {
+      maxMessages: CHAT_COMPACT_DEFAULTS.maxMessages,
+      keepRecent: CHAT_COMPACT_DEFAULTS.keepRecent,
+      maxChars: CHAT_COMPACT_DEFAULTS.maxChars,
+      maxPerMessage: CHAT_COMPACT_DEFAULTS.maxPerMessage,
+    };
+  }
+  // Reserve ~40% for system + tools + response (same as Desktop).
+  const usableTokens = Math.floor(cw * 0.55);
+  const maxChars = Math.max(40_000, Math.min(1_200_000, Math.floor(usableTokens * 2.2)));
+  const maxMessages = Math.max(24, Math.min(160, Math.round(usableTokens / 900)));
+  const keepRecent = Math.max(8, Math.min(48, Math.round(maxMessages * 0.4)));
+  const maxPerMessage = Math.max(4_000, Math.min(64_000, Math.floor(maxChars / 12)));
+  return { maxMessages, keepRecent, maxChars, maxPerMessage };
+}
+
 /**
  * Compact a chat transcript for prompt injection / disk persistence.
  * Recent `keepRecent` messages stay full; older ones are capped per message and
@@ -848,7 +881,7 @@ export const CHAT_COMPACT_DEFAULTS = {
  */
 export function compactChatMessages<T extends { content?: string; reasoning?: string }>(
   messages: T[],
-  opts: Partial<typeof CHAT_COMPACT_DEFAULTS> = {},
+  opts: ChatCompactOptions = {},
 ): T[] {
   const list = Array.isArray(messages) ? messages : [];
   const maxMessages = opts.maxMessages ?? CHAT_COMPACT_DEFAULTS.maxMessages;

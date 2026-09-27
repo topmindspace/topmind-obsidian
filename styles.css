@@ -28,10 +28,9 @@
    1. DESIGN TOKENS — single source, all surfaces
    ═══════════════════════════════════════════════════════════════════════ */
 
-.tm-stream-workbench,
-.tm-sidebar-dock,
-.tm-quick-capture-modal,
-.tm-memory-browse {
+/* Tokens live on :root so Settings tab + Status Bar (outside the four view
+   roots) resolve --tm-* correctly. Surface-only overrides stay scoped below. */
+:root {
   /* type ramp — derived from Obsidian UI fonts (user font-size flows through) */
   --tm-type-display: calc(var(--font-ui-medium) * 1.55);
   --tm-type-title: var(--font-ui-medium);
@@ -55,6 +54,9 @@
   --tm-card-radius: var(--tm-radius-card);
   --tm-input-radius: var(--tm-radius-ctl);
   --tm-radius-pill: 999px;
+  --tm-radius-bubble: 16px;
+  --tm-bubble-user-max: 88%;
+  --tm-bubble-pad-y: 12px;
   --tm-btn-h: var(--tm-hit);
   --tm-btn-h-sm: var(--tm-hit-sm);
 
@@ -75,8 +77,19 @@
   --tm-text-accent: var(--text-accent, var(--interactive-accent));
   --tm-shadow-card: 0 1px 2px color-mix(in srgb, var(--background-modifier-border) 55%, transparent);
   --tm-shadow-pop: 0 8px 24px color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
-  --tm-suggestion-left-border: 2px solid;
+  --tm-suggestion-left-border: 3px solid;
   --tm-text-accent-hover: var(--text-accent-hover, var(--text-accent, var(--interactive-accent)));
+
+  /* MD3 state layers (Desktop parity) — overlay, never a bg-swap */
+  --tm-state-hover: color-mix(in srgb, var(--text-normal) 8%, transparent);
+  --tm-state-pressed: color-mix(in srgb, var(--text-normal) 10%, transparent);
+
+  /* Tonal containers — replace ad-hoc color-mix ratios */
+  --tm-container-accent: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-primary));
+  --tm-container-success: color-mix(in srgb, var(--text-success, var(--color-green)) 12%, var(--background-primary));
+  --tm-container-warn: color-mix(in srgb, var(--text-warning, var(--color-orange)) 12%, var(--background-primary));
+  --tm-container-danger: color-mix(in srgb, var(--text-error, var(--color-red)) 12%, var(--background-primary));
+  --tm-container-neutral: var(--background-secondary);
 
   /* rhythm */
   --tm-gap-xs: 4px;
@@ -93,6 +106,8 @@
     opacity var(--tm-transition);
 
   --tm-feed-max-width: 56rem;
+  /* Opt-in brand wash for the workbench canvas; defaults to quiet paper. */
+  --tm-canvas-wash: var(--tm-bg-page);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -200,7 +215,7 @@
 
 .tm-btn-secondary:hover:not(:disabled),
 .tm-suggestion-actions .tm-btn-open:hover {
-  background: var(--tm-bg-hover);
+  background: var(--tm-state-hover);
   background-color: var(--tm-bg-hover);
   border-color: var(--tm-line-strong);
   color: var(--tm-ink);
@@ -230,15 +245,26 @@
 .tm-suggestion-actions .tm-btn-dismiss:hover,
 .tm-toolbar-btn:hover,
 .tm-sidebar-icon-btn:hover {
-  background: var(--tm-bg-hover);
+  background: var(--tm-state-hover);
   background-color: var(--tm-bg-hover);
   border: none;
   color: var(--tm-ink);
   box-shadow: none;
 }
 
-/* Labeled ghost (optional wide-pane labels) */
-.tm-toolbar-btn-labeled,
+/* Labeled ghost (optional wide-pane labels). Split per class so the
+   shipped width:auto contract matches the FIRST standalone block. */
+.tm-toolbar-btn-labeled {
+  width: auto;
+  min-width: var(--tm-btn-h);
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  background-color: transparent;
+  color: var(--tm-ink-soft);
+  box-shadow: none;
+}
+
 .tm-sidebar-btn-labeled {
   width: auto;
   min-width: var(--tm-btn-h);
@@ -252,7 +278,7 @@
 
 .tm-toolbar-btn-labeled:hover,
 .tm-sidebar-btn-labeled:hover {
-  background: var(--tm-bg-hover);
+  background: var(--tm-state-hover);
   background-color: var(--tm-bg-hover);
   color: var(--tm-ink);
   box-shadow: none;
@@ -285,8 +311,7 @@
 }
 
 /* Icon-only square variants */
-.tm-btn-icon,
-.tm-btn-icon-only {
+.tm-btn-icon {
   width: var(--tm-btn-h);
   min-width: var(--tm-btn-h);
   padding: 0;
@@ -301,7 +326,6 @@
 }
 
 .tm-btn-icon.tm-btn-sm,
-.tm-btn-icon-only.tm-btn-sm,
 .tm-btn-ghost.tm-btn-icon {
   width: var(--tm-btn-h-sm);
   min-width: var(--tm-btn-h-sm);
@@ -327,7 +351,7 @@
 
 .tm-btn-mini:hover {
   color: var(--tm-ink);
-  background: var(--tm-bg-hover);
+  background: var(--tm-state-hover);
 }
 
 .tm-btn-mini svg {
@@ -364,7 +388,7 @@
 .tm-card-action-btn:hover {
   opacity: 1;
   color: var(--tm-ink);
-  background: var(--tm-bg-hover);
+  background: var(--tm-state-hover);
 }
 
 .tm-card-action-btn svg {
@@ -524,46 +548,8 @@
   white-space: nowrap;
 }
 
-.tm-toolbar-status {
-  display: flex;
-  align-items: center;
-  gap: var(--tm-gap-xs);
-  flex-shrink: 0;
-}
-
-.tm-toolbar-status-label {
-  font-size: var(--tm-type-meta);
-  color: var(--tm-ink-soft);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.tm-toolbar-model,
-.tm-model-badge {
-  font-size: var(--tm-type-meta);
-  color: var(--tm-ink-soft);
-  background: var(--tm-bg-soft);
-  padding: 3px 8px;
-  border-radius: var(--tm-radius-pill);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 160px;
-  font-weight: 500;
-  border: 1px solid var(--tm-line);
-}
-
-.tm-toolbar-model[role="button"],
-.tm-model-badge[role="button"] {
-  cursor: pointer;
-  transition: var(--tm-transition-ui);
-}
-
-.tm-toolbar-model[role="button"]:hover,
-.tm-model-badge[role="button"]:hover {
-  background: var(--tm-bg-hover);
-  color: var(--tm-text-accent-hover);
-}
+/* (model badge / toolbar-model / toolbar-status retired with the IA
+   de-noise pass — status lives in the status bar + dock header) */
 
 .tm-toolbar-actions,
 .tm-sidebar-header-actions,
@@ -781,7 +767,6 @@ select.tm-tag-input,
    5. COMPOSE / INPUTS
    ═══════════════════════════════════════════════════════════════════════ */
 
-.tm-input-bar,
 .tm-wb-compose {
   display: flex;
   align-items: flex-end;
@@ -901,6 +886,29 @@ select.tm-tag-input,
   }
 }
 
+/* Global reduced-motion kill-switch for spinners/pulses (DESIGN claims full
+   disable; previously only transitions were nulled). Keep opacity swaps as the
+   busy cue. */
+@media (prefers-reduced-motion: reduce) {
+  .tm-loading-spinner,
+  .tm-btn-spinner,
+  .tm-task-badge-active .tm-task-badge-dot,
+  .tm-chat-thinking-dots,
+  .tm-history-running .tm-history-icon,
+  .tm-status-bar-running .tm-status-bar-icon,
+  .tm-dot-checking {
+    animation: none !important;
+  }
+}
+
+/* Touch / no-hover: hover-revealed actions are restored by the FINAL
+   @media (hover: none) block in §22 (this one was overridden by later
+   opacity rules, so the rules live there now). */
+
+.tm-wb-card:focus-within .tm-card-actions {
+  opacity: 1;
+}
+
 .tm-card-header {
   display: flex;
   align-items: center;
@@ -1008,7 +1016,7 @@ select.tm-tag-input,
 }
 .tm-card-body code {
   font-family: var(--font-monospace);
-  font-size: var(--tm-type-meta);
+  font-size: var(--tm-type-body);
 }
 .tm-card-body pre {
   margin: 0.3em 0;
@@ -1121,15 +1129,9 @@ select.tm-tag-input,
   margin: 0;
   min-height: 100%;
   color: var(--tm-ink);
-  /* Fresh page canvas: a whisper of brand wash on the host background —
-     calm enough for daily use, enough depth to feel designed. */
-  background:
-    radial-gradient(
-      1200px 420px at 18% -8%,
-      var(--tm-accent-softer),
-      transparent 62%
-    ),
-    var(--tm-bg-page);
+  /* Flat tone-on-tone (Desktop family). Brand halo is opt-in via
+     --tm-canvas-wash; default is quiet paper. */
+  background: var(--tm-canvas-wash);
   container-type: inline-size;
   container-name: tm-workbench;
 }
@@ -1151,6 +1153,14 @@ select.tm-tag-input,
   display: flex;
   flex-direction: column;
   gap: var(--tm-gap-md);
+  /* Web-like workbench hero — soft accent wash + paper lift (theme-aware) */
+  padding: 18px 18px 12px;
+  margin: -4px -4px 8px;
+  border-radius: var(--radius-card);
+  background:
+    radial-gradient(120% 90% at 12% 0%, color-mix(in srgb, var(--interactive-accent) 8%, transparent), transparent 55%),
+    radial-gradient(80% 70% at 92% 8%, color-mix(in srgb, var(--interactive-accent) 4%, transparent), transparent 50%),
+    linear-gradient(180deg, var(--background-primary) 0%, var(--background-secondary) 100%);
 }
 
 .tm-wb-hero-head {
@@ -1185,10 +1195,8 @@ select.tm-tag-input,
   padding: 16px 18px 14px;
   border-radius: var(--tm-radius-card);
   border: 1px solid var(--tm-line);
-  background: color-mix(in srgb, var(--tm-bg-card) 88%, transparent);
+  background: var(--tm-bg-card);
   box-shadow: var(--tm-shadow-card);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
 }
 
 .tm-wb-compose:focus-within {
@@ -1431,13 +1439,7 @@ select.tm-tag-input,
   display: flex;
   flex-direction: column;
   gap: var(--tm-gap-md);
-  background:
-    radial-gradient(
-      900px 320px at 85% -10%,
-      var(--tm-accent-softer),
-      transparent 60%
-    ),
-    var(--tm-bg-page);
+  background: var(--tm-bg-page);
   container-type: inline-size;
   container-name: tm-memory;
 }
@@ -1640,7 +1642,7 @@ select.tm-tag-input,
 
 .tm-tab-btn:hover {
   color: var(--tm-ink);
-  background: var(--tm-bg-hover);
+  background: var(--tm-state-hover);
   background-color: var(--tm-bg-hover);
 }
 
@@ -1746,7 +1748,7 @@ select.tm-tag-input,
 }
 
 .tm-sidebar-action-btn:hover {
-  background: var(--tm-bg-hover);
+  background: var(--tm-state-hover);
   background-color: var(--tm-bg-hover);
   border: none;
   color: var(--tm-ink);
@@ -1952,7 +1954,6 @@ select.tm-tag-input,
 .tm-suggestion-card {
   background: var(--tm-bg-card);
   border: var(--tm-suggestion-left-border);
-  border-left-width: 3px;
   border-radius: var(--tm-card-radius);
   padding: 10px 12px;
   margin-bottom: var(--tm-gap-sm);
@@ -1975,7 +1976,6 @@ select.tm-tag-input,
 }
 
 .tm-suggestion-card.tm-suggestion-create-topic,
-.tm-suggestion-card.tm-suggestion-inbox-review,
 .tm-suggestion-card.tm-suggestion-inbox-organize,
 .tm-suggestion-card.tm-suggestion-ai-summary,
 .tm-suggestion-card.tm-suggestion-stream-digest {
@@ -2053,16 +2053,40 @@ select.tm-tag-input,
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
+  cursor: pointer;
+}
+.tm-suggestion-body.is-expanded {
+  -webkit-line-clamp: unset;
+  display: block;
+  overflow: visible;
 }
 
 .tm-suggestion-path {
-  font-size: var(--tm-type-meta);
+  font-size: var(--tm-type-body);
   color: var(--tm-ink-faint);
   line-height: 1.35;
   margin-bottom: var(--tm-gap-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+button.tm-suggestion-path:hover {
+  color: var(--tm-text-accent-hover);
+  text-decoration: underline;
+}
+
+button.tm-suggestion-path:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
 }
 
 .tm-suggestion-actions {
@@ -2131,24 +2155,6 @@ select.tm-tag-input,
   color: var(--tm-ink);
 }
 
-/* Quiet empty strip */
-.tm-suggestions-quiet {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-radius: var(--tm-radius-ctl);
-  border: 1px dashed var(--tm-line);
-  background: var(--tm-bg-soft);
-  color: var(--tm-ink-soft);
-  font-size: var(--tm-type-meta);
-  margin: 4px 0 12px;
-}
-
-.tm-quiet-label {
-  color: var(--tm-ink-faint);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════
    12. CHAT
    ═══════════════════════════════════════════════════════════════════════ */
@@ -2182,57 +2188,9 @@ select.tm-tag-input,
   font-weight: 550;
 }
 
-.tm-chat-switcher-hint {
-  flex-basis: 100%;
-  font-size: var(--tm-type-meta);
-  color: var(--tm-ink-faint);
-  padding: 0 2px;
-}
-
-.tm-chat-messages {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tm-gap-sm);
-  flex: 1;
-  min-height: 120px;
-  overflow-y: auto;
-}
-
-.tm-chat-message {
-  padding: 8px 10px;
-  border-radius: var(--tm-radius-card);
-  border: 1px solid var(--tm-line);
-  background: var(--tm-bg-card);
-  font-size: var(--tm-type-body);
-  line-height: var(--tm-lh-body);
-}
-
-.tm-chat-user {
-  background: var(--tm-accent-softer);
-  border-color: color-mix(in srgb, var(--tm-accent) 25%, var(--tm-line));
-  align-self: flex-end;
-  max-width: 95%;
-}
-
-.tm-chat-ai {
-  align-self: stretch;
-}
-
-.tm-chat-role {
-  display: block;
-  font-size: var(--tm-type-meta);
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--tm-ink-faint);
-  margin-bottom: 4px;
-}
-
-.tm-chat-body {
-  font-size: var(--tm-type-body);
-  color: var(--tm-ink);
-  word-break: break-word;
-}
+/* Message shell / bubble chrome lives in §20 (later, tokenized).
+   §12 keeps container, body/code structure, reasoning fold internals,
+   goal ledger, error and empty states. */
 
 .tm-chat-body p {
   margin: 0.25em 0;
@@ -2245,35 +2203,12 @@ select.tm-tag-input,
   overflow: auto;
   background: var(--tm-bg-soft);
   font-family: var(--font-monospace);
-  font-size: var(--tm-type-meta);
+  font-size: var(--tm-type-body);
 }
 
 .tm-chat-body code {
   font-family: var(--font-monospace);
-  font-size: var(--tm-type-meta);
-}
-
-.tm-chat-reasoning {
-  margin: 4px 0;
-  border: 1px solid var(--tm-line);
-  border-radius: var(--tm-radius-ctl);
-  background: var(--tm-bg-soft);
-}
-
-.tm-chat-reasoning-summary {
-  cursor: pointer;
-  padding: 6px 8px;
-  font-size: var(--tm-type-meta);
-  font-weight: 600;
-  color: var(--tm-ink-soft);
-  display: flex;
-  align-items: center;
-  gap: var(--tm-gap-xs);
-  list-style: none;
-}
-
-.tm-chat-reasoning-summary::-webkit-details-marker {
-  display: none;
+  font-size: var(--tm-type-body);
 }
 
 .tm-chat-reasoning-icon {
@@ -2303,19 +2238,6 @@ select.tm-tag-input,
   font-weight: 500;
 }
 
-.tm-chat-reasoning-body {
-  padding: 0 8px 8px;
-  font-size: var(--tm-type-meta);
-  color: var(--tm-ink-soft);
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.tm-chat-thinking {
-  flex-wrap: wrap;
-  align-items: flex-start;
-}
-
 .tm-chat-reasoning-live {
   flex: 1 0 100%;
   max-height: 8em;
@@ -2328,6 +2250,7 @@ select.tm-tag-input,
   align-items: center;
   gap: var(--tm-gap-sm);
   opacity: 0.85;
+  flex-wrap: wrap;
 }
 
 .tm-chat-thinking-dots {
@@ -2336,83 +2259,168 @@ select.tm-tag-input,
   animation: tm-pulse 1.4s ease-in-out infinite;
 }
 
-.tm-chat-tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
-}
-
-.tm-chat-tools-label {
-  font-size: var(--tm-type-meta);
-  color: var(--tm-ink-faint);
-  width: 100%;
-}
-
-.tm-chat-tool-chip {
+/* Goal / honesty chips — real pills (Run Card language), not footnote text */
+.tm-chat-tools-limit,
+.tm-chat-incomplete,
+.tm-chat-goal-done {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  height: var(--tm-hit-xs);
+  padding: 0 var(--tm-gap-sm);
+  border-radius: var(--tm-radius-sm);
   font-size: var(--tm-type-meta);
-  padding: 2px 8px;
-  border-radius: var(--tm-radius-pill);
-  background: var(--tm-bg-soft);
-  border: 1px solid var(--tm-line);
-  color: var(--tm-ink-soft);
-}
-
-.tm-chat-tool-chip-fail {
-  color: var(--color-red, var(--text-error));
-  border-color: color-mix(in srgb, var(--color-red, var(--text-error)) 30%, transparent);
+  font-weight: 600;
+  line-height: 1;
 }
 
 .tm-chat-tools-limit {
-  font-size: var(--tm-type-meta);
-  color: var(--color-orange, var(--text-warning));
+  color: var(--text-warning, var(--color-orange));
+  background: var(--tm-container-warn);
 }
 
-.tm-chat-msg-actions {
-  display: flex;
-  gap: var(--tm-gap-xs);
-  margin-top: var(--tm-gap-xs);
-  opacity: 0;
-  transition: opacity var(--tm-transition);
+.tm-chat-incomplete {
+  color: var(--text-error, var(--color-red));
+  background: var(--tm-container-danger);
+  font-weight: var(--font-semibold, 600);
 }
 
-.tm-chat-message:hover .tm-chat-msg-actions,
-.tm-chat-msg-actions:focus-within,
-.tm-chat-error-msg .tm-chat-msg-actions {
-  opacity: 1;
+.tm-chat-goal-done {
+  color: var(--text-success, var(--color-green, var(--text-accent)));
+  background: var(--tm-container-success);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .tm-chat-msg-actions {
-    transition: none;
-  }
-}
-
-.tm-chat-msg-btn {
-  width: var(--tm-hit-xs);
-  height: var(--tm-hit-xs);
-  border-radius: var(--tm-radius-sm);
+/* Goal ledger (expanded plan + criteria) */
+.tm-goal-ledger {
+  margin-top: var(--tm-gap-sm);
+  padding: var(--tm-gap-md);
+  border-radius: var(--tm-radius-card);
   border: 1px solid var(--tm-line);
-  background: transparent;
-  color: var(--tm-ink-faint);
-  cursor: pointer;
+  background: var(--tm-bg-card);
+}
+
+.tm-goal-plan-list,
+.tm-goal-criteria-list {
+  list-style: none;
+  margin: 0 0 var(--tm-gap-sm);
+  padding: 0;
   display: flex;
+  flex-direction: column;
+  gap: var(--tm-gap-xs);
+}
+
+.tm-goal-criteria-list {
+  margin-bottom: 0;
+}
+
+.tm-goal-plan-item,
+.tm-goal-criterion {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--tm-gap-sm);
+  font-size: var(--tm-type-body);
+  color: var(--tm-ink);
+  line-height: 1.45;
+}
+
+.tm-goal-plan-num {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
-  transition: var(--tm-transition-ui);
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
+  border-radius: var(--tm-radius-sm);
+  background: var(--tm-container-neutral);
+  font-size: var(--tm-type-meta);
+  font-weight: 600;
+  color: var(--tm-ink-soft);
+  font-variant-numeric: tabular-nums;
 }
 
-.tm-chat-msg-btn:hover {
-  color: var(--tm-text-accent-hover);
-  background: var(--tm-bg-hover);
-  border-color: var(--tm-accent);
+.tm-goal-criterion-done {
+  color: var(--tm-ink-soft);
+  text-decoration: line-through;
+  opacity: 0.75;
 }
 
+/* Result footer (Verified / Assumed / Could not) — content at body floor,
+   labels may use meta. Empty sections read 无/none in --tm-ink-faint. */
+.tm-goal-footer {
+  margin-top: var(--tm-gap-sm);
+  padding-top: var(--tm-gap-sm);
+  border-top: 1px solid var(--tm-line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--tm-gap-xs);
+}
+
+.tm-goal-footer-summary {
+  font-size: var(--tm-type-meta);
+  color: var(--tm-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.tm-goal-footer-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tm-gap-sm);
+  font-size: var(--tm-type-body);
+  line-height: 1.45;
+}
+
+.tm-goal-footer-label {
+  flex-shrink: 0;
+  min-width: 5em;
+  font-size: var(--tm-type-meta);
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--tm-ink-soft);
+}
+
+.tm-goal-footer-vals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tm-gap-xs);
+  min-width: 0;
+  color: var(--tm-ink);
+}
+
+.tm-goal-footer-item {
+  font-size: var(--tm-type-body);
+  color: var(--tm-ink);
+}
+
+.tm-goal-footer-none {
+  font-size: var(--tm-type-body);
+  color: var(--tm-ink-faint);
+}
+
+.tm-goal-footer-chip {
+  display: inline-flex;
+  align-items: center;
+  height: var(--tm-hit-xs);
+  padding: 0 var(--tm-gap-sm);
+  border: 1px solid var(--tm-line);
+  border-radius: var(--tm-radius-pill);
+  background: transparent;
+  color: var(--tm-ink-soft);
+  font-size: var(--tm-type-label);
+  cursor: pointer;
+  font-family: inherit;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tm-goal-footer-chip:hover {
+  border-color: var(--tm-accent, var(--text-accent));
+  color: var(--tm-ink, var(--text-normal));
+}
+
+/* Message actions / input chrome lives in §20 (later + tokenized).
+   §12 keeps transient states and the empty shell. */
 .tm-chat-msg-btn.tm-copied {
   color: var(--color-green, var(--text-success));
   border-color: var(--color-green, var(--text-success));
@@ -2436,55 +2444,7 @@ select.tm-tag-input,
 
 .tm-chat-error-msg .tm-chat-body {
   color: var(--color-red, var(--text-error));
-  font-size: var(--tm-type-meta);
-}
-
-.tm-chat-input-area {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--tm-gap-xs);
-  flex-shrink: 0;
-  padding-top: var(--tm-gap-xs);
-  border-top: 1px solid var(--tm-line);
-}
-
-.tm-chat-input {
-  flex: 1;
-  min-height: var(--tm-hit);
-  max-height: 120px;
-  padding: 8px 10px;
-}
-
-.tm-chat-send-btn,
-.tm-chat-clear-btn {
-  width: var(--tm-btn-h);
-  height: var(--tm-btn-h);
-  min-width: var(--tm-btn-h);
-  border-radius: var(--tm-radius-ctl);
-  border: 1px solid var(--tm-line);
-  background: var(--tm-bg-card);
-  color: var(--tm-ink-soft);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  transition: var(--tm-transition-ui);
-  flex-shrink: 0;
-}
-
-.tm-chat-send-btn:hover,
-.tm-chat-clear-btn:hover {
-  color: var(--tm-ink);
-  background: var(--tm-bg-hover);
-  border-color: var(--tm-line-strong);
-}
-
-.tm-chat-send-btn svg,
-.tm-chat-clear-btn svg {
-  width: var(--tm-icon);
-  height: var(--tm-icon);
-  stroke-width: 2;
+  font-size: var(--tm-type-body);
 }
 
 .tm-chat-empty {
@@ -2549,13 +2509,13 @@ select.tm-tag-input,
   align-items: flex-start;
   gap: var(--tm-gap-md);
   padding: 6px var(--tm-gap-xs);
-  font-size: var(--tm-type-meta);
+  font-size: var(--tm-type-body);
   border-radius: var(--tm-radius-ctl);
   transition: background var(--tm-transition);
 }
 
 .tm-history-item:hover {
-  background: var(--tm-bg-hover);
+  background: var(--tm-state-hover);
 }
 
 .tm-history-active {
@@ -2656,6 +2616,10 @@ select.tm-tag-input,
   color: var(--tm-ink-faint);
 }
 
+.tm-history-summary {
+  font-size: var(--tm-type-body);
+}
+
 .tm-history-abort {
   flex-shrink: 0;
   opacity: 0;
@@ -2719,11 +2683,6 @@ select.tm-tag-input,
   display: flex;
   justify-content: center;
   margin-top: var(--tm-gap-md);
-}
-
-.tm-stream-empty,
-.tm-suggestion-empty {
-  /* reserved hooks for empty feed regions */
 }
 
 .tm-loading {
@@ -2885,20 +2844,6 @@ select.tm-tag-input,
    16. SETTINGS / STATUS BAR / HELPERS
    ═══════════════════════════════════════════════════════════════════════ */
 
-.tm-settings-ai-block {
-  margin-top: var(--tm-gap-md);
-  font-size: var(--tm-type-label);
-  font-weight: 650;
-  letter-spacing: 0.02em;
-  color: var(--tm-ink-soft);
-}
-
-.tm-settings-ai-block input[type="password"],
-.tm-settings-ai-block input[type="url"],
-.tm-settings-ai-block input[type="text"] {
-  font-family: var(--font-monospace);
-}
-
 .setting-item .tm-status-input {
   color: var(--tm-ink);
   font-weight: 600;
@@ -2992,43 +2937,54 @@ select.tm-tag-input,
   animation: tm-spin 0.7s linear infinite;
 }
 
-.tm-sidebar-stream-item {
-  padding: 5px 2px;
-  font-size: var(--tm-type-meta);
-  color: var(--tm-ink);
-  border-bottom: 1px solid var(--tm-line);
-  cursor: pointer;
-  transition: color var(--tm-transition);
-  display: flex;
-  gap: var(--tm-gap-xs);
-  align-items: baseline;
-  line-height: 1.4;
-}
-
-.tm-sidebar-stream-item:hover {
-  color: var(--tm-text-accent-hover);
-}
-
-.tm-sidebar-stream-item:last-child {
-  border-bottom: none;
-}
-
-.tm-sidebar-stream-time {
-  color: var(--tm-ink-soft);
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-  font-weight: 500;
-  font-size: var(--tm-type-meta);
-}
-
-.tm-sidebar-stream-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* Long-entry peek: clamp height with a fade, NOT display:none.
+   A display:none body can never receive the expand click. */
 .tm-collapsed {
-  display: none;
+  max-height: 10em;
+  overflow: hidden;
+  position: relative;
+}
+
+.tm-collapsed::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 2.5em;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--tm-bg-card) 0%, transparent),
+    var(--tm-bg-card)
+  );
+  pointer-events: none;
+}
+
+.tm-card-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tm-gap-xs);
+  height: var(--tm-hit-xs);
+  min-width: var(--tm-hit-xs);
+  padding: 0 var(--tm-gap-sm);
+  border: none;
+  border-radius: var(--tm-radius-sm);
+  background: transparent;
+  color: var(--tm-ink-soft);
+  cursor: pointer;
+  font-size: var(--tm-type-meta);
+  line-height: 1;
+  transition: var(--tm-transition-ui);
+}
+
+.tm-card-expand:hover {
+  background: var(--tm-bg-hover);
+  color: var(--tm-ink);
+}
+
+.tm-card-expand svg {
+  width: var(--tm-icon-xs);
+  height: var(--tm-icon-xs);
 }
 
 /* Polished compose action (icon + optional label) */
@@ -3061,42 +3017,16 @@ select.tm-tag-input,
 
 /* ═══════════════════════════════════════════════════════════════════════
    17. FOCUS
+   Generic roster under the four view roots + settings/status, so any new
+   control is keyboard-visible without a selector-list update.
    ═══════════════════════════════════════════════════════════════════════ */
 
-.tm-card-actions button:focus-visible,
-.tm-suggestion-actions button:focus-visible,
-.tm-input-bar button:focus-visible,
-.tm-wb-compose button:focus-visible,
-.tm-submit-btn:focus-visible,
-.tm-btn-primary:focus-visible,
-.tm-btn-secondary:focus-visible,
-.tm-btn-ghost:focus-visible,
-.tm-btn-mini:focus-visible,
-.tm-btn-init-workspace:focus-visible,
-.tm-btn-polish:focus-visible,
-.tm-sidebar-action-btn:focus-visible,
-.tm-toolbar-btn:focus-visible,
-.tm-toolbar-btn-labeled:focus-visible,
-.tm-sidebar-icon-btn:focus-visible,
-.tm-sidebar-btn-labeled:focus-visible,
-.tm-card-action-btn:focus-visible,
-.tm-feed-layout-btn:focus-visible,
-.tm-tab-btn:focus-visible,
-.tm-chat-send-btn:focus-visible,
-.tm-chat-clear-btn:focus-visible,
-.tm-chat-msg-btn:focus-visible,
-.tm-input-field:focus-visible,
-.tm-chat-input:focus-visible,
-.tm-quick-capture-textarea:focus-visible,
-.tm-task-badge-abort:focus-visible,
-.tm-history-abort:focus-visible,
-.tm-history-clear:focus-visible,
-.tm-view-all:focus-visible,
-.tm-chat-switcher-select:focus-visible,
-.tm-period-select:focus-visible,
-.tm-sidebar-status[role="button"]:focus-visible,
-.tm-model-badge[role="button"]:focus-visible,
-.tm-toolbar-model[role="button"]:focus-visible {
+.tm-stream-workbench :is(button, [role="button"], select, textarea, input, a, summary):focus-visible,
+.tm-sidebar-dock :is(button, [role="button"], select, textarea, input, a, summary):focus-visible,
+.tm-quick-capture-modal :is(button, [role="button"], select, textarea, input, a, summary):focus-visible,
+.tm-memory-browse :is(button, [role="button"], select, textarea, input, a, summary):focus-visible,
+.setting-item :is(button, [role="button"], select, textarea, input, a, summary):focus-visible,
+.tm-status-bar-item :is(button, [role="button"]):focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;
 }
@@ -3149,20 +3079,6 @@ select.tm-tag-input,
   }
 }
 
-/* Keep chrome contracts required by shipped tests */
-.tm-toolbar-btn-labeled {
-  width: auto;
-}
-.tm-sidebar-btn-labeled {
-  width: auto;
-}
-.tm-toolbar-btn-label {
-  overflow: visible;
-}
-.tm-sidebar-btn-label {
-  overflow: visible;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════
    19. OBSIDIAN HOST RESET — kill default button slabs
    Obsidian paints `button` with interactive-normal + border. Every tm-*
@@ -3184,6 +3100,7 @@ button.tm-tab-btn,
 button.tm-chat-msg-btn,
 button.tm-chat-send-btn,
 button.tm-chat-clear-btn,
+button.tm-suggestion-path,
 button.tm-sidebar-action-btn:not(.tm-sidebar-capture-primary),
 button.tm-btn-secondary,
 button.tm-btn-open,
@@ -3257,16 +3174,26 @@ button.tm-feed-layout-btn[data-active="true"],
 button.tm-tab-btn.tm-tab-active,
 button.tm-tab-btn.active,
 button.tm-tab-btn[data-active="true"] {
-  background-color: var(--tm-bg-hover);
-  color: var(--tm-ink);
+  background-color: var(--tm-container-accent);
+  color: var(--tm-accent-ink);
   box-shadow: none;
 }
 button.tm-tab-btn.tm-tab-active,
 button.tm-tab-btn.active,
 button.tm-tab-btn[data-active="true"] {
-  background-color: transparent;
+  background-color: var(--tm-container-accent);
   color: var(--tm-accent-ink);
   font-weight: 700;
+}
+
+/* MD3 state layers on interactive shells (overlay, not bg-swap) */
+.tm-btn-ghost:hover:not(:disabled),
+.tm-card-action-btn:hover:not(:disabled) {
+  background-image: linear-gradient(var(--tm-state-hover), var(--tm-state-hover));
+}
+.tm-btn-ghost:active:not(:disabled),
+.tm-card-action-btn:active:not(:disabled) {
+  background-image: linear-gradient(var(--tm-state-pressed), var(--tm-state-pressed));
 }
 
 /* Compose primary sits in a row with ghost polish — keep heights aligned */
@@ -3282,21 +3209,26 @@ button.tm-btn-polish:hover {
 
 /* ═══════════════════════════════════════════════════════════════════════
    20. CHAT LAYOUT — calm bubbles, clear hierarchy
+   Bubble chrome + geometry tokens only (no magic numbers). §12 keeps
+   body/code structure, reasoning fold internals, goal ledger, states.
    ═══════════════════════════════════════════════════════════════════════ */
 
 .tm-chat-messages {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 4px 2px 8px;
+  gap: var(--tm-gap-lg);
+  padding: var(--tm-gap-xs) var(--tm-gap-xs) var(--tm-gap-sm);
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
 }
 
 /* User = compact right bubble. AI = full-width quiet panel. */
 .tm-chat-message.tm-chat-user {
   align-self: flex-end;
-  max-width: 88%;
-  padding: 10px 14px;
-  border-radius: 16px 16px 4px 16px;
+  max-width: var(--tm-bubble-user-max);
+  padding: var(--tm-gap-md) var(--tm-gap-lg);
+  border-radius: var(--tm-radius-bubble) var(--tm-radius-bubble) var(--tm-radius-sm) var(--tm-radius-bubble);
   border: none;
   background: var(--tm-accent-soft);
   color: var(--tm-ink);
@@ -3305,8 +3237,8 @@ button.tm-btn-polish:hover {
 .tm-chat-message.tm-chat-ai {
   align-self: stretch;
   max-width: 100%;
-  padding: 12px 14px 10px;
-  border-radius: 14px;
+  padding: var(--tm-bubble-pad-y) var(--tm-gap-lg) var(--tm-gap-md);
+  border-radius: var(--tm-radius-card);
   border: 1px solid var(--tm-line);
   background: var(--tm-bg-card);
 }
@@ -3322,23 +3254,26 @@ button.tm-btn-polish:hover {
   letter-spacing: 0.04em;
   text-transform: none;
   color: var(--tm-ink-faint);
-  margin-bottom: 8px;
+  margin-bottom: var(--tm-gap-sm);
 }
 
 .tm-chat-body {
   font-size: var(--tm-type-body);
   line-height: var(--tm-lh-body);
   color: var(--tm-ink);
+  word-break: break-word;
 }
 
+/* User prompt is a question, not the deliverable — same body size as the
+   answer (was inverted: user title-size over AI body-size). */
 .tm-chat-message.tm-chat-user .tm-chat-body {
-  font-size: var(--tm-type-title);
-  line-height: 1.45;
+  font-size: var(--tm-type-body);
+  line-height: var(--tm-lh-body);
 }
 
 /* Reasoning fold — inset, quiet, never steals the answer */
 .tm-chat-reasoning {
-  margin: 0 0 10px;
+  margin: 0 0 var(--tm-gap-md);
   border: none;
   border-radius: var(--tm-radius-ctl);
   background: var(--tm-bg-soft);
@@ -3346,13 +3281,13 @@ button.tm-btn-polish:hover {
 
 .tm-chat-reasoning-summary {
   cursor: pointer;
-  padding: 7px 10px;
-  font-size: var(--tm-type-meta);
+  padding: var(--tm-gap-sm) var(--tm-gap-md);
+  font-size: var(--tm-type-label);
   font-weight: 600;
   color: var(--tm-ink-soft);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--tm-gap-sm);
   list-style: none;
   border-radius: var(--tm-radius-ctl);
 }
@@ -3363,9 +3298,9 @@ button.tm-btn-polish:hover {
 
 .tm-chat-reasoning-body {
   margin: 0;
-  padding: 0 10px 10px;
+  padding: 0 var(--tm-gap-md) var(--tm-gap-md);
   font-family: var(--font-monospace);
-  font-size: var(--tm-type-meta);
+  font-size: var(--tm-type-body);
   color: var(--tm-ink-soft);
   line-height: 1.5;
   white-space: pre-wrap;
@@ -3375,8 +3310,8 @@ button.tm-btn-polish:hover {
 .tm-chat-tools {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin: 0 0 10px;
+  gap: var(--tm-gap-xs);
+  margin: 0 0 var(--tm-gap-md);
   align-items: center;
 }
 
@@ -3384,19 +3319,32 @@ button.tm-btn-polish:hover {
   width: auto;
   font-size: var(--tm-type-meta);
   color: var(--tm-ink-faint);
-  margin-right: 4px;
+  margin-right: var(--tm-gap-xs);
 }
 
 .tm-chat-tool-chip {
   display: inline-flex;
   align-items: center;
-  height: 22px;
-  padding: 0 8px;
+  height: var(--tm-hit-sm);
+  padding: 0 var(--tm-gap-sm);
   border-radius: var(--tm-radius-pill);
   border: 1px solid var(--tm-line);
   background: transparent;
   color: var(--tm-ink-soft);
-  font-size: var(--tm-type-meta);
+  font-size: var(--tm-type-label);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.tm-chat-tool-chip-static,
+.tm-chat-tool-chip:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.tm-chat-tool-chip:not(:disabled):hover {
+  border-color: var(--tm-accent, var(--text-accent));
+  color: var(--tm-ink, var(--text-normal));
 }
 
 .tm-chat-tool-chip-fail {
@@ -3407,23 +3355,30 @@ button.tm-btn-polish:hover {
 /* Actions — ghost mini row under the answer */
 .tm-chat-msg-actions {
   display: flex;
-  gap: 2px;
-  margin-top: 8px;
+  gap: var(--tm-gap-xs);
+  margin-top: var(--tm-gap-sm);
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--tm-transition);
 }
 
 .tm-chat-message:hover .tm-chat-msg-actions,
-.tm-chat-msg-actions:focus-within {
+.tm-chat-msg-actions:focus-within,
+.tm-chat-error-msg .tm-chat-msg-actions {
   opacity: 1;
 }
 
 button.tm-chat-msg-btn {
-  width: 26px;
-  height: 26px;
+  width: var(--tm-hit-xs);
+  height: var(--tm-hit-xs);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--tm-radius-sm);
   color: var(--tm-ink-faint);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
 }
 
 button.tm-chat-msg-btn:hover {
@@ -3435,17 +3390,18 @@ button.tm-chat-msg-btn:hover {
 .tm-chat-input-area {
   display: flex;
   align-items: flex-end;
-  gap: 6px;
-  padding-top: 10px;
+  gap: var(--tm-gap-sm);
+  flex-shrink: 0;
+  padding-top: var(--tm-gap-md);
   border-top: 1px solid var(--tm-line);
 }
 
 .tm-chat-input {
   flex: 1;
-  min-height: 40px;
+  min-height: var(--tm-hit-lg);
   max-height: 120px;
-  padding: 10px 12px;
-  border-radius: 12px;
+  padding: var(--tm-gap-md) var(--tm-bubble-pad-y);
+  border-radius: var(--tm-input-radius);
   border: 1px solid var(--tm-line);
   background: var(--tm-bg-card);
   resize: none;
@@ -3459,15 +3415,124 @@ button.tm-chat-msg-btn:hover {
 
 button.tm-chat-send-btn,
 button.tm-chat-clear-btn {
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
+  width: var(--tm-hit-lg);
+  height: var(--tm-hit-lg);
+  min-width: var(--tm-hit-lg);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--tm-radius-ctl);
   background-color: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
 }
 
 button.tm-chat-send-btn:hover,
 button.tm-chat-clear-btn:hover {
   background-color: var(--tm-bg-hover);
+}
+
+/* ── Stream workbench quick-access strip (Landing thinking) ── */
+.tm-wb-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tm-gap-sm);
+  margin-top: var(--tm-gap-md);
+}
+.tm-wb-quick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tm-gap-xs);
+  height: var(--tm-hit-sm);
+  padding: 0 var(--tm-gap-md);
+  border: 1px solid var(--tm-line);
+  border-radius: var(--tm-radius-ctl);
+  background: var(--tm-bg-card);
+  color: var(--tm-ink-soft);
+  font-size: var(--tm-type-label);
+  cursor: pointer;
+  transition: var(--tm-transition-ui), box-shadow 120ms ease, transform 120ms ease;
+}
+.tm-wb-quick-chip:hover {
+  background: var(--tm-bg-hover);
+  color: var(--tm-ink);
+  box-shadow: var(--tm-shadow-card);
+  transform: translateY(-1px);
+}
+.tm-wb-quick-chip:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+.tm-wb-quick-icon svg {
+  width: var(--tm-icon-xs);
+  height: var(--tm-icon-xs);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   21. REDUCED MOTION — final kill-switch
+   Placed LAST so it wins over every earlier §n rule (§20 re-introduced
+   motion after §12's narrower null). Kills animation, transition AND
+   transform on every tm-* animated surface. Opacity swaps stay as the
+   busy/exit cue.
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  .tm-btn-spinning::after,
+  .tm-btn-spinner,
+  .tm-btn-spinner-dark,
+  .tm-loading-spinner,
+  .tm-loading-spinner-sm,
+  .tm-status-bar-spinner,
+  .tm-status-bar-running .tm-status-bar-icon,
+  .tm-history-running .tm-history-icon,
+  .tm-task-badge-active .tm-task-badge-dot,
+  .tm-chat-thinking-dots,
+  .tm-dot-checking,
+  .tm-task-panel,
+  .tm-card-append-box,
+  .tm-card-removing,
+  .tm-suggestion-card,
+  .tm-suggestion-card.tm-card-removing,
+  .tm-wb-quick-chip,
+  .tm-wb-quick-chip:hover,
+  .tm-chat-msg-actions,
+  .tm-wb-card .tm-card-actions,
+  .tm-wb-card::before,
+  .tm-history-abort,
+  .tm-todo-item .tm-todo-delete {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+
+  /* Removing cards must still leave the layout — hide via opacity only. */
+  .tm-card-removing,
+  .tm-suggestion-card.tm-card-removing {
+    opacity: 0;
+    pointer-events: none;
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-bottom: 0;
+    border-width: 0;
+    overflow: hidden;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   22. TOUCH / NO-HOVER — hover-revealed actions stay reachable
+   Final block: later + !important on opacity only, so it beats the
+   per-section `opacity: 0` rules (§6 workbench cards, §20 chat actions).
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (hover: none) {
+  .tm-wb-card .tm-card-actions,
+  .tm-chat-msg-actions,
+  .tm-chat-message .tm-chat-msg-actions,
+  .tm-chat-error-msg .tm-chat-msg-actions,
+  .tm-todo-item .tm-todo-delete,
+  .tm-history-item-active .tm-history-abort {
+    opacity: 1 !important;
+    transition: none !important;
+  }
 }

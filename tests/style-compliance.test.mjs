@@ -137,3 +137,29 @@ test("styles.css: no hardcoded colors", async (t) => {
     assert.deepEqual(offenders, [], `hardcoded colors:\n${offenders.join("\n")}`);
   });
 });
+
+test("DESIGN.md token values match styles.css", async (t) => {
+  // The design doc is the IA truth; styles.css is the numeric truth. They
+  // drifted once (radius 4/6/10 documented vs 4/8/14 shipped) — lock them.
+  const design = fs.readFileSync(path.join(pluginRoot, "DESIGN.md"), "utf8");
+  const radius = {
+    sm: css.match(/--tm-radius-sm:\s*(\d+)px/)?.[1],
+    ctl: css.match(/--tm-radius-ctl:\s*(\d+)px/)?.[1],
+    card: css.match(/--tm-radius-card:\s*(\d+)px/)?.[1],
+  };
+  assert.ok(radius.sm && radius.ctl && radius.card, "radius tokens missing in styles.css");
+  // DESIGN table row: `4 / 8 / 14 / 999 px`
+  assert.match(
+    design,
+    new RegExp(`${radius.sm}\\s*/\\s*${radius.ctl}\\s*/\\s*${radius.card}\\s*/\\s*999`),
+    "DESIGN radius row must match styles.css values",
+  );
+  const displayFactor = css.match(/--tm-type-display:\s*calc\(var\(--font-ui-medium\)\s*\*\s*([\d.]+)\)/)?.[1];
+  if (displayFactor) {
+    assert.match(
+      design,
+      new RegExp(`--font-ui-medium\\s*\\*\\s*${displayFactor.replace(".", "\\.")}`),
+      "DESIGN type-display factor must match styles.css",
+    );
+  }
+});

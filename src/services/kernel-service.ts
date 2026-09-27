@@ -8,7 +8,7 @@
 // - Backup/receipt keep count wiring (via process.env)
 
 import type { App } from "obsidian";
-import { Notice, type Plugin, TFile } from "obsidian";
+import { Notice, requestUrl, type Plugin, TFile } from "obsidian";
 import type { TopmindSettings, StreamPeriod, StreamEntry, SuggestionCard, TodoItem } from "../types";
 import type { AiProvider } from "../bridge/ai-provider";
 import { createAiProvider, resolveAiEndpoint } from "../bridge/ai-provider.ts";
@@ -47,6 +47,7 @@ import {
   type WorkspaceEditOpts,
   type ChatProgressEvent,
 } from "./kernel-workspace-ops.ts";
+import { setPendingWritesWorkspace } from "./pending-writes.ts";
 import { t, getLocale } from "../i18n";
 import { hasConfiguredProvider, getProviderKey } from "../types.ts";
 
@@ -81,6 +82,12 @@ export class KernelService {
     this.plugin = plugin;
     this.settings = settings;
     this.applyRuntimeSettings();
+    // Durable pending-writes live under the vault workspace (.topmind/).
+    try {
+      setPendingWritesWorkspace(this.getVaultPath());
+    } catch {
+      /* vault path may be unavailable in tests */
+    }
   }
 
   /** Update settings (rebuilds context if AI config changed) */
@@ -270,7 +277,66 @@ export class KernelService {
     } catch {
       /* fall through */
     }
+    // Last-resort fallback only — kernel `resolveMemoryLayerPath` / `globalProfileRelPath`
+    // is the truth (contract memory.dir + profile file). Never write through this constant.
     return "memory/profile.md";
+  }
+
+  /** Structured inventory of profile facts (Desktop listProfileFacts parity). */
+  profileFacts(): {
+    exists: boolean;
+    profilePath: string;
+    sections: Array<{ title: string; role: string | null; isHistory: boolean; facts: Array<{ text: string; key: string; date: string | null; fid?: string | null }> }>;
+    activeCount: number;
+    historyCount: number;
+  } | null {
+    try {
+      const kernel = getKernel();
+      if (typeof kernel.listProfileFacts !== "function") return null;
+      return kernel.listProfileFacts(this.getVaultPath());
+    } catch {
+      return null;
+    }
+  }
+
+  /** Deterministic profile health (near-dupes / oversized / large history). */
+  profileHealth(): { healthy: boolean; issues: string[]; nearDupes?: unknown[]; exactDupes?: unknown[]; activeCount?: number; historyCount?: number } | null {
+    try {
+      const kernel = getKernel();
+      if (typeof kernel.analyzeProfileHealth !== "function") return null;
+      return kernel.analyzeProfileHealth(this.getVaultPath());
+    } catch {
+      return null;
+    }
+  }
+
+  /** Keyword search over profile facts (Desktop searchProfile parity). */
+  searchProfile(query: string, opts?: { includeHistory?: boolean; limit?: number }): { hits?: Array<{ text: string; section: string; date: string | null; history?: boolean }>; count?: number } | null {
+    try {
+      const kernel = getKernel();
+      if (typeof kernel.searchProfile !== "function") return null;
+      return kernel.searchProfile(this.getVaultPath(), query, opts);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Restore an archived fact back into an active section (confirm-gated kernel). */
+  restoreProfileFact(match: string, section?: string): { ok?: boolean; operation?: string; reason?: string; note?: string; wroteFiles?: boolean } | null {
+    try {
+      const kernel = getKernel();
+      if (typeof kernel.restoreProfileEntry !== "function") return null;
+      const evidence = kernel.restoreProfileEntry({
+        workspaceRoot: this.getVaultPath(),
+        match,
+        section,
+        actor: "user",
+        confirmed: true,
+      });
+      return { ok: evidence?.wroteFiles !== false && evidence?.operation !== "skip", ...evidence };
+    } catch (err) {
+      return { ok: false, reason: "error", note: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   /** Workspace-relative personal todo path (contract memory.dir). */
@@ -288,6 +354,7 @@ export class KernelService {
     } catch {
       /* fall through */
     }
+    // Last-resort fallback only — kernel resolveTodoRelPath is the truth.
     return "memory/todo.md";
   }
 
@@ -762,6 +829,18 @@ export class KernelService {
     opts: {
       onProgress?: (ev: ChatProgressEvent) => void;
       shouldAbort?: () => boolean;
+      /** Model context window (tokens) for session compact budget. */
+      contextLimit?: number | null;
+      /** Session goal from the previous turn (same-task restore). */
+      priorGoal?: {
+        goal?: string;
+        plan?: string[];
+        criteria?: string[];
+        doneCriteria?: string[];
+        pathReceipts?: string[];
+        status?: string;
+        blockReason?: string | null;
+      } | null;
     } = {},
   ): Promise<{
     content: string;
@@ -770,6 +849,16 @@ export class KernelService {
     toolCalls: Array<{ tool: string; ok: boolean; summary?: string }>;
     autoContinues: number;
     stepLimitHit: boolean;
+    goal?: {
+      goal: string;
+      plan: string[];
+      criteria: string[];
+      openCriteria: string[];
+      pathReceipts: string[];
+      status: string;
+      blockReason: string | null;
+      autoContinues: number;
+    };
   }> {
     let aiProvider: AiProvider | null = null;
     try {
@@ -870,10 +959,28 @@ export class KernelService {
       // omit writebackMode — runWorkspaceChatTurn reads topmind.yaml
       systemExtra: systemPrompt,
       maxSteps: clampMaxAgentSteps(this.settings.maxAgentSteps),
+      contextLimit: opts.contextLimit,
       onProgress: opts.onProgress,
       shouldAbort: opts.shouldAbort,
       engineRoot: this.getEngineRoot(),
       configDir: this.app.vault.configDir,
+      priorGoal: opts.priorGoal ?? null,
+      // fetch_url must go through Obsidian requestUrl (never global fetch).
+      fetchPage: async (url: string) => {
+        try {
+          const r = await requestUrl({ url, method: "GET" });
+          return {
+            ok: r.status >= 200 && r.status < 400,
+            status: r.status,
+            text: String(r.text || ""),
+          };
+        } catch (err) {
+          return {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          };
+        }
+      },
     });
 
     // Agent writes already hit disk via the write gate — poke vault listeners now.
@@ -888,6 +995,7 @@ export class KernelService {
       toolCalls: turn.toolCalls,
       autoContinues: turn.autoContinues,
       stepLimitHit: turn.stepLimitHit,
+      goal: turn.goal,
     };
   }
 

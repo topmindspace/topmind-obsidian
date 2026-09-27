@@ -1,7 +1,14 @@
 /**
- * In-memory pending write queue for confirm-mode (保存前问我).
- * Not content truth — cleared when the plugin unloads.
+ * Pending write queue for confirm-mode (保存前问我 / 删除归档前问我).
+ *
+ * Durable system plane: `{workspace}/.topmind/pending-writes.json`
+ * (Desktop `pending-writes.mjs` parity). Restart must not silently drop
+ * stashes the user still needs to accept/reject. When full, new stashes are
+ * rejected — never silently dropped. Not content truth.
  */
+
+import fs from "node:fs";
+import path from "node:path";
 
 export interface PendingWrite {
   id: string;
@@ -11,7 +18,61 @@ export interface PendingWrite {
   createdAt: string;
 }
 
-const pending = new Map<string, PendingWrite>();
+const MAX_PENDING = 20;
+
+/** Optional workspace root for durable persistence. Tests may omit and use memory-only. */
+let workspaceRoot: string | null = null;
+
+export function setPendingWritesWorkspace(root: string | null): void {
+  workspaceRoot = root ? String(root) : null;
+  if (workspaceRoot) loadFromDisk();
+}
+
+function pendingWritesPath(): string | null {
+  if (!workspaceRoot) return null;
+  return path.join(workspaceRoot, ".topmind", "pending-writes.json");
+}
+
+const memory = new Map<string, PendingWrite>();
+
+function loadFromDisk(): void {
+  const abs = pendingWritesPath();
+  if (!abs) return;
+  try {
+    if (!fs.existsSync(abs)) return;
+    const raw = JSON.parse(fs.readFileSync(abs, "utf8"));
+    const list = Array.isArray(raw?.items) ? raw.items : [];
+    memory.clear();
+    for (const e of list) {
+      if (e && typeof e.id === "string" && e.relativePath && typeof e.content === "string") {
+        memory.set(e.id, {
+          id: e.id,
+          relativePath: String(e.relativePath).replace(/\\/g, "/"),
+          content: String(e.content),
+          toolName: e.toolName ? String(e.toolName) : undefined,
+          createdAt: typeof e.createdAt === "string" ? e.createdAt : new Date().toISOString(),
+        });
+      }
+    }
+  } catch {
+    /* corrupt system-plane file → keep in-memory (fail closed on loss, not crash) */
+  }
+}
+
+function saveToDisk(): void {
+  const abs = pendingWritesPath();
+  if (!abs) return;
+  try {
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    const payload = {
+      items: [...memory.values()].slice(0, MAX_PENDING),
+      updatedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(abs, JSON.stringify(payload, null, 2), "utf8");
+  } catch {
+    /* disk write failure must not crash the confirm UI */
+  }
+}
 
 export function stashPendingWrite(opts: {
   relativePath: string;
@@ -29,35 +90,43 @@ export function stashPendingWrite(opts: {
   if (!entry.relativePath || !entry.content) {
     throw new Error("stashPendingWrite requires relativePath and content");
   }
-  pending.set(id, entry);
-  if (pending.size > 20) {
-    const first = pending.keys().next().value;
-    if (first) pending.delete(first);
+  if (memory.size >= MAX_PENDING) {
+    // Desktop parity: reject new stashes when full — never silently drop.
+    throw new Error("pending-writes queue is full — resolve existing confirms first");
   }
+  memory.set(id, entry);
+  saveToDisk();
   return entry;
 }
 
 export function listPendingWrites(): PendingWrite[] {
-  return [...pending.values()];
+  return [...memory.values()];
 }
 
 export function takePendingWrite(id: string): PendingWrite | null {
-  const e = pending.get(id);
-  if (e) pending.delete(id);
+  const e = memory.get(id);
+  if (e) {
+    memory.delete(id);
+    saveToDisk();
+  }
   return e || null;
 }
 
 export function rejectPendingWrite(id: string): boolean {
-  return pending.delete(id);
+  const ok = memory.delete(id);
+  if (ok) saveToDisk();
+  return ok;
 }
 
 /** Put an entry back (accept failed after take). Keeps the original id. */
 export function restorePendingWrite(entry: PendingWrite): void {
   if (!entry?.id || !entry.relativePath) return;
-  pending.set(entry.id, entry);
+  memory.set(entry.id, entry);
+  saveToDisk();
 }
 
-/** Test-only: drop the in-memory queue. */
+/** Test-only: drop the queue (memory + disk). */
 export function clearPendingWrites(): void {
-  pending.clear();
+  memory.clear();
+  saveToDisk();
 }

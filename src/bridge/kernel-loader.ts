@@ -303,6 +303,17 @@ export interface KernelApi {
     receiptPath?: string;
     reason?: string;
   }>;
+  /** lib/writeback-engine.mjs — protection + graded-confirm permission check. */
+  evaluateWritePermission?(opts: {
+    contract?: unknown;
+    targetPath: string;
+    workspaceRoot: string;
+    role?: string;
+    frontmatter?: unknown;
+    actor?: string;
+    lifecycle?: boolean;
+    writebackModeOverride?: "auto" | "confirm";
+  }): { allowed: boolean; protection?: string; reason?: string; needsConfirm?: boolean; writebackMode?: string };
   executeWrite(opts: {
     targetPath: string;
     content: string;
@@ -324,6 +335,26 @@ export interface KernelApi {
     wroteFiles?: boolean;
     [key: string]: unknown;
   };
+  /** lib/writeback-engine.mjs — graded-confirm lifecycle delete (pending-capable). */
+  executeDelete?(opts: {
+    targetPath: string;
+    workspaceRoot: string;
+    contract?: unknown;
+    actor?: string;
+    frontmatter?: unknown;
+    role?: string;
+    confirmed?: boolean;
+    permanent?: boolean;
+    writebackModeOverride?: "auto" | "confirm";
+  }): {
+    pending?: boolean;
+    path?: string;
+    targetPath?: string;
+    affectedFiles?: string[];
+    wroteFiles?: boolean;
+    backupPath?: string;
+    [key: string]: unknown;
+  };
   /**
    * lib/stream-period.mjs — positional (body, opts); returns `{ changed }` not `{ reconciled }`.
    */
@@ -342,6 +373,34 @@ export interface KernelApi {
     body: string,
     opts?: { historySection?: string; locale?: string; profileRel?: string },
   ): string;
+  /** Global memory quality API (Desktop parity). */
+  listProfileFacts?(workspaceRoot: string, opts?: { contract?: unknown; locale?: string }): {
+    exists: boolean;
+    profilePath: string;
+    sections: Array<{ title: string; role: string | null; isHistory: boolean; facts: Array<{ text: string; key: string; date: string | null; fid?: string | null }> }>;
+    activeCount: number;
+    historyCount: number;
+  };
+  analyzeProfileHealth?(workspaceRoot: string, opts?: { contract?: unknown }): {
+    healthy: boolean;
+    issues: string[];
+    nearDupes?: Array<{ a: string; b: string; score: number }>;
+    exactDupes?: Array<{ a: string; b: string; score: number }>;
+    activeCount?: number;
+    historyCount?: number;
+  };
+  searchProfile?(
+    workspaceRoot: string,
+    query: string,
+    opts?: { includeHistory?: boolean; limit?: number },
+  ): { hits?: Array<{ text: string; section: string; date: string | null; history?: boolean }>; count?: number };
+  restoreProfileEntry?(args: {
+    workspaceRoot: string;
+    match: string;
+    section?: string;
+    actor?: string;
+    confirmed?: boolean;
+  }): { operation?: string; reason?: string; note?: string; wroteFiles?: boolean; wrote_files?: boolean };
   resolveTodoPath?(workspaceRoot: string): string;
   resolveTodoRelPath?(workspaceRoot: string): string;
   ensureTodoFile(workspaceRoot: string, contract?: unknown): { absPath: string; relPath: string; created: boolean };

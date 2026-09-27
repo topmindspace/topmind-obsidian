@@ -185,3 +185,16 @@ describe("Obsidian agent loop — continuous work", () => {
     assert.equal(ops.AGENT_STEPS_DEFAULT, 32);
   });
 });
+
+describe("chat compact budget scales with model contextLimit", () => {
+  test("resolveChatCompactBudget matches Desktop window scaling", async () => {
+    const utils = await importShipped("utils.ts");
+    const def = utils.resolveChatCompactBudget(undefined);
+    assert.equal(def.maxMessages, 60);
+    const big = utils.resolveChatCompactBudget(200_000);
+    assert.ok(big.maxMessages > 60, `expected scaled-up maxMessages, got ${big.maxMessages}`);
+    assert.ok(big.maxChars > 240_000);
+    const small = utils.resolveChatCompactBudget(32_000);
+    assert.ok(small.maxMessages < 60);
+  });
+});

@@ -16,6 +16,8 @@ export class MemoryBrowseView extends ItemView {
   plugin: TopmindPlugin;
   /** Selected layer chip — survives re-render. */
   private layer: MemoryFeedLayer = "all";
+  /** Search query — filters the assembled feed. */
+  private query = "";
   /** Markdown subcomponents for the current paint — unloaded on each re-render. */
   private renderComp = new Component();
 
@@ -172,6 +174,46 @@ export class MemoryBrowseView extends ItemView {
     const layers = contentEl.createDiv({ cls: "tm-feed-chrome" });
     layers.setAttr("data-feed-chrome", "true");
     layers.setAttr("role", "tablist");
+
+    // Health chip (deterministic near-dupes / oversized) — Desktop parity.
+    try {
+      const health = this.plugin.kernelService.profileHealth?.();
+      if (health && Array.isArray(health.issues) && health.issues.length > 0) {
+        const chip = controls.createEl("button", {
+          cls: "tm-btn-secondary tm-btn-sm",
+          text: t("memory_browse_health", { count: health.issues.length }),
+        });
+        chip.setAttr("data-memory-health-issues", "true");
+        chip.setAttribute("title", health.issues.join(" · "));
+        chip.setAttribute("aria-label", health.issues.join(" · "));
+        chip.addEventListener("click", () => {
+          this.plugin.enqueueAiOperation(
+            "memory_organize",
+            "op_label_memory_organize",
+            "notice_memory_done",
+            "all",
+          );
+        });
+      }
+    } catch {
+      /* health is best-effort */
+    }
+
+    // Search box — filters feed items by title/body.
+    const searchWrap = layers.createDiv({ cls: "tm-memory-search" });
+    const search = searchWrap.createEl("input", {
+      cls: "tm-input-field",
+      type: "search",
+      placeholder: t("memory_browse_search"),
+    });
+    search.setAttr("data-memory-search", "true");
+    search.value = this.query;
+    search.addEventListener("input", () => {
+      this.query = search.value.trim();
+      // Re-render list body only would be nicer; full re-render keeps state simple.
+      void this.render();
+    });
+
     for (const [id, label] of [
       ["all", t("memory_browse_layer_all")],
       ["profile", t("memory_kind_profile")],
@@ -203,7 +245,13 @@ export class MemoryBrowseView extends ItemView {
     for (const f of collected.topics) f.markdown = await this.readFile(f.path);
 
     const items = assembleMemoryFeed(collected);
-    const visible = filterMemoryFeedByLayer(items, this.layer);
+    let visible = filterMemoryFeedByLayer(items, this.layer);
+    if (this.query) {
+      const q = this.query.toLowerCase();
+      visible = visible.filter((item) =>
+        `${item.title || ""}\n${item.body || ""}\n${item.preview || ""}`.toLowerCase().includes(q),
+      );
+    }
     if (visible.length === 0) {
       const empty = contentEl.createDiv({ cls: "tm-empty-state" });
       empty.createDiv({ text: t("memory_browse_empty"), cls: "tm-empty-title" });
@@ -253,6 +301,25 @@ export class MemoryBrowseView extends ItemView {
     return t("memory_kind_profile");
   }
 
+  /** Restore an archived profile fact back into an active section. */
+  private async restoreHistoryItem(item: MemoryFeedItem): Promise<void> {
+    const match = String(item.body || item.title || "")
+      .replace(/<!--[\s\S]*?-->/gu, "")
+      .replace(/^\s*[-*+]\s+/u, "")
+      .replace(/^[（(]\d{4}-\d{2}-\d{2}[^)）]*[)）]\s*/u, "")
+      .trim();
+    if (!match) return;
+    try {
+      const res = this.plugin.kernelService.restoreProfileFact?.(match);
+      if (res?.ok === false) {
+        console.warn("[topmind] restore profile fact failed:", res.reason || res.note);
+      }
+    } catch (err) {
+      console.warn("[topmind] restore profile fact threw:", err);
+    }
+    await this.render();
+  }
+
   private async renderItem(container: HTMLElement, item: MemoryFeedItem, layout: "list" | "card"): Promise<void> {
     const card = container.createDiv({ cls: "tm-card tm-memory-card" });
     card.setAttr("data-memory-feed-item", "true");
@@ -273,11 +340,26 @@ export class MemoryBrowseView extends ItemView {
     }
     header.createSpan({ text: this.kindLabel(item), cls: "tm-card-tag" });
     const actions = header.createDiv({ cls: "tm-card-actions" });
+    if (item.history && item.kind === "profile") {
+      const restoreBtn = actions.createEl("button", {
+        cls: "tm-card-action-btn",
+        attr: {
+          "aria-label": t("memory_browse_restore"),
+          title: t("memory_browse_restore"),
+          "data-memory-restore": "true",
+        },
+      });
+      setIcon(restoreBtn, "undo-2");
+      restoreBtn.addEventListener("click", (e: MouseEvent) => {
+        e.stopPropagation();
+        void this.restoreHistoryItem(item);
+      });
+    }
     const openBtn = actions.createEl("button", {
       cls: "tm-card-action-btn",
       attr: { "aria-label": t("stream_open_in_editor"), title: t("stream_open_in_editor") },
     });
-    setIcon(openBtn, "pencil");
+    setIcon(openBtn, "square-pen");
     openBtn.addEventListener("click", (e: MouseEvent) => {
       e.stopPropagation();
       void this.app.workspace.openLinkText(item.path, "", false);

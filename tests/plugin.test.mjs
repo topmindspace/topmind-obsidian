@@ -696,7 +696,9 @@ describe("suggestion helpers (shipped)", () => {
 
   test("apply/open labels mirror Desktop: write kinds confirm-to-write, open_profile reads 打开", async () => {
     const { suggestionApplyIsWrite } = await importShipped("utils.ts");
-    // All write kinds confirm; open_profile's apply opens the profile
+    // All write kinds confirm; open_profile's apply opens the profile.
+    // inbox_review is a compatibility kind (product emits inbox_organize) —
+    // apply must stay write:true so persisted session cards can still confirm.
     for (const kind of [
       "stream_digest", "ai_summary", "promote_memory", "inbox_review",
       "stale_topic", "catch_all", "inbox_organize", "create_topic",
@@ -1222,7 +1224,7 @@ describe("build output", () => {
     assert.ok(files.length >= 4, `Expected at least 4 template files, got ${files.length}`);
   });
 
-  test("dist/styles.css is scoped (no bare :root pollution)", (t) => {
+  test("dist/styles.css is scoped (tokens on :root, no host style pollution)", (t) => {
     if (!hasDist) {
       t.skip("dist/ not built yet — run npm run build first");
       return;
@@ -1230,10 +1232,19 @@ describe("build output", () => {
     const cssPath = path.join(__dirname, "..", "dist", "styles.css");
     assert.ok(fs.existsSync(cssPath), "styles.css missing");
     const css = fs.readFileSync(cssPath, "utf-8");
-    // Plugin may define vars under .tm-* scopes only
-    const bareRoot = /^\s*:root\s*\{/mu.test(css);
-    assert.equal(bareRoot, false, "styles.css must not pollute global :root");
-    assert.ok(css.includes("--background-primary") || css.includes("var(--"), "should use Obsidian CSS variables");
+    // Tokens live on :root so Settings tab + Status Bar (outside the four view
+    // roots) resolve --tm-* correctly. What must NOT happen is styling the host
+    // from :root — so allow only custom-property declarations in :root blocks.
+    for (const m of css.matchAll(/:root\s*\{([^}]*)\}/gsu)) {
+      const body = m[1].replace(/\/\*[\s\S]*?\*\//gu, "");
+      for (const decl of body.split(";")) {
+        const s = decl.trim().replace(/\s+/gu, " ");
+        if (!s) continue;
+        assert.match(s, /^--[\w-]+\s*:/u, `:root must only declare custom properties, got: ${s}`);
+      }
+    }
+    assert.ok(css.includes("var(--"), "should use Obsidian CSS variables");
+    assert.ok(css.includes("--background-primary") || css.includes("--font-ui-"), "should derive from Obsidian theme vars");
   });
 
   test("source has no default hotkeys on commands", () => {

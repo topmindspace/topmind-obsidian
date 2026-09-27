@@ -227,6 +227,44 @@ export class StreamWorkbenchView extends ItemView {
     });
     this.submitBtn.addEventListener("click", () => this.submitInput());
 
+    // ── Quick access strip (workbench homepage · Landing thinking) ──
+    const quick = hero.createDiv({ cls: "tm-wb-quick" });
+    const quickItems: Array<{ id: string; icon: string; label: string; onClick: () => void }> = [
+      {
+        id: "capture",
+        icon: "pencil",
+        label: t("quick_capture_note_it"),
+        onClick: () => void this.plugin.openQuickCapture(),
+      },
+      {
+        id: "memory",
+        icon: "user",
+        label: t("sidebar_btn_memory"),
+        onClick: () => void this.plugin.openMemoryBrowse(),
+      },
+      {
+        id: "suggestions",
+        icon: "lightbulb",
+        label: t("sidebar_tab_suggestions"),
+        onClick: () => void this.openSidebarSuggestions(),
+      },
+      {
+        id: "chat",
+        icon: "bot",
+        label: t("sidebar_tab_chat"),
+        onClick: () => void this.openSidebarChat(),
+      },
+    ];
+    for (const item of quickItems) {
+      const btn = quick.createEl("button", {
+        cls: "tm-wb-quick-chip",
+        attr: { "aria-label": item.label, title: item.label, "data-quick": item.id },
+      });
+      setIcon(btn.createSpan({ cls: "tm-wb-quick-icon" }), item.icon);
+      btn.createSpan({ text: item.label, cls: "tm-wb-quick-label" });
+      btn.addEventListener("click", item.onClick);
+    }
+
     // ── Timeline section ──
     const section = shell.createDiv({ cls: "tm-wb-section" });
     const streamHeader = section.createDiv({ cls: "tm-section-header" });
@@ -741,7 +779,7 @@ export class StreamWorkbenchView extends ItemView {
       cls: "tm-card-action-btn",
       attr: { "aria-label": t("stream_btn_edit"), title: t("stream_open_in_editor") },
     });
-    setIcon(editBtn, "pencil");
+    setIcon(editBtn, "square-pen");
     editBtn.addEventListener("click", (e: MouseEvent) => {
       e.stopPropagation();
       this.app.workspace.openLinkText(periodPath, "", false);
@@ -868,21 +906,27 @@ export class StreamWorkbenchView extends ItemView {
       }
     }
 
-    // Only attach collapse toggle for long content
+    // Expand affordance lives OUTSIDE the collapsed body (display-clamp body
+    // cannot receive clicks). Chevron sits in the card header.
     if (isLongContent) {
-      const toggleCollapse = () => {
-        body.classList.toggle("tm-collapsed");
-      };
-      body.addEventListener("click", toggleCollapse);
-      body.addEventListener("keydown", (e: KeyboardEvent) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          toggleCollapse();
-        }
+      const expandBtn = header.createEl("button", {
+        cls: "tm-card-expand tm-card-action-btn",
+        attr: {
+          "aria-label": t("stream_expand_entry"),
+          title: t("stream_expand_entry"),
+          "aria-expanded": "false",
+        },
       });
-      body.setAttribute("role", "button");
-      body.setAttribute("tabindex", "0");
-      body.setAttribute("aria-label", t("stream_expand_entry"));
+      setIcon(expandBtn, "chevron-down");
+      // Keep actions last: move expand before the action cluster.
+      header.insertBefore(expandBtn, actionsEl);
+      expandBtn.addEventListener("click", (e: MouseEvent) => {
+        e.stopPropagation();
+        const collapsed = body.classList.toggle("tm-collapsed");
+        expandBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        expandBtn.empty();
+        setIcon(expandBtn, collapsed ? "chevron-down" : "chevron-up");
+      });
     }
 
     if (entry.tags.length > 0) {
@@ -926,6 +970,9 @@ export class StreamWorkbenchView extends ItemView {
   /** Quiet count entry → AI Dock 建议 tab（唯一完整确认面）。count=0 不占位。 */
   private paintSuggestEntry(container: HTMLElement, suggestions: SuggestionCard[] | null): void {
     container.empty();
+    const count = suggestions?.length ?? 0;
+    // Drive the global status-bar chip (Desktop parity).
+    (this.plugin as unknown as { setSuggestionCount?: (n: number) => void }).setSuggestionCount?.(count);
     if (!suggestions || suggestions.length === 0) return;
 
     const strip = container.createDiv({ cls: "tm-suggest-entry-strip" });
@@ -949,6 +996,14 @@ export class StreamWorkbenchView extends ItemView {
     if (leaves.length === 0) return;
     const view = leaves[0].view as unknown as { revealTab?: (tab: "suggestions") => void };
     view.revealTab?.("suggestions");
+  }
+
+  private async openSidebarChat(): Promise<void> {
+    await this.openSidebar();
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_SIDEBAR_DOCK);
+    if (leaves.length === 0) return;
+    const view = leaves[0].view as unknown as { revealTab?: (tab: "chat") => void };
+    view.revealTab?.("chat");
   }
 
   // ── Actions ────────────────────────────────────────────────────────────
@@ -1020,8 +1075,9 @@ export class StreamWorkbenchView extends ItemView {
       this.organizing = false;
       this.organizeBtn.disabled = false;
       this.organizeBtn.empty();
+      // Restore the original icon-only geometry (do not inject a text label
+      // into a square icon shell — first click used to permanently widen it).
       setIcon(this.organizeBtn, "arrow-down-wide-narrow");
-      this.organizeBtn.createSpan({ text: t("stream_organize") });
     }
   }
 }

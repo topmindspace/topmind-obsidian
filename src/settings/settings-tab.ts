@@ -696,7 +696,7 @@ export class TopmindSettingTab extends PluginSettingTab {
 
     if (pid === "ollama") {
       new Setting(containerEl)
-        .setName("Ollama URL")
+        .setName(t("settings_ai_ollama_url"))
         .setDesc(meta.baseUrl)
         .addText((text) => {
           text.setPlaceholder("http://127.0.0.1:11434/v1").setValue(s.ai.manual.ollamaBaseUrl || "");
@@ -712,7 +712,7 @@ export class TopmindSettingTab extends PluginSettingTab {
 
     if (pid === "custom") {
       new Setting(containerEl)
-        .setName("Base URL")
+        .setName(t("settings_base_url"))
         .setDesc(t("settings_ai_provider_desc"))
         .addText((text) => {
           text.setPlaceholder("https://api.example.com/v1").setValue(s.ai.manual.customBaseUrl || "");
@@ -724,7 +724,7 @@ export class TopmindSettingTab extends PluginSettingTab {
           });
         });
       new Setting(containerEl)
-        .setName("API Key")
+        .setName(t("settings_ai_key"))
         .setDesc(t("settings_security_note"))
         .addText((text) => {
           text.inputEl.type = "password";
@@ -752,7 +752,7 @@ export class TopmindSettingTab extends PluginSettingTab {
     if (keyField) {
       const current = String((s.ai.manual as unknown as Record<string, string>)[keyField] || "");
       new Setting(containerEl)
-        .setName("API Key")
+        .setName(t("settings_ai_key"))
         .setDesc(t("settings_security_note"))
         .addText((text) => {
           text.inputEl.type = "password";
@@ -784,7 +784,7 @@ export class TopmindSettingTab extends PluginSettingTab {
     }
 
     new Setting(containerEl)
-      .setName("Base URL")
+      .setName(t("settings_base_url"))
       .setDesc(meta.baseUrl)
       .addText((text) => {
         text
