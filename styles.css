@@ -32,8 +32,8 @@
    roots) resolve --tm-* correctly. Surface-only overrides stay scoped below. */
 :root {
   /* type ramp — derived from Obsidian UI fonts (user font-size flows through) */
-  --tm-type-display: calc(var(--font-ui-medium) * 1.55);
-  --tm-type-title: var(--font-ui-medium);
+  --tm-type-display: calc(var(--font-ui-medium) * 1.7);
+  --tm-type-title: calc(var(--font-ui-medium) * 1.05);
   --tm-type-body: var(--font-ui-small);
   --tm-type-label: var(--font-ui-small);
   --tm-type-meta: var(--font-ui-smaller);
@@ -626,10 +626,9 @@ select.tm-tag-input,
 
 .tm-day-label {
   font-size: var(--tm-type-label);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--tm-ink-soft);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--tm-ink);
 }
 
 .tm-day-count {
@@ -1166,23 +1165,22 @@ select.tm-tag-input,
 
 .tm-wb-hero-kicker {
   font-size: var(--tm-type-meta);
-  font-weight: 600;
+  font-weight: 550;
   color: var(--tm-ink-faint);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .tm-wb-hero-title {
   font-size: var(--tm-type-display);
-  font-weight: var(--font-semibold, 600);
+  font-weight: var(--font-semibold, 650);
   color: var(--tm-ink);
-  line-height: var(--line-height-tight, 1.2);
+  line-height: var(--line-height-tight, 1.15);
 }
 
 .tm-wb-hero-sub {
-  font-size: var(--tm-type-body);
+  font-size: var(--tm-type-meta);
   color: var(--tm-ink-faint);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .tm-wb-compose {
@@ -1353,12 +1351,23 @@ select.tm-tag-input,
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 10px 4px;
+  padding: 12px 4px;
   border: none;
   border-bottom: 1px solid var(--tm-line);
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+}
+
+.tm-wb-timeline[data-layout="list"] .tm-card-body p,
+.tm-stream-container[data-layout="list"] .tm-card-body p {
+  margin: 0.12em 0;
+}
+
+.tm-wb-timeline[data-layout="list"] .tm-card-body p:empty,
+.tm-stream-container[data-layout="list"] .tm-card-body p:empty {
+  display: none;
+  margin: 0;
 }
 
 .tm-wb-timeline[data-layout="list"] .tm-wb-card .tm-card-time {
@@ -2149,8 +2158,8 @@ button.tm-suggestion-path:focus-visible {
 .tm-chat-model-switcher {
   display: flex;
   align-items: center;
-  gap: var(--tm-gap-sm);
-  padding: 6px 8px;
+  gap: var(--tm-gap-xs);
+  padding: 4px 6px;
   border-radius: var(--tm-radius-ctl);
   border: 1px solid var(--tm-line);
   background: var(--tm-bg-soft);
@@ -2160,12 +2169,32 @@ button.tm-suggestion-path:focus-visible {
 .tm-chat-switcher-select {
   max-width: 48%;
   min-width: 0;
+  appearance: auto;
+  background-color: var(--tm-bg-card);
+  border-color: var(--tm-line);
+  color: var(--tm-ink);
 }
 
 .tm-chat-switcher-static {
+  display: inline-flex;
+  align-items: center;
+  height: var(--tm-btn-h-sm);
+  padding: 0 var(--tm-gap-sm);
+  border-radius: var(--tm-radius-ctl);
+  background: var(--tm-bg-card);
+  border: 1px solid var(--tm-line);
   font-size: var(--tm-type-meta);
   color: var(--tm-ink-soft);
-  font-weight: 550;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Soft divider so provider · model read as two controls, not one label. */
+.tm-chat-switcher-sep {
+  color: var(--tm-ink-faint);
+  font-size: var(--tm-type-meta);
+  padding: 0 2px;
+  user-select: none;
 }
 
 /* Message shell / bubble chrome lives in §20 (later, tokenized).
@@ -2198,8 +2227,8 @@ button.tm-suggestion-path:focus-visible {
 
 .tm-chat-reasoning-label {
   font-size: var(--tm-type-meta);
-  font-weight: 600;
-  color: var(--tm-ink-soft);
+  font-weight: 550;
+  color: var(--tm-ink-faint);
 }
 
 .tm-chat-model-select,
@@ -2830,6 +2859,57 @@ button.tm-suggestion-path:focus-visible {
    16. SETTINGS / STATUS BAR / HELPERS
    ═══════════════════════════════════════════════════════════════════════ */
 
+/* Obsidian `Setting` is a horizontal flex row (info | control). When a whole
+   panel is painted into one row's `settingEl`, every nested `.setting-item`
+   becomes a squeezed flex sibling — CJK labels stack one character per line.
+   The host must be a vertical stack so nested rows keep native layout. */
+.setting-item.tm-settings-host {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  border-top: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.setting-item.tm-settings-host > .setting-item {
+  border-top: 0;
+  padding-top: var(--size-4-3);
+  padding-bottom: var(--size-4-3);
+  width: 100%;
+}
+
+.setting-item.tm-settings-host > .setting-item.is-heading,
+.setting-item.tm-settings-host > .setting-item.set-heading {
+  padding-top: var(--size-4-5);
+  padding-bottom: var(--size-4-2);
+}
+
+.setting-item.tm-settings-host > .setting-item:first-child {
+  padding-top: 0;
+}
+
+.tm-settings-host .setting-item-name {
+  font-weight: 650;
+  color: var(--text-normal);
+  line-height: 1.35;
+}
+
+.tm-settings-host .setting-item-description {
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+.tm-settings-host .setting-item-control {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--size-4-2);
+  min-width: 0;
+}
+
 .setting-item .tm-status-input {
   color: var(--tm-ink);
   font-weight: 600;
@@ -3290,6 +3370,7 @@ button.tm-btn-polish:hover {
 .tm-chat-tools-label {
   width: auto;
   font-size: var(--tm-type-meta);
+  font-weight: 550;
   color: var(--tm-ink-faint);
   margin-right: var(--tm-gap-xs);
 }
@@ -3411,25 +3492,27 @@ button.tm-chat-clear-btn:hover {
 .tm-wb-quick {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--tm-gap-sm);
-  margin-top: var(--tm-gap-md);
+  gap: var(--tm-gap-xs);
+  margin-top: var(--tm-gap-sm);
 }
 .tm-wb-quick-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--tm-gap-xs);
-  height: var(--tm-hit-sm);
-  padding: 0 var(--tm-gap-md);
-  border: 1px solid var(--tm-line);
-  border-radius: var(--tm-radius-ctl);
-  background: var(--tm-bg-soft);
-  color: var(--tm-ink);
-  font-size: var(--tm-type-label);
+  height: var(--tm-hit-xs);
+  padding: 0 var(--tm-gap-sm) 0 var(--tm-gap-md);
+  border: 1px solid transparent;
+  border-radius: var(--tm-radius-pill);
+  background: transparent;
+  color: var(--tm-ink-soft);
+  font-size: var(--tm-type-meta);
+  font-weight: 550;
   cursor: pointer;
   transition: var(--tm-transition-ui), box-shadow 120ms ease, transform 120ms ease;
 }
 .tm-wb-quick-chip:hover {
   background: var(--tm-bg-hover);
+  border-color: var(--tm-line);
   color: var(--tm-ink);
   box-shadow: var(--tm-shadow-card);
   transform: translateY(-1px);

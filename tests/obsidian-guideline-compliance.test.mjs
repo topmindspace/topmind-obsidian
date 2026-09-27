@@ -147,7 +147,10 @@ describe("Obsidian plugin guidelines", () => {
     const settings = strip(fs.readFileSync(path.join(src, "settings", "settings-tab.ts"), "utf8"));
     assert.doesNotMatch(settings, /\bdisplay\s*\(\s*\)\s*:\s*void/);
     assert.match(settings, /getSettingDefinitions\s*\(/);
-    assert.match(settings, /paintSettings\(setting\.settingEl\)/);
+    // Native 1.13 groups: each row is its own Setting (no one-row panel paint
+    // that squeezes nested .setting-item into a horizontal flex line).
+    assert.match(settings, /type:\s*"group"/);
+    assert.doesNotMatch(settings, /paintSettings\(setting\.settingEl\)/);
 
     const loader = fs.readFileSync(path.join(src, "bridge", "kernel-loader.ts"), "utf8");
     const types = fs.readFileSync(path.join(src, "bridge", "kernel-types.ts"), "utf8");

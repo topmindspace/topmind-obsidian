@@ -22,11 +22,10 @@ import {
   Modal,
   type App as ObsidianApp,
   type SettingDefinitionItem,
-  type SettingGroup,
 } from "obsidian";
 import type TopmindPlugin from "../main";
 import { t } from "../i18n";
-import type { WritebackMode, TimelineOrder, AiManualKeys } from "../types";
+import type { WritebackMode, AiManualKeys } from "../types";
 import { hasConfiguredProvider, getProviderKey } from "../types";
 import {
   AI_PROVIDER_PRESETS,
@@ -222,20 +221,195 @@ export class TopmindSettingTab extends PluginSettingTab {
   }
 
   /**
-   * One searchable render row paints the whole tab.
-   * `display()` is deprecated since Obsidian 1.13 (minAppVersion). The row's
-   * `render` rebuilds the imperative board on every pass, so an update cannot
-   * leave a torn-down AI section behind.
+   * Native 1.13 declarative settings. Groups give each section a real heading
+   * and each row its own `.setting-item` flex layout (the old one-row paint
+   * squeezed every nested Setting into a horizontal flex line — CJK labels
+   * stacked one character per line).
+   *
+   * Simple toggles/dropdowns/sliders are declarative controls (searchable via
+   * `getControlValue`/`setControlValue`). Complex surfaces (workspace status,
+   * AI provider board) render imperatively into their own row or sub-page.
    */
   override getSettingDefinitions(): SettingDefinitionItem[] {
+    this.hydrateWriteback();
+
     return [
       {
-        name: "Topmind",
-        desc: "Workspace, stream, AI providers, and writeback",
-        searchable: true,
-        render: (setting: Setting, _group: SettingGroup) => {
-          this.paintSettings(setting.settingEl);
-        },
+        type: "group",
+        heading: t("settings_workspace"),
+        items: [
+          {
+            name: t("workspace_status"),
+            desc: t("settings_workspace_status_desc"),
+            aliases: ["workspace", "契约", "contract", "status"],
+            render: (setting: Setting) => {
+              this.renderWorkspaceStatusRow(setting);
+            },
+          },
+          {
+            name: t("workspace_contract_doctor"),
+            desc: t("workspace_contract_doctor_desc"),
+            aliases: ["doctor", "诊断", "契约", "reseed"],
+            render: (setting: Setting) => {
+              this.renderContractDoctorRow(setting);
+            },
+          },
+          {
+            name: t("init_workspace"),
+            desc: t("init_workspace_desc"),
+            aliases: ["init", "初始化", "template"],
+            render: (setting: Setting) => {
+              this.renderInitWorkspaceRow(setting);
+            },
+          },
+        ],
+      },
+      {
+        type: "group",
+        heading: t("settings_stream"),
+        items: [
+          {
+            name: t("settings_auto_open"),
+            desc: t("settings_auto_open_desc"),
+            control: { type: "toggle", key: "autoOpenWorkbench", defaultValue: false },
+          },
+          {
+            name: t("settings_timeline_order"),
+            desc: t("settings_timeline_order_desc"),
+            control: {
+              type: "dropdown",
+              key: "timelineOrder",
+              defaultValue: "desc",
+              options: { desc: t("timeline_desc"), asc: t("timeline_asc") },
+            },
+          },
+          {
+            name: t("settings_auto_tag"),
+            desc: t("settings_auto_tag_desc"),
+            control: { type: "toggle", key: "autoTag", defaultValue: true },
+          },
+          {
+            name: t("settings_locale_override"),
+            desc: t("settings_locale_override_desc"),
+            render: (setting: Setting) => {
+              this.renderLocaleOverrideRow(setting);
+            },
+          },
+          {
+            name: t("settings_feed_layout"),
+            desc: t("settings_feed_layout_desc"),
+            control: {
+              type: "dropdown",
+              key: "feedLayout",
+              defaultValue: "list",
+              options: { list: t("feed_layout_list"), card: t("feed_layout_card") },
+            },
+          },
+        ],
+      },
+      {
+        type: "group",
+        heading: t("settings_ai"),
+        items: [
+          {
+            name: t("settings_ai_status"),
+            desc: t("settings_ai_status_desc"),
+            aliases: ["AI", "provider", "密钥", "key"],
+            render: (setting: Setting) => {
+              this.renderAiStatusRow(setting);
+            },
+          },
+          {
+            name: t("settings_ai_import"),
+            desc: t("settings_ai_import_desc"),
+            aliases: ["Desktop", "import", "导入"],
+            render: (setting: Setting) => {
+              this.renderAiImportRow(setting);
+            },
+          },
+          {
+            name: t("settings_ai_preference"),
+            desc: t("settings_ai_preference_desc"),
+            render: (setting: Setting) => {
+              this.renderProviderPreference(setting);
+            },
+          },
+          {
+            name: t("settings_ai_model"),
+            desc: t("settings_ai_model_desc"),
+            render: (setting: Setting) => {
+              this.renderModelPicker(setting);
+            },
+          },
+          {
+            name: t("settings_ai_board"),
+            desc: t("settings_ai_provider_desc"),
+            aliases: ["API", "key", "board", "密钥"],
+            render: (setting: Setting) => {
+              // Multi-row credential surface — host is a vertical stack so the
+              // nested provider/key/URL rows keep native Setting layout.
+              setting.settingEl.addClass("tm-settings-host");
+              setting.infoEl.empty();
+              setting.controlEl.empty();
+              this.renderProviderBoard(setting.settingEl);
+            },
+          },
+          {
+            name: t("settings_ai_test"),
+            desc: t("settings_security_note"),
+            render: (setting: Setting) => {
+              this.renderConnectionTestRow(setting);
+            },
+          },
+          {
+            name: t("settings_writeback_mode"),
+            desc: t("settings_writeback_mode_desc"),
+            control: {
+              type: "dropdown",
+              key: "writebackMode",
+              defaultValue: "auto",
+              options: { auto: t("writeback_auto"), confirm: t("writeback_confirm") },
+            },
+          },
+          {
+            name: t("settings_max_agent_steps"),
+            desc: t("settings_max_agent_steps_desc"),
+            control: {
+              type: "slider",
+              key: "maxAgentSteps",
+              defaultValue: 32,
+              min: 3,
+              max: 80,
+              step: 1,
+            },
+          },
+          {
+            name: t("settings_auto_suggest"),
+            desc: t("settings_auto_suggest_desc"),
+            control: { type: "toggle", key: "autoSuggest", defaultValue: true },
+          },
+          {
+            name: t("settings_auto_maintain_todos"),
+            desc: t("settings_auto_maintain_todos_desc"),
+            control: { type: "toggle", key: "autoMaintainTodos", defaultValue: false },
+          },
+        ],
+      },
+      {
+        type: "group",
+        heading: t("settings_security"),
+        items: [
+          {
+            name: t("settings_backup_keep"),
+            desc: t("settings_backup_keep_desc"),
+            control: { type: "slider", key: "backupKeep", defaultValue: 3, min: 0, max: 10, step: 1 },
+          },
+          {
+            name: t("settings_receipt_keep"),
+            desc: t("settings_receipt_keep_desc"),
+            control: { type: "slider", key: "receiptKeep", defaultValue: 50, min: 10, max: 200, step: 10 },
+          },
+        ],
       },
     ];
   }
@@ -258,20 +432,21 @@ export class TopmindSettingTab extends PluginSettingTab {
       this.plugin.kernelService.mirrorWritebackMode(value as WritebackMode);
     }
     void this.save();
+    if (key === "localeOverride") {
+      void (async () => {
+        const { setLocale } = await import("../i18n");
+        const obsLocale = (this.app as unknown as { locale?: string }).locale || "zh-CN";
+        const override = typeof value === "string" ? value : "";
+        setLocale(override || (obsLocale.startsWith("en") ? "en-US" : "zh-CN"));
+        this.update();
+      })();
+    }
+    if (key === "feedLayout" || key === "timelineOrder") {
+      this.refreshViews();
+    }
   }
 
-  /** Full settings surface. Rebuilt on every declarative render. */
-  private paintSettings(host: HTMLElement): void {
-    this.hydrateWriteback();
-    host.empty();
-    host.addClass("tm-settings-host");
-    this.templateSelect = null;
-    this.renderWorkspaceSection(host);
-    this.renderStreamSection(host);
-    this.renderAiSection(host);
-    this.renderSecuritySection(host);
-  }
-
+  /** Declarative settings hydrate writeback before first paint. */
   private hydrateWriteback(): void {
     const prevWritebackMode = this.plugin.settings.writebackMode;
     this.plugin.kernelService.hydrateWritebackModeFromContract();
@@ -284,20 +459,105 @@ export class TopmindSettingTab extends PluginSettingTab {
     return (this.app as unknown as { locale?: string }).locale || "zh-CN";
   }
 
-  private renderWorkspaceStatusInto(containerEl: HTMLElement): void {
-    this.renderWorkspaceStatus(containerEl);
+  // ── Row painters (one native Setting row each) ─────────────────────────
+
+  /** Workspace readiness badges into the status row's control column. */
+  private renderWorkspaceStatusRow(setting: Setting): void {
+    const isReady = this.plugin.kernelService.isWorkspaceReady();
+    if (!isReady) {
+      setting.controlEl.createSpan({
+        cls: "tm-status-badge tm-status-warning",
+        text: t("workspace_not_ready"),
+      });
+      setting.setDesc(t("workspace_not_ready"));
+      return;
+    }
+    try {
+      const model = this.plugin.kernelService.getResolvedModel();
+      const categories = model.categories || [];
+      const categoryCount = categories.filter((c) => !(c as { hidden?: boolean }).hidden).length;
+      setting.setDesc(t("workspace_categories_count", { count: categoryCount }));
+      const badgeContainer = setting.controlEl.createDiv({ cls: "tm-status-badges" });
+      badgeContainer.createSpan({ cls: "tm-status-badge tm-status-ok", text: t("workspace_ready") });
+      badgeContainer.createSpan({
+        cls: "tm-status-badge tm-status-info",
+        text: t("workspace_contract_valid"),
+      });
+    } catch {
+      setting.setDesc(t("workspace_no_categories"));
+    }
   }
 
-  private renderInitWorkspaceInto(containerEl: HTMLElement): void {
-    const row = new Setting(containerEl)
-      .setName(t("init_workspace"))
-      .setDesc(t("init_workspace_desc"));
-    row.addDropdown((dd) => {
+  /** Diagnose / reseed contract actions. */
+  private renderContractDoctorRow(setting: Setting): void {
+    setting
+      .addButton((btn) =>
+        btn.setButtonText(t("workspace_contract_doctor")).onClick(() => {
+          try {
+            const kernel = getKernel();
+            const workspaceRoot = this.plugin.kernelService.getVaultPath();
+            const inspect = kernel.inspectContract?.(workspaceRoot);
+            if (!inspect) {
+              new Notice(t("workspace_contract_doctor_failed"));
+              return;
+            }
+            if (inspect.onDiskValid) {
+              new Notice(t("workspace_contract_doctor_ok"));
+            } else {
+              const ensured = kernel.ensureContract?.(workspaceRoot, {});
+              if (ensured?.onDiskValid) {
+                new Notice(t("workspace_contract_doctor_fixed"));
+                this.plugin.kernelService.invalidateCache();
+                this.update();
+              } else {
+                new Notice(`${t("workspace_contract_doctor_failed")}: ${inspect.errors?.[0] || ""}`);
+              }
+            }
+          } catch (err) {
+            new Notice(
+              `${t("workspace_contract_doctor_failed")}: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }),
+      )
+      .addButton((btn) =>
+        btn.setButtonText(t("workspace_contract_reseed")).setDestructive().onClick(() => {
+          new ConfirmModal(
+            this.app,
+            t("workspace_contract_reseed"),
+            t("workspace_contract_reseed_confirm"),
+            () => {
+              try {
+                const result = reseedWorkspaceContract(
+                  getKernel(),
+                  this.plugin.kernelService.getVaultPath(),
+                );
+                if (result.ok) {
+                  new Notice(t("workspace_contract_reseed_ok"));
+                  this.plugin.kernelService.invalidateCache();
+                  this.update();
+                } else {
+                  new Notice(`${t("workspace_contract_reseed_failed")}: ${result.error || ""}`);
+                }
+              } catch (err) {
+                new Notice(
+                  `${t("workspace_contract_reseed_failed")}: ${err instanceof Error ? err.message : String(err)}`,
+                );
+              }
+            },
+          );
+        }),
+      );
+  }
+
+  /** Template picker + initialize action. */
+  private renderInitWorkspaceRow(setting: Setting): void {
+    setting.addDropdown((dd) => {
       for (const opt of TEMPLATE_OPTIONS) dd.addOption(opt.value, opt.label);
       dd.setValue("stream");
       this.templateSelect = dd.selectEl;
     });
-    row.addButton((btn) =>
+    setting.addButton((btn) =>
       btn.setButtonText(t("init_workspace")).onClick(() => {
         const templateId = this.templateSelect?.value || "stream";
         new ConfirmModal(this.app, t("init_workspace"), t("init_workspace_confirm"), () => {
@@ -313,244 +573,104 @@ export class TopmindSettingTab extends PluginSettingTab {
     );
   }
 
-  // ── Workspace ───────────────────────────────────────────────────────────
-
-  private renderWorkspaceSection(containerEl: HTMLElement): void {
-    new Setting(containerEl).setName(t("settings_workspace")).setHeading();
-    this.renderWorkspaceStatus(containerEl);
-
-    new Setting(containerEl)
-      .setName(t("init_workspace"))
-      .setDesc(t("init_workspace_desc"))
-      .addDropdown((dd) => {
-        for (const opt of TEMPLATE_OPTIONS) dd.addOption(opt.value, opt.label);
-        dd.setValue("stream");
-        this.templateSelect = dd.selectEl;
-      })
-      .addButton((btn) =>
-        btn.setButtonText(t("init_workspace")).onClick(() => {
-          const templateId = this.templateSelect?.value || "stream";
-          new ConfirmModal(this.app, t("init_workspace"), t("init_workspace_confirm"), () => {
-            const result = this.plugin.kernelService.initWorkspace(templateId);
-            if (result.ok) {
-              new Notice(t("init_workspace_success"));
-              this.update();
-            } else {
-              new Notice(`${t("init_workspace_failed")}: ${result.error}`);
-            }
-          });
-        }),
-      );
-  }
-
-  // ── Stream ──────────────────────────────────────────────────────────────
-
-  private renderStreamSection(containerEl: HTMLElement): void {
+  /** Locale override — switches app language immediately. */
+  private renderLocaleOverrideRow(setting: Setting): void {
     const s = this.plugin.settings;
-    new Setting(containerEl).setName(t("settings_stream")).setHeading();
-
-    new Setting(containerEl)
-      .setName(t("settings_auto_open"))
-      .setDesc(t("settings_auto_open_desc"))
-      .addToggle((toggle) =>
-        toggle.setValue(s.autoOpenWorkbench).onChange(async (v) => {
-          s.autoOpenWorkbench = v;
+    setting.addDropdown((dd) =>
+      dd
+        .addOption("", t("locale_auto"))
+        .addOption("zh-CN", "简体中文")
+        .addOption("en-US", "English")
+        .setValue(s.localeOverride)
+        .onChange(async (v) => {
+          s.localeOverride = v;
           await this.save();
+          const { setLocale } = await import("../i18n");
+          const obsLocale = (this.app as unknown as { locale?: string }).locale || "zh-CN";
+          setLocale(v || (obsLocale.startsWith("en") ? "en-US" : "zh-CN"));
+          this.update();
         }),
-      );
-
-    new Setting(containerEl)
-      .setName(t("settings_timeline_order"))
-      .setDesc(t("settings_timeline_order_desc"))
-      .addDropdown((dd) =>
-        dd
-          .addOption("desc", t("timeline_desc"))
-          .addOption("asc", t("timeline_asc"))
-          .setValue(s.timelineOrder)
-          .onChange(async (v) => {
-            s.timelineOrder = v as TimelineOrder;
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName(t("settings_auto_tag"))
-      .setDesc(t("settings_auto_tag_desc"))
-      .addToggle((toggle) =>
-        toggle.setValue(s.autoTag).onChange(async (v) => {
-          s.autoTag = v;
-          await this.save();
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName(t("settings_locale_override"))
-      .setDesc(t("settings_locale_override_desc"))
-      .addDropdown((dd) =>
-        dd
-          .addOption("", t("locale_auto"))
-          .addOption("zh-CN", "简体中文")
-          .addOption("en-US", "English")
-          .setValue(s.localeOverride)
-          .onChange(async (v) => {
-            s.localeOverride = v;
-            await this.save();
-            const { setLocale } = await import("../i18n");
-            const obsLocale = (this.app as unknown as { locale?: string }).locale || "zh-CN";
-            setLocale(v || (obsLocale.startsWith("en") ? "en-US" : "zh-CN"));
-            this.update();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName(t("settings_feed_layout"))
-      .setDesc(t("settings_feed_layout_desc"))
-      .addDropdown((dd) =>
-        dd
-          .addOption("list", t("feed_layout_list"))
-          .addOption("card", t("feed_layout_card"))
-          .setValue(s.feedLayout)
-          .onChange(async (v) => {
-            s.feedLayout = v === "card" ? "card" : "list";
-            await this.save();
-          }),
-      );
+    );
   }
 
-  // ── AI (full provider board) ────────────────────────────────────────────
-
-  /** Public entry for the AI board sub-page (SettingDefinitionPage). */
-  renderAiInto(containerEl: HTMLElement): void {
-    this.renderAiSection(containerEl);
+  /** AI configured status pill. */
+  private renderAiStatusRow(setting: Setting): void {
+    const aiReady = hasConfiguredProvider(this.plugin.settings.ai);
+    const statusText = aiReady ? t("settings_ai_ready") : t("settings_ai_not_configured");
+    setting.addText((text) => {
+      text.setValue(statusText).setDisabled(true);
+      text.inputEl.addClass(aiReady ? "tm-status-input" : "tm-status-input tm-status-input-dim");
+    });
+    if (aiReady && !this.plugin.settings.ai.defaultModel) {
+      setting.infoEl.addClass("tm-setting-hint-accent");
+      setting.setDesc(t("settings_ai_model_select_hint_desc"));
+    }
   }
 
-  private renderAiSection(containerEl: HTMLElement): void {
+  /** Desktop key import (user-initiated only). */
+  private renderAiImportRow(setting: Setting): void {
     const s = this.plugin.settings;
-    // Each block is isolated: one throw must not blank the whole AI surface
-    // (that is how "AI settings disappeared" looked to the user).
-    const safe = (label: string, fn: () => void): void => {
-      try {
-        fn();
-      } catch (err) {
-        console.error(`[topmind] settings AI block failed: ${label}`, err);
-        new Setting(containerEl)
-          .setName(label)
-          .setDesc(err instanceof Error ? err.message : String(err));
-      }
-    };
-
-    safe(t("settings_ai"), () => {
-      new Setting(containerEl).setName(t("settings_ai")).setHeading();
-      const aiReady = hasConfiguredProvider(s.ai);
-      const statusText = aiReady ? t("settings_ai_ready") : t("settings_ai_not_configured");
-      new Setting(containerEl)
-        .setName(t("settings_ai_status"))
-        .setDesc(t("settings_ai_status_desc"))
-        .addText((text) => {
-          text.setValue(statusText).setDisabled(true);
-          text.inputEl.addClass(aiReady ? "tm-status-input" : "tm-status-input tm-status-input-dim");
-        });
-      if (aiReady && !s.ai.defaultModel) {
-        const hintSetting = new Setting(containerEl)
-          .setName(t("settings_ai_model_select_hint"))
-          .setDesc(t("settings_ai_model_select_hint_desc"));
-        hintSetting.infoEl.addClass("tm-setting-hint-accent");
-      }
-    });
-
-    safe(t("settings_ai_import"), () => {
-      new Setting(containerEl)
-        .setName(t("settings_ai_import"))
-        .setDesc(t("settings_ai_import_desc"))
-        .addButton((btn) =>
-          btn.setButtonText(t("settings_ai_import")).onClick(() => {
-            const result = tryImportDesktopSettings();
-            if (!result) {
-              new Notice(t("settings_ai_import_not_found"));
-              return;
-            }
-            if (result.encrypted) {
-              new Notice(t("settings_ai_import_encrypted"));
-              return;
-            }
-            const m = s.ai.manual as unknown as Record<string, string>;
-            let count = 0;
-            for (const [key, val] of Object.entries(result.imported)) {
-              if (key === "baseUrlOverrides") continue;
-              if (typeof val === "string" && val && !m[key]) {
-                m[key] = val;
-                count++;
-              }
-            }
-            if (result.preference && !s.ai.sourcePreference) s.ai.sourcePreference = result.preference;
-            if (result.model && !s.ai.defaultModel) s.ai.defaultModel = result.model;
-            if (count > 0) {
-              void this.save();
-              new Notice(t("settings_ai_import_success", { count }));
-              this.update();
-            } else {
-              new Notice(t("settings_ai_import_nothing"));
-            }
-          }),
-        );
-    });
-
-    safe(t("settings_ai_provider"), () => this.renderProviderPreference(containerEl));
-    safe(t("settings_ai_model"), () => this.renderModelPicker(containerEl));
-    safe(t("settings_ai_board"), () => this.renderProviderBoard(containerEl));
-    safe(t("settings_ai_test"), () => this.renderConnectionTest(containerEl));
-
-    safe(t("settings_writeback_mode"), () => {
-      new Setting(containerEl)
-        .setName(t("settings_writeback_mode"))
-        .setDesc(t("settings_writeback_mode_desc"))
-        .addDropdown((dd) =>
-          dd
-            .addOption("auto", t("writeback_auto"))
-            .addOption("confirm", t("writeback_confirm"))
-            .setValue(s.writebackMode)
-            .onChange(async (v) => {
-              const mode = v as WritebackMode;
-              s.writebackMode = mode;
-              this.plugin.kernelService.mirrorWritebackMode(mode);
-              await this.save();
-            }),
-        );
-    });
-
-    new Setting(containerEl)
-      .setName(t("settings_max_agent_steps"))
-      .setDesc(t("settings_max_agent_steps_desc"))
-      .addSlider((slider) =>
-        slider
-          .setLimits(3, 80, 1)
-          .setValue(s.maxAgentSteps || 32)
-          .onChange(async (v) => {
-            s.maxAgentSteps = v;
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName(t("settings_auto_suggest"))
-      .setDesc(t("settings_auto_suggest_desc"))
-      .addToggle((toggle) =>
-        toggle.setValue(s.autoSuggest).onChange(async (v) => {
-          s.autoSuggest = v;
-          await this.save();
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName(t("settings_auto_maintain_todos"))
-      .setDesc(t("settings_auto_maintain_todos_desc"))
-      .addToggle((toggle) =>
-        toggle.setValue(s.autoMaintainTodos).onChange(async (v) => {
-          s.autoMaintainTodos = v;
-          await this.save();
-        }),
-      );
+    setting.addButton((btn) =>
+      btn.setButtonText(t("settings_ai_import")).onClick(() => {
+        const result = tryImportDesktopSettings();
+        if (!result) {
+          new Notice(t("settings_ai_import_not_found"));
+          return;
+        }
+        if (result.encrypted) {
+          new Notice(t("settings_ai_import_encrypted"));
+          return;
+        }
+        const m = s.ai.manual as unknown as Record<string, string>;
+        let count = 0;
+        for (const [key, val] of Object.entries(result.imported)) {
+          if (key === "baseUrlOverrides") continue;
+          if (typeof val === "string" && val && !m[key]) {
+            m[key] = val;
+            count++;
+          }
+        }
+        if (result.preference && !s.ai.sourcePreference) s.ai.sourcePreference = result.preference;
+        if (result.model && !s.ai.defaultModel) s.ai.defaultModel = result.model;
+        if (count > 0) {
+          void this.save();
+          new Notice(t("settings_ai_import_success", { count }));
+          this.update();
+        } else {
+          new Notice(t("settings_ai_import_nothing"));
+        }
+      }),
+    );
   }
+
+  /** Live connection probe. */
+  private renderConnectionTestRow(setting: Setting): void {
+    setting.addButton((btn) =>
+      btn.setButtonText(t("settings_ai_test")).onClick(async () => {
+        if (!hasConfiguredProvider(this.plugin.settings.ai)) {
+          new Notice(t("settings_ai_not_configured"));
+          return;
+        }
+        btn.setDisabled(true);
+        const prev = btn.buttonEl.textContent || "";
+        btn.setButtonText(t("settings_ai_testing"));
+        try {
+          const provider = this.plugin.kernelService.testAiConnection();
+          const reply = await provider.generate("ping", { maxTokens: 4 });
+          if (reply && reply.trim().length > 0) new Notice(t("settings_ai_test_success"));
+          else new Notice(`${t("settings_ai_test_failed")}: empty response`);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          new Notice(`${t("settings_ai_test_failed")}: ${msg}`);
+        } finally {
+          btn.setDisabled(false);
+          btn.setButtonText(prev);
+        }
+      }),
+    );
+  }
+
+  // ── AI provider board (imperative rows inside the AI group) ────────────
 
   private isProviderConfigured(pid: string): boolean {
     const s = this.plugin.settings;
@@ -560,30 +680,27 @@ export class TopmindSettingTab extends PluginSettingTab {
     return field ? Boolean(getProviderKey(pid, s.ai.manual)) : false;
   }
 
-  private renderProviderPreference(containerEl: HTMLElement): void {
+  private renderProviderPreference(setting: Setting): void {
     const s = this.plugin.settings;
     const allPids = Object.keys(AI_PROVIDER_PRESETS);
-    new Setting(containerEl)
-      .setName(t("settings_ai_preference"))
-      .setDesc(t("settings_ai_preference_desc"))
-      .addDropdown((dd) => {
-        dd.addOption("", t("settings_ai_auto"));
-        for (const gid of allPids) {
-          const p = AI_PROVIDER_PRESETS[gid];
-          const star = s.ai.sourcePreference === gid ? " ★" : this.isProviderConfigured(gid) ? " ✓" : "";
-          dd.addOption(gid, `${p.label}${star}`);
-        }
-        dd.setValue(s.ai.sourcePreference || "").onChange(async (v) => {
-          s.ai.sourcePreference = v;
-          s.aiProvider = (v || "none") as TopmindPlugin["settings"]["aiProvider"];
-          await this.save();
-          clearModelsDevCache();
-          this.update();
-        });
+    setting.addDropdown((dd) => {
+      dd.addOption("", t("settings_ai_auto"));
+      for (const gid of allPids) {
+        const p = AI_PROVIDER_PRESETS[gid];
+        const star = s.ai.sourcePreference === gid ? " ★" : this.isProviderConfigured(gid) ? " ✓" : "";
+        dd.addOption(gid, `${p.label}${star}`);
+      }
+      dd.setValue(s.ai.sourcePreference || "").onChange(async (v) => {
+        s.ai.sourcePreference = v;
+        s.aiProvider = (v || "none") as TopmindPlugin["settings"]["aiProvider"];
+        await this.save();
+        clearModelsDevCache();
+        this.update();
       });
+    });
   }
 
-  private renderModelPicker(containerEl: HTMLElement): void {
+  private renderModelPicker(setting: Setting): void {
     const s = this.plugin.settings;
     const activeProvider =
       s.ai.sourcePreference ||
@@ -591,13 +708,10 @@ export class TopmindSettingTab extends PluginSettingTab {
       "openai";
     const preset = AI_PROVIDER_PRESETS[activeProvider];
     const providerLabel = preset?.label || activeProvider;
-
-    const modelSetting = new Setting(containerEl)
-      .setName(t("settings_ai_model"))
-      .setDesc(`${t("settings_ai_model_desc")} (${providerLabel})`);
+    setting.setDesc(`${t("settings_ai_model_desc")} (${providerLabel})`);
 
     let modelSelectEl: HTMLSelectElement | null = null;
-    modelSetting.addDropdown((dd) => {
+    setting.addDropdown((dd) => {
       dd.addOption("", t("settings_ai_model_default"));
       if (preset?.model) {
         dd.addOption(preset.model, `${preset.model} (${t("settings_ai_model_default")})`);
@@ -621,7 +735,7 @@ export class TopmindSettingTab extends PluginSettingTab {
       modelSelectEl = dd.selectEl;
     });
 
-    modelSetting.addText((text) => {
+    setting.addText((text) => {
       text.setPlaceholder(t("settings_ai_model_enter_custom") || "custom-model-id").setValue(s.ai.defaultModel || "");
       text.inputEl.addClass("tm-model-custom-input");
       text.onChange(async (v) => {
@@ -634,7 +748,7 @@ export class TopmindSettingTab extends PluginSettingTab {
       });
     });
 
-    modelSetting.addExtraButton((btn) => {
+    setting.addExtraButton((btn) => {
       btn.setIcon("refresh-cw").setTooltip(t("settings_ai_refresh_models")).onClick(async () => {
         if (!modelSelectEl) return;
         btn.setDisabled(true);
@@ -809,166 +923,6 @@ export class TopmindSettingTab extends PluginSettingTab {
           await this.save();
         });
       });
-  }
-
-  private renderConnectionTest(containerEl: HTMLElement): void {
-    new Setting(containerEl)
-      .setName(t("settings_ai_test"))
-      .setDesc(t("settings_security_note"))
-      .addButton((btn) =>
-        btn.setButtonText(t("settings_ai_test")).onClick(async () => {
-          if (!hasConfiguredProvider(this.plugin.settings.ai)) {
-            new Notice(t("settings_ai_test_no_key"));
-            return;
-          }
-          btn.setButtonText(t("settings_ai_testing"));
-          btn.setDisabled(true);
-          try {
-            const provider = this.plugin.kernelService.testAiConnection();
-            const reply = await provider.generate("Reply with: OK", { operation: "test", foldReasoning: false });
-            if (reply && reply.trim().length > 0) new Notice(t("settings_ai_test_success"));
-            else new Notice(`${t("settings_ai_test_failed")}: empty response`);
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            new Notice(`${t("settings_ai_test_failed")}: ${msg}`);
-          } finally {
-            btn.setButtonText(t("settings_ai_test"));
-            btn.setDisabled(false);
-          }
-        }),
-      );
-  }
-
-  // ── Security ────────────────────────────────────────────────────────────
-
-  private renderSecuritySection(containerEl: HTMLElement): void {
-    const s = this.plugin.settings;
-    new Setting(containerEl).setName(t("settings_security")).setHeading();
-
-    new Setting(containerEl)
-      .setName(t("settings_backup_keep"))
-      .setDesc(t("settings_backup_keep_desc"))
-      .addSlider((slider) =>
-        slider
-          .setLimits(0, 10, 1)
-          .setValue(s.backupKeep)
-          .onChange(async (v) => {
-            s.backupKeep = v;
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName(t("settings_receipt_keep"))
-      .setDesc(t("settings_receipt_keep_desc"))
-      .addSlider((slider) =>
-        slider
-          .setLimits(10, 200, 10)
-          .setValue(s.receiptKeep)
-          .onChange(async (v) => {
-            s.receiptKeep = v;
-            await this.save();
-          }),
-      );
-  }
-
-  // ── Workspace status card ───────────────────────────────────────────────
-
-  private renderWorkspaceStatus(containerEl: HTMLElement): void {
-    const isReady = this.plugin.kernelService.isWorkspaceReady();
-
-    if (!isReady) {
-      const statusSetting = new Setting(containerEl)
-        .setName(t("workspace_status"))
-        .setDesc(t("workspace_not_ready"));
-      statusSetting.controlEl.createSpan({
-        cls: "tm-status-badge tm-status-warning",
-        text: t("workspace_not_ready"),
-      });
-      return;
-    }
-
-    try {
-      const model = this.plugin.kernelService.getResolvedModel();
-      const categories = model.categories || [];
-      const categoryCount = categories.filter((c) => !(c as { hidden?: boolean }).hidden).length;
-
-      const statusSetting = new Setting(containerEl)
-        .setName(t("workspace_status"))
-        .setDesc(t("workspace_categories_count", { count: categoryCount }));
-
-      const badgeContainer = statusSetting.controlEl.createDiv({ cls: "tm-status-badges" });
-      badgeContainer.createSpan({ cls: "tm-status-badge tm-status-ok", text: t("workspace_ready") });
-      badgeContainer.createSpan({
-        cls: "tm-status-badge tm-status-info",
-        text: t("workspace_contract_valid"),
-      });
-
-      new Setting(containerEl)
-        .setName(t("workspace_contract_doctor"))
-        .setDesc(t("workspace_contract_doctor_desc"))
-        .addButton((btn) =>
-          btn.setButtonText(t("workspace_contract_doctor")).onClick(() => {
-            try {
-              const kernel = getKernel();
-              const workspaceRoot = this.plugin.kernelService.getVaultPath();
-              const inspect = kernel.inspectContract?.(workspaceRoot);
-              if (!inspect) {
-                new Notice(t("workspace_contract_doctor_failed"));
-                return;
-              }
-              if (inspect.onDiskValid) {
-                new Notice(t("workspace_contract_doctor_ok"));
-              } else {
-                const ensured = kernel.ensureContract?.(workspaceRoot, {});
-                if (ensured?.onDiskValid) {
-                  new Notice(t("workspace_contract_doctor_fixed"));
-                  this.plugin.kernelService.invalidateCache();
-                  this.update();
-                } else {
-                  new Notice(`${t("workspace_contract_doctor_failed")}: ${inspect.errors?.[0] || ""}`);
-                }
-              }
-            } catch (err) {
-              new Notice(
-                `${t("workspace_contract_doctor_failed")}: ${err instanceof Error ? err.message : String(err)}`,
-              );
-            }
-          }),
-        )
-        .addButton((btn) =>
-          btn.setButtonText(t("workspace_contract_reseed")).setDestructive().onClick(() => {
-            new ConfirmModal(
-              this.app,
-              t("workspace_contract_reseed"),
-              t("workspace_contract_reseed_confirm"),
-              () => {
-                try {
-                  const result = reseedWorkspaceContract(
-                    getKernel(),
-                    this.plugin.kernelService.getVaultPath(),
-                  );
-                  if (result.ok) {
-                    new Notice(t("workspace_contract_reseed_ok"));
-                    this.plugin.kernelService.invalidateCache();
-                    this.update();
-                  } else {
-                    new Notice(`${t("workspace_contract_reseed_failed")}: ${result.error || ""}`);
-                  }
-                } catch (err) {
-                  new Notice(
-                    `${t("workspace_contract_reseed_failed")}: ${err instanceof Error ? err.message : String(err)}`,
-                  );
-                }
-              },
-            );
-          }),
-        );
-    } catch {
-      new Setting(containerEl)
-        .setName(t("workspace_status"))
-        .setDesc(t("workspace_no_categories"));
-    }
   }
 
   // ── Persistence ─────────────────────────────────────────────────────────

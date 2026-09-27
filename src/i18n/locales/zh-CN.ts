@@ -209,6 +209,7 @@ export const zhCN = {
 
   // ── Settings ──
   settings_workspace: "工作区与契约",
+  settings_workspace_status_desc: "当前 Vault 的 topmind 工作区状态与契约健康度",
   settings_stream: "动态",
   settings_ai: "AI 副驾与写回策略",
   settings_security: "安全与归档",

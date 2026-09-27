@@ -432,13 +432,13 @@ describe("Desktop-parity feed order + IME Enter guard", () => {
 
   test("isImeEnter blocks composing Enter and post-composition confirm", async () => {
     const { isImeEnter, bindImeEnterGuard } = await importShipped("utils.ts");
-    assert.equal(isImeEnter({ isComposing: true, keyCode: 13 }), true);
-    assert.equal(isImeEnter({ isComposing: false, keyCode: 229 }), true);
-    assert.equal(isImeEnter({ isComposing: false, keyCode: 13 }), false);
+    assert.equal(isImeEnter({ isComposing: true, key: "Enter" }), true);
+    assert.equal(isImeEnter({ isComposing: false, key: "Process" }), true);
+    assert.equal(isImeEnter({ isComposing: false, key: "Enter" }), false);
 
     const guard = { until: Date.now() + 50 };
-    assert.equal(isImeEnter({ isComposing: false, keyCode: 13 }, guard), true);
-    assert.equal(isImeEnter({ isComposing: false, keyCode: 13 }, { until: 0 }), false);
+    assert.equal(isImeEnter({ isComposing: false, key: "Enter" }, guard), true);
+    assert.equal(isImeEnter({ isComposing: false, key: "Enter" }, { until: 0 }), false);
 
     const handlers = {};
     const el = {
@@ -448,11 +448,11 @@ describe("Desktop-parity feed order + IME Enter guard", () => {
     };
     const g = bindImeEnterGuard(el);
     handlers.compositionstart();
-    assert.equal(isImeEnter({ isComposing: false, keyCode: 13 }, g), true);
+    assert.equal(isImeEnter({ isComposing: false, key: "Enter" }, g), true);
     handlers.compositionend();
-    assert.equal(isImeEnter({ isComposing: false, keyCode: 13 }, g), true);
+    assert.equal(isImeEnter({ isComposing: false, key: "Enter" }, g), true);
     g.until = 0;
-    assert.equal(isImeEnter({ isComposing: false, keyCode: 13 }, g), false);
+    assert.equal(isImeEnter({ isComposing: false, key: "Enter" }, g), false);
   });
 
   test("workbench + chat + capture all bind the IME guard", () => {

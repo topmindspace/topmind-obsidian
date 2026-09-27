@@ -161,7 +161,7 @@ export class StreamWorkbenchView extends ItemView {
       hour < 18 ? "stream_greet_afternoon" :
       "stream_greet_evening";
     heroHead.createDiv({ cls: "tm-wb-hero-title", text: t(greetKey) });
-    heroHead.createDiv({ cls: "tm-wb-hero-sub", text: t("stream_workbench_title") });
+    heroHead.createDiv({ cls: "tm-wb-hero-sub", text: t("stream_this_week") });
 
     const compose = hero.createDiv({ cls: "tm-wb-compose" });
     const inputWrap = compose.createDiv({ cls: "tm-input-wrap" });

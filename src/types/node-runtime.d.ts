@@ -24,8 +24,8 @@ interface NodeHash {
 }
 
 declare module "node:fs" {
-  export interface Dirent extends NodeDirent {}
-  export interface Stats extends NodeStats {}
+  export type Dirent = NodeDirent;
+  export type Stats = NodeStats;
   export function existsSync(path: string): boolean;
   export function readFileSync(path: string, encoding: "utf8" | "utf-8"): string;
   export function writeFileSync(path: string, data: string, encoding?: "utf8" | "utf-8"): void;
@@ -61,6 +61,6 @@ declare namespace NodeJS {
   }
 }
 
-declare var process: NodeJS.Process;
+declare const process: NodeJS.Process;
 
 declare function require(moduleName: string): unknown;

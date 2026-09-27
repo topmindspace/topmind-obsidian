@@ -433,7 +433,9 @@ export function splitStreamPreviewParts(md: string): {
 const IME_ENTER_GUARD_MS = 80;
 
 export function isImeEnter(e: KeyboardEvent, guard?: { until: number }): boolean {
-  if (e.isComposing || e.keyCode === 229) return true;
+  // keyCode 229 (IME processing) is deprecated — modern signal is isComposing,
+  // with "Process"/"Unidentified" covering Safari/Chrome CJK composition.
+  if (e.isComposing || e.key === "Process" || e.key === "Unidentified") return true;
   if (guard && Date.now() < guard.until) return true;
   return false;
 }

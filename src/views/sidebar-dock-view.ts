@@ -69,6 +69,12 @@ interface ChatMessage {
   } | null;
 }
 
+
+/** Runtime shape check for persisted goal payloads (no `as` on the return). */
+function isGoalLike(v: unknown): v is NonNullable<ChatMessage["goal"]> {
+  return !!v && typeof v === "object";
+}
+
 export class SidebarDockView extends ItemView {
   plugin: TopmindPlugin;
   private refreshTimer: number | null = null;
@@ -190,7 +196,7 @@ export class SidebarDockView extends ItemView {
     try {
       if (!fs.existsSync(this.chatGoalPath)) return null;
       const parsed: unknown = JSON.parse(fs.readFileSync(this.chatGoalPath, "utf-8"));
-      return parsed && typeof parsed === "object" ? parsed as ChatMessage["goal"] : null;
+      return isGoalLike(parsed) ? parsed : null;
     } catch {
       return null;
     }
@@ -267,7 +273,7 @@ export class SidebarDockView extends ItemView {
   private async renderInner(): Promise<void> {
     const { contentEl } = this;
     // Preserve unsent chat draft across settings-driven full re-renders.
-    const existingInput = contentEl.querySelector("textarea.tm-chat-input") as HTMLTextAreaElement | null;
+    const existingInput = contentEl.querySelector<HTMLTextAreaElement>("textarea.tm-chat-input");
     if (existingInput && existingInput.value) {
       this.pendingChatDraft = existingInput.value;
     }
@@ -491,7 +497,7 @@ export class SidebarDockView extends ItemView {
   private async renderActiveTabInner(): Promise<void> {
     if (!this.contentContainer) return;
     // Preserve unsent chat draft when re-rendering the active tab (e.g. thinking indicator).
-    const existingChatInput = this.contentContainer.querySelector("textarea.tm-chat-input") as HTMLTextAreaElement | null;
+    const existingChatInput = this.contentContainer.querySelector<HTMLTextAreaElement>("textarea.tm-chat-input");
     if (existingChatInput && existingChatInput.value && !this.pendingChatDraft) {
       this.pendingChatDraft = existingChatInput.value;
     }
@@ -1109,6 +1115,8 @@ export class SidebarDockView extends ItemView {
         attr: { title: t("chat_provider_select") },
       });
     }
+
+    switcherBar.createSpan({ cls: "tm-chat-switcher-sep", text: "·", attr: { "aria-hidden": "true" } });
 
     const modelSelect = switcherBar.createEl("select", {
       cls: "tm-chat-switcher-select tm-chat-model-select",

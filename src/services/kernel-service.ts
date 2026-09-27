@@ -883,6 +883,8 @@ export class KernelService {
     if (!aiProvider) {
       throw new Error(t("settings_ai_test_no_key"));
     }
+    // Capture for the generate closure — `let` narrowing does not survive capture.
+    const activeAi: AiProvider = aiProvider;
 
     const contextParts: string[] = [];
 
@@ -959,7 +961,7 @@ export class KernelService {
     const turn = await runWorkspaceChatTurn(kernel, this.getVaultPath(), {
       userMessage,
       history,
-      generate: (prompt, context) => aiProvider!.generate(prompt, context),
+      generate: (prompt, context) => activeAi.generate(prompt, context),
       locale: uiLocale,
       // omit writebackMode — runWorkspaceChatTurn reads topmind.yaml
       systemExtra: systemPrompt,

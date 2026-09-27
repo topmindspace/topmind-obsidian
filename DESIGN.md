@@ -542,12 +542,19 @@ System prompt 跟随 UI locale：
 
 ### 11.4 字体规范
 
+### 设置页版式（对齐 Obsidian 原生）
+
+- 分组标题 = `SettingDefinitionGroup.heading`（工作区与契约 / 动态 / AI 副驾与写回策略 / 安全与归档）
+- 每行是独立 `.setting-item`（info | control 两栏），**不要**把多行设置塞进同一个 Setting 行
+- 复杂面板（服务商密钥板）若必须多行，宿主加 `.tm-settings-host`（纵向 flex），嵌套行才能保持原生横排
+- 字号/颜色一律走 `--tm-*` 与 Obsidian 变量，禁止硬编码 px / hex
+
 所有字体大小使用 Obsidian CSS 变量（经 `--tm-type-*` 令牌派生），**禁止**硬编码 px：
 
 | 变量 | 用途 |
 |------|------|
-| `--tm-type-display` ← `--font-ui-medium * 1.55` | Hero 标题 |
-| `--tm-type-title` ← `--font-ui-medium` | 区块标题、空状态标题 |
+| `--tm-type-display` ← `--font-ui-medium * 1.7` | Hero 标题 |
+| `--tm-type-title` ← `--font-ui-medium * 1.05` | 区块标题、空状态标题 |
 | `--tm-type-body` ← `--font-ui-small` | 卡片正文、列表正文 |
 | `--tm-type-label` ← `--font-ui-small` | 按钮、标签、控件文字 |
 | `--tm-type-meta` ← `--font-ui-smaller` | 时间戳、徽章、辅助 |

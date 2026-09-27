@@ -211,6 +211,7 @@ export const enUS: typeof zhCN = {
 
   // ── Settings ──
   settings_workspace: "Workspace & Contract",
+  settings_workspace_status_desc: "topmind workspace readiness and contract health in this vault",
   settings_stream: "Stream",
   settings_ai: "AI Co-pilot & Save",
   settings_security: "Security & Archive",

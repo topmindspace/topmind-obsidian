@@ -200,6 +200,19 @@ Obsidian Vault (Plain Filesystem = Single Source of Truth)
 - **API Key Security**: API Keys are stored locally in the plugin's `data.json` and backed up to `.topmind/ai-keys-backup.json` (both plaintext — avoid shared vaults).
 - **Writeback Protection**: All AI-driven file changes pass through `writeback-engine` (`open`/`locked`). Backups/receipts only for locked overwrite and locked/core delete-archive — not every write.
 
+### Community scorecard disclosures (intentional)
+
+These capabilities are required by the product and scoped as tightly as we can:
+
+| Capability | Why | Scope |
+|---|---|---|
+| **Node `fs` outside the vault API** | Desktop-only plugin: Kernel workspace I/O, backups/receipts, Desktop key import | Vault workspace root + documented Desktop paths only; `isDesktopOnly: true` |
+| **Clipboard write** | Copy button on chat answers / stream cards | User-initiated copy only — never reads the clipboard in the background |
+| **Network (AI providers)** | Chat / suggestions / model list | `requestUrl` only (CSP-safe); provider endpoints you configure; no analytics |
+| **Base64 encode/decode** | Kernel payload plumbing | Local runtime only |
+
+`main.js` / `styles.css` release assets ship with GitHub artifact attestations and a reproducible build.
+
 ---
 
 ## Development & Building

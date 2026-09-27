@@ -102,18 +102,18 @@ describe("settings + chat wiring (static, shipped source)", () => {
     assert.match(src, /renderProviderBoard/);
   });
 
-  test("AI settings render via a declarative render row, not deprecated display()", () => {
-    // Obsidian 1.13+ skips display() and flags it. One SettingDefinitionRender
-    // rebuilds the imperative board (including the AI provider surface) on
-    // every pass so an update cannot leave that board torn down.
+  test("AI settings render via native groups / declarative rows, not deprecated display()", () => {
+    // Obsidian 1.13+ skips display() and flags it. Groups give each section a
+    // real heading; each item is its own Setting row (no one-row panel paint
+    // that squeezes nested .setting-item into a horizontal flex line).
     const raw = fs.readFileSync(path.join(srcDir, "settings", "settings-tab.ts"), "utf8");
     const src = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
     assert.match(src, /override getSettingDefinitions\s*\(\s*\)\s*:\s*SettingDefinitionItem\[\]/u);
     assert.doesNotMatch(src, /\bdisplay\s*\(\s*\)\s*:\s*void/u);
-    assert.match(src, /paintSettings\(setting\.settingEl\)/);
-    assert.match(src, /renderAiSection/);
+    assert.doesNotMatch(src, /paintSettings\(setting\.settingEl\)/);
+    assert.match(src, /type:\s*"group"/);
     assert.match(src, /renderProviderBoard/);
-    assert.match(src, /renderAiSection\(host\)/);
+    assert.match(src, /renderModelPicker/);
     // Credential board must expose key fields for the major providers.
     assert.match(src, /PROVIDER_KEY_FIELDS/);
     assert.match(src, /settings_ai_key|password/);
