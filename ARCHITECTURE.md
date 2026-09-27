@@ -242,7 +242,7 @@ interface AiProvider {
 // max_tokens 和 temperature 按 operation 类型动态调整（与 Desktop adapter 对齐）
 
 // resolveAiEndpoint(settings) — 解析当前生效的 provider + model + apiKey
-// 用于侧边栏/工具栏的模型徽章显示
+// 供 chat / ops 的 provider 解析；**不**做 chrome 模型徽章（切换面 = 对话 tab + 设置）
 ```
 
 ### 4.2.1 AI Chat (`KernelService.chat`)
@@ -266,7 +266,20 @@ interface AiProvider {
 → 写成功后 KernelService.notifyFilesChanged → vault.trigger("modify") 即时刷新
 → splitAssistantVisible：正文 = 结论；思考折进 reasoning
 → 侧栏 Markdown 渲染正文；`<details>` 折叠思考过程；工具时间线 + 步数进度
+→ 结果说明页脚（终态消息）：Verified / Assumed / Could not 三段 + `N done · M writes`；
+   Verified 只列真实路径回执芯片（可点击打开），不编造检查证据
 ```
+
+**对话控制流（Desktop 对齐，`sidebar-dock-view.ts`）**：
+
+| 方法 | 语义 |
+|------|------|
+| `pauseChat()` | `Esc` 或发送按钮（思考中）= **暂停**：abort 调用但 `pause=true`，保留已产出半成品 + 已完成修改 + **目标台账** |
+| `resumeChat(input?, redirect?)` | 暂停后 ▶ / `Enter` = **继续**：携带原目标 / 计划 / 未完成验收项 / 用户补充指示续跑 |
+| `abandonPausedChat()` | 真正放弃：清目标台账 → `stopChat()` |
+| `sendChatMessageText(text)` | 发送与续跑共用入口（`shouldAbort` 轮询 + `priorGoal`） |
+
+暂停 ≠ 停止：暂停可继续/放弃；停止（`stopChat`）为硬取消语义。未完成收尾走「任务未完成」而非假成功（结构化 goal chip 禁止 `[DONE]` 正则假成功）。
 
 **对齐 Desktop 的是行为契约**（唯一片段匹配 / 拒绝 / nearby 诊断 / 写闸 / `en*`→英文指令否则中文 / locked×mode 策略），不是 React UI。confirm 分级：内容编辑直接落盘，仅删/归档待确认；locked 可编辑（任务级首写快照）。
 
@@ -403,7 +416,7 @@ export class StreamWorkbenchView extends ItemView {
 
   async onOpen() {
     // 渲染：工具栏 + 极速输入框 + 周期本条目卡片流 + AI 涌现建议区
-    // 工具栏：AI 状态 + 模型徽章 + [侧边栏] [设置] [Inbox] [画像]
+    // 工具栏：标题 + 任务徽章 + [侧边栏] [设置] [新笔记] [画像]（icon-only；不复读 AI 状态/模型）
     // 监听 vault.on("modify" / "create") 事件 → 450ms 防抖刷新（仅刷新动态流）
     // AI 建议刷新仅在初始加载和用户显式操作时触发（避免频繁 AI 调用）
   }
@@ -427,14 +440,17 @@ export class StreamWorkbenchView extends ItemView {
 ```typescript
 export class SidebarDockView extends ItemView {
   // 标签式布局：对话 · 建议 · 清单 · 历史（动态在主区）
-  // 头部：AI 状态 + 模型徽章 + [⚙ 设置]
-  // 底部：[⚡记一下] [🔄整理] [📋清单] [🏷️分类] [👤整理我的情况] [🖥动态]
+  // 头部：AI 状态点 + 任务徽章 + [动态] [⚙ 设置]（无模型徽章）
+  // 底部 3 格：[⚡记一下] [⇩整理] [✨AI 菜单（待办/分类/记忆）]
   // 
-  // 对话标签（新增）：
+  // 对话标签（agent 脊）：
   //   - 上下文感知：自动注入近期动态 + 当前清单 + 用户画像
   //   - Markdown 渲染 AI 回复
-//   - 对话历史（持久化到 .topmind/chat-history.json，重载不丢失）
-//   - kernelService.chat(userMessage, history) → AI Provider
+  //   - 对话历史（持久化到 .topmind/chat-history.json，重载不丢失）
+  //   - kernelService.chat(userMessage, history) → AI Provider
+  //   - 暂停/继续（Desktop 对齐）：pauseChat（Esc / 发送按钮）· resumeChat（续跑
+  //     原目标 + 未完成验收项）· abandonPausedChat（真放弃，清目标台账）·
+  //     sendChatMessageText（发送/续跑共用入口）；暂停保留已完成修改 + 目标台账
   //
   // 事件驱动刷新：vault.on("modify" / "create") → 450ms 防抖
   // 路径过滤：isStreamOrTodoPath() 只关注动态目录 + memory/todo.md
@@ -521,7 +537,7 @@ interface TopmindSettings {
 
 > **快速进入设置**：侧边栏头部 ⚙ 按钮 / 动态页签工具栏 ⚙ 按钮 / Obsidian Settings → Community plugins → Topmind Stream
 >
-> **模型徽章**：侧边栏头部 + 动态页签工具栏实时显示当前 AI 服务商 + 模型（如 "DeepSeek · deepseek-chat"），通过 `kernelService.getActiveModelLabel()` 获取。
+> **模型徽章（已退役）**：侧栏头 / 工具栏**不**展示模型徽章（能力单家 · 对齐 Desktop）。模型唯一切换面 = 对话 tab 紧凑切换器 + 设置页（`kernelService.getActiveModelLabel()` 为遗留 API 面，当前无 chrome 调用方）。
 >
 > **模型选择**：只要配置了任意一个 AI 服务商，模型选择下拉框就会显示。解析顺序为 **官方 list-models > [models.dev](https://models.dev) 社区目录 > 精选默认**（解析/合并/缓存策略与 Desktop 共用 `lib/model-catalog.mjs`）。已配置 OpenAI 兼容 / Google / Ollama / Custom 时刷新打官方接口；Anthropic 无公开 list 端点，刷新打 models.dev。失败不把空列表或默认列表写成 live 缓存。下拉框旁可手填自定义模型 ID。auto 模式（服务商偏好留空）时模型选择仍可用。
 >

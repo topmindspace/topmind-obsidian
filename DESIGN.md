@@ -157,7 +157,7 @@
 
 ```text
 ┌─────────────────────────────────┐
-│  动态  设置                        │  ← 头部: 动态/设置（icon+文本；窄侧栏 @container 藏字）
+│  动态  设置                        │  ← 头部: 动态/设置（icon-first；label CSS 常藏）
 ├─────────────────────────────────┤
 │ 🤖│ 💡│ 📋│ 📜│  ← 标签栏 (4 标签: 对话|建议|清单|历史；动态流在主区)
 ├─────────────────────────────────┤
@@ -215,7 +215,7 @@
 - 对话历史（会话内保持 + 磁盘 `.topmind/chat-history.json`）
 - **会话压缩**（Desktop `ai-session-compact` 同一预算公式）：默认 `maxMessages 60 / keepRecent 24 / maxChars 240K`，按模型 `contextLimit` 经 `resolveChatCompactBudget` 动态缩放（Desktop `resolveCompactBudget` 同式）；最近全文，旧消息截断，保尾；agent prompt 同一预算
 - **思考过程**：运行中 live 折叠展示 reasoning；历史消息默认折叠
-- **停止**：工作中发送按钮变为停止；保留已产出半成品 + 已完成修改
+- **暂停 / 继续**（Desktop 对齐）：`Esc` 或发送按钮（方块图标）= **暂停**；保留已产出半成品 + 已完成修改 + **目标台账**（不丢）。暂停后发送按钮变 ▶ = **继续**（`resumeChat` 带原目标/未完成验收项续跑）；`abandonPausedChat` = 真正放弃（清台账）。暂停 ≠ 停止
 - `Enter` 发送，`Shift+Enter` 换行；**输入法选词回车不发送**
 - 清空对话按钮
 
@@ -234,23 +234,21 @@
 
 | 按钮 | 功能 | AI 条件 | 默认模式 |
 |------|------|---------|----------|
-| ⚡ | 记一下弹窗 | 无需 AI | icon-only |
-| ⇩ | 整理（reconcile + todo_maintain） | 无需 AI | icon-only |
-| ✨ | AI 操作菜单（润色 / 待办 / 记忆 / 分类） | 需要 AI | icon-only |
-| 👤 | 整理我的情况（force memory_organize） | 需要 AI | icon-only |
-| 👁 | 显示/隐藏操作标签 | — | toggle |
+| ⚡ | 记一下弹窗 | 无需 AI | icon + 文本标签 |
+| ⇩ | 整理（reconcile；`autoMaintainTodos` 开时附 todo_maintain） | 无需 AI | icon + 文本标签 |
+| ✨ | AI 操作菜单（待办 / 分类 / 记忆） | 需要 AI | icon + 文本标签 |
 
-AI 操作按钮仅在 AI 已配置时显示。工具栏为 icon-only（`title` tooltip）；侧栏头 labeled 按钮见 `.tm-sidebar-btn-labeled`。
+AI 操作按钮仅在 AI 已配置时显示（未配置点击跳设置）。底部 3 格带 `tm-sidebar-action-label` 文本（`@container` 窄栏藏字）；工具栏为 icon-only（`title` tooltip）；侧栏头 labeled 按钮见 `.tm-sidebar-btn-labeled`（label CSS 常藏）。
 
 ### 3.4 头部设计
 
 | 元素 | 功能 |
 |------|------|
 | 状态灯 + 文字 | AI 就绪 / 未配置（可点击快速测试） |
-| 🖥 动态按钮 | icon + 文本标签，打开/恢复动态页签（窄屏隐藏文本） |
-| ⚙ 设置按钮 | icon + 文本标签，一键跳转插件设置页（窄屏隐藏文本） |
+| 🖥 动态按钮 | icon-first，打开/恢复动态页签（`tm-sidebar-btn-labeled`，label CSS 常藏；`title`/`aria-label` 承载名称） |
+| ⚙ 设置按钮 | icon-first，一键跳转插件设置页（同上） |
 
-> **防溢出**：头部使用 `flex-wrap: nowrap` + `overflow: hidden`，窄屏（600px 以下）自动隐藏文本标签。**无模型徽章**（能力单家 · 对齐 Desktop）。
+> **防溢出**：头部使用 `flex-wrap: nowrap` + `overflow: hidden`；`.tm-sidebar-header .tm-sidebar-btn-label { display:none }` — 侧栏头 **icon-first**（label 常藏，非仅窄屏）。**无模型徽章**（能力单家 · 对齐 Desktop）。
 
 > **可恢复性**：侧边栏头部始终显示「打开动态」按钮，即使动态页签被关闭也能一键恢复。
 
@@ -348,7 +346,7 @@ AI 操作按钮仅在 AI 已配置时显示。工具栏为 icon-only（`title` t
 - **双源模型目录**：已配置密钥/端点时刷新走官方 list-models（OpenAI 兼容 `GET {base}/models`、Google `GET /v1beta/models`、Ollama 同形）；Anthropic 与未配置浏览走 [models.dev](https://models.dev) 社区目录；两者皆失败则保留精选默认。刷新强制绕过 TTL，失败不会把空列表或默认列表写成「已同步」。
 - **自定义模型输入**：在下拉框旁提供文本输入框，可直接输入任意模型 ID
 - **auto 模式**：服务商偏好留空时，自动选择第一个已配置的服务商，模型选择仍可用
-- **模型徽章**：侧边栏头部 + 动态工具栏实时显示当前 AI 服务商 + 模型
+- **模型徽章不进 chrome**（能力单家 · 对齐 Desktop）：侧栏头/工具栏**不展示**模型徽章；唯一切换面 = 对话 tab 紧凑切换器 + 设置页（见 §1.3）
 
 遵循用户概念 ≤5 原则，不暴露技术术语：
 
@@ -415,10 +413,12 @@ AI 对话自动注入以下上下文（无需用户手动选择）：
 
 ### 8.2 对话交互
 
-- 输入框：多行 textarea，`Enter` 发送，`Shift+Enter` 换行
+- 输入框：多行 textarea，`Enter` 发送，`Shift+Enter` 换行；**输入法选词回车不误发**
+- **暂停 / 继续**：`Esc`（思考中）或发送按钮 = 暂停；暂停后 ▶ = 继续（续跑原目标 + 未完成验收项），`abandonPausedChat` = 放弃。已完成修改与目标台账保留
 - AI 回复：Markdown 渲染（支持列表、代码块、加粗等）；可见正文只含结论
 - 思考过程：`<think>` / 思考围栏 / 未标注 CoT 折进默认折叠的「思考过程」
 - 思考状态：显示"思考中..."动画（生成中）
+- **结果说明页脚**：终态消息下 Verified / Assumed / Could not 三段 + `N done · M writes`；见 §8.1
 - 清空对话：✕ 按钮清空全部历史
 - 错误处理：失败时显示错误消息（不中断对话）
 
@@ -508,7 +508,7 @@ System prompt 跟随 UI locale：
 | **Primary** | `tm-submit-btn` / `tm-btn-primary` / `tm-btn-init-workspace` / `tm-btn-confirm` | 提交、确认执行、初始化 — **每区仅一个** | h36（compose 内 h32）· accent 填充 |
 | **Secondary** | `tm-btn-secondary` / `tm-btn-open` | 整理、全部确认、预览/拒绝、弹窗次操作 | h32（`tm-btn-sm` h28）· 描边 |
 | **Ghost tool** | `tm-btn-ghost` / `tm-toolbar-btn` / `tm-sidebar-icon-btn` | 工具栏/卡片工具，**icon-first** | 方形 h32/h28 · 透明底 |
-| **Labeled ghost** | `tm-toolbar-btn-labeled` / `tm-sidebar-btn-labeled` | 宽容器可选文字；侧栏头 CSS 藏字 | width:auto · 窄容器藏 label |
+| **Labeled ghost** | `tm-sidebar-btn-labeled` | 侧栏头 labeled 按钮（CSS 藏字，icon-first）；工具栏**不用** — 工具栏为 icon-only `tm-toolbar-btn` | width:auto · 侧栏头 label 常藏 |
 | **Chip / Segment** | `tm-feed-layout-btn`（外层 `tm-feed-layout-toggle`） | 列表/卡片、记忆分层筛选 | h24 · 分段控件 |
 | **Mini** | `tm-btn-mini` / `tm-card-action-btn` | 卡片内联操作 | 24 / 28 方 · tooltip |
 
@@ -561,5 +561,5 @@ System prompt 跟随 UI locale：
 - 状态灯标记 `aria-hidden`（装饰性元素）
 - 尊重 `prefers-reduced-motion`：禁用动画
 - icon-only 按钮必须有 `title` 属性提供 tooltip
-- 防溢出：工具栏 `flex-wrap: nowrap` + `overflow: hidden`；窄屏（600px 以下）自动隐藏文本标签只显示图标
+- 防溢出：工具栏 `flex-wrap: nowrap` + `overflow: hidden`；工具栏按钮 icon-only（`title` tooltip），侧栏头 label CSS 常藏（icon-first）
 - 焦点可见性：所有交互类有 `focus-visible` 样式（2px outline + 2px offset）

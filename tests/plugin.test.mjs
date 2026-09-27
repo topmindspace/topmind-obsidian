@@ -123,18 +123,15 @@ describe("Obsidian labeled-button chrome (shipped)", () => {
   const zh = fs.readFileSync(path.join(srcDir, "i18n", "locales", "zh-CN.ts"), "utf-8");
   const en = fs.readFileSync(path.join(srcDir, "i18n", "locales", "en-US.ts"), "utf-8");
 
-  test("labeled buttons keep width:auto; header is icon-first (labels CSS-hidden)", () => {
-    assert.match(css, /\.tm-toolbar-btn-labeled\s*\{[^}]*width:\s*auto/s);
+  test("labeled ghost is sidebar-only; toolbar is icon-only", () => {
+    // Toolbar renders `.tm-toolbar-btn` only (no labeled class in TS).
+    assert.match(css, /\.tm-toolbar-btn\b/);
+    assert.doesNotMatch(css, /\.tm-toolbar-btn-labeled/);
+    // Sidebar header keeps a labeled ghost (labels CSS-hidden in chrome).
     assert.match(css, /\.tm-sidebar-btn-labeled\s*\{[^}]*width:\s*auto/s);
-    const toolbarLabel = css.match(/\.tm-toolbar-btn-label\s*\{[^}]+\}/)?.[0] || "";
     const sidebarLabel = css.match(/\.tm-sidebar-btn-label\s*\{[^}]+\}/)?.[0] || "";
-    assert.match(toolbarLabel, /overflow:\s*visible/);
     assert.match(sidebarLabel, /overflow:\s*visible/);
-    assert.doesNotMatch(toolbarLabel, /display:\s*none/);
     assert.doesNotMatch(sidebarLabel, /display:\s*none/);
-    // Toolbar keeps labels visible at default width.
-    assert.match(css, /\.tm-toolbar\s*\{[^}]*overflow:\s*visible/s);
-    // Header is icon-first: labels are always CSS-hidden (aria-label/title carry names).
     assert.match(css, /\.tm-sidebar-header \.tm-sidebar-btn-label\s*\{[^}]*display:\s*none/s);
     assert.match(css, /\.tm-sidebar-header\s*\{[^}]*overflow:\s*hidden/s);
   });

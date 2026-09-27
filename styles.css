@@ -124,7 +124,6 @@
 .tm-btn-open,
 .tm-btn-dismiss,
 .tm-toolbar-btn,
-.tm-toolbar-btn-labeled,
 .tm-sidebar-icon-btn,
 .tm-sidebar-btn-labeled,
 .tm-sidebar-action-btn,
@@ -155,7 +154,6 @@
 .tm-btn-open svg,
 .tm-btn-dismiss svg,
 .tm-toolbar-btn svg,
-.tm-toolbar-btn-labeled svg,
 .tm-sidebar-icon-btn svg,
 .tm-sidebar-action-btn svg {
   width: var(--tm-icon);
@@ -252,19 +250,7 @@
   box-shadow: none;
 }
 
-/* Labeled ghost (optional wide-pane labels). Split per class so the
-   shipped width:auto contract matches the FIRST standalone block. */
-.tm-toolbar-btn-labeled {
-  width: auto;
-  min-width: var(--tm-btn-h);
-  padding: 0 10px;
-  border: none;
-  background: transparent;
-  background-color: transparent;
-  color: var(--tm-ink-soft);
-  box-shadow: none;
-}
-
+/* Labeled ghost — sidebar header only (toolbar is icon-only). */
 .tm-sidebar-btn-labeled {
   width: auto;
   min-width: var(--tm-btn-h);
@@ -276,7 +262,6 @@
   box-shadow: none;
 }
 
-.tm-toolbar-btn-labeled:hover,
 .tm-sidebar-btn-labeled:hover {
   background: var(--tm-state-hover);
   background-color: var(--tm-bg-hover);
@@ -284,15 +269,7 @@
   box-shadow: none;
 }
 
-/* Labeled-button contracts (shipped tests read the FIRST standalone block —
-   keep overflow:visible and never put display:none here). */
-.tm-toolbar-btn-label {
-  overflow: visible;
-  display: inline;
-  font-size: var(--tm-type-label);
-  font-weight: 550;
-  line-height: 1;
-}
+
 
 .tm-sidebar-btn-label {
   overflow: visible;
@@ -3036,14 +3013,6 @@ button.tm-suggestion-path:focus-visible {
    ═══════════════════════════════════════════════════════════════════════ */
 
 @container tm-workbench (max-width: 560px) {
-  .tm-toolbar-btn-label {
-    display: none;
-  }
-  .tm-toolbar-btn-labeled {
-    width: var(--tm-btn-h);
-    min-width: var(--tm-btn-h);
-    padding: 0;
-  }
   .tm-wb-shell {
     padding: 12px 12px 32px;
     gap: var(--tm-gap-md);
@@ -3087,7 +3056,6 @@ button.tm-suggestion-path:focus-visible {
    ═══════════════════════════════════════════════════════════════════════ */
 
 button.tm-toolbar-btn,
-button.tm-toolbar-btn-labeled,
 button.tm-btn-ghost,
 button.tm-btn-ghost.tm-btn-icon,
 button.tm-btn-ghost.tm-btn-sm,
@@ -3115,7 +3083,6 @@ button.tm-btn-polish {
 }
 
 button.tm-toolbar-btn:hover,
-button.tm-toolbar-btn-labeled:hover,
 button.tm-btn-ghost:hover,
 button.tm-btn-ghost.tm-btn-icon:hover,
 button.tm-btn-ghost.tm-btn-sm:hover,

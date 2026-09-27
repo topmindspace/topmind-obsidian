@@ -11,7 +11,7 @@ import type { App } from "obsidian";
 import { Notice, requestUrl, type Plugin, TFile } from "obsidian";
 import type { TopmindSettings, StreamPeriod, StreamEntry, SuggestionCard, TodoItem } from "../types";
 import type { AiProvider } from "../bridge/ai-provider";
-import { createAiProvider, resolveAiEndpoint } from "../bridge/ai-provider.ts";
+import { createAiProvider } from "../bridge/ai-provider.ts";
 import { createKernelContextFromApp, type KernelContext, getKernel } from "../bridge/kernel-loader.ts";
 import { getVaultBasePath, getEngineRoot } from "../bridge/vault-bridge.ts";
 import {
@@ -1063,17 +1063,6 @@ export class KernelService {
     } catch {
       return null;
     }
-  }
-
-  /**
-   * Get a display label for the currently active AI provider + model.
-   */
-  getActiveModelLabel(): string {
-    const { provider, model } = resolveAiEndpoint(this.settings);
-    if (provider === "none" || !model) return "";
-    const preset = AI_PROVIDER_PRESETS[provider];
-    const providerLabel = preset?.label || provider;
-    return `${providerLabel} · ${model}`;
   }
 
   // ── AI Availability ──────────────────────────────────────────────────
