@@ -535,7 +535,7 @@ interface TopmindSettings {
 3. 🤖 AI 副驾与写回策略（多服务商密钥 + 偏好选择 + 模型 + 从 Desktop 导入 + 测试连接 + 写回模式 + 自动建议/清单维护）
 4. 🛡️ 安全与归档（备份份数 + 回执份数）
 
-> **设置渲染（4.16.7+）**：`getSettingDefinitions()` 返回原生 `type: "group"`（工作区 / 动态 / AI / 安全）。简单项是声明式 `control`（toggle/dropdown/slider），复杂项是行级 `render`（工作区状态徽章、契约诊断、模型选择、服务商密钥板）。**禁止**再把整页画进单个 `Setting.settingEl`——外层 `.setting-item` 是横向 flex，嵌套行会被压成 CJK 竖排。
+> **设置渲染（4.16.8+）**：`display()` + `new Setting(this.containerEl)`，走 Obsidian 原生 `.setting-item` 布局（卡片 + info|control 横排）。`getSettingDefinitions()` 返回空数组以启用 `display()`。**禁止**把多行设置画进单个 `Setting.settingEl`——那是 flex 行，CJK 会被压成竖排。
 
 > **快速进入设置**：侧边栏头部 ⚙ 按钮 / 动态页签工具栏 ⚙ 按钮 / Obsidian Settings → Community plugins → Topmind Stream
 >

@@ -544,9 +544,11 @@ System prompt 跟随 UI locale：
 
 ### 设置页版式（对齐 Obsidian 原生）
 
-- 分组标题 = `SettingDefinitionGroup.heading`（工作区与契约 / 动态 / AI 副驾与写回策略 / 安全与归档）
-- 每行是独立 `.setting-item`（info | control 两栏），**不要**把多行设置塞进同一个 Setting 行
-- 复杂面板（服务商密钥板）若必须多行，宿主加 `.tm-settings-host`（纵向 flex），嵌套行才能保持原生横排
+- 渲染路径：`display()` + `new Setting(this.containerEl)` —— 让 Obsidian 自带的
+  `.setting-group` / `.setting-items` / `.setting-item` 样式生效（卡片 + info|control 两栏横排，
+  与 Settings → 编辑器 一致）
+- 分组标题 = `new Setting(host).setName(...).setHeading()`
+- **禁止**把多行设置塞进同一个 Setting 的 `settingEl`（那是 flex 行，会把中文压成竖排）
 - 字号/颜色一律走 `--tm-*` 与 Obsidian 变量，禁止硬编码 px / hex
 
 所有字体大小使用 Obsidian CSS 变量（经 `--tm-type-*` 令牌派生），**禁止**硬编码 px：

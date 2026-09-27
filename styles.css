@@ -65,11 +65,21 @@
      paper, chrome = secondary-alt. Themes retune all three. */
   --tm-bg-page: var(--background-secondary);
   --tm-bg-card: var(--background-primary);
+  --tm-bg-card-alt: var(--background-primary-alt, var(--background-secondary-alt));
   --tm-bg-chrome: var(--background-secondary-alt, var(--background-modifier-hover));
-  --tm-bg-soft: var(--background-modifier-form-field, var(--background-primary-alt, var(--background-secondary)));
-  --tm-bg-hover: var(--background-modifier-hover);
+  --tm-bg-soft: var(--interactive-normal, var(--background-modifier-form-field, var(--background-primary-alt)));
+  --tm-bg-hover: var(--interactive-hover, var(--background-modifier-hover));
+  --tm-bg-active: var(--interactive-active, var(--background-modifier-active-hover));
   --tm-line: var(--background-modifier-border);
   --tm-line-strong: var(--background-modifier-border-hover, var(--background-modifier-border));
+  --tm-control-bg: var(--interactive-normal);
+  --tm-control-bg-hover: var(--interactive-hover);
+  --tm-control-ink: var(--text-normal);
+  --tm-input-bg: var(--input-background, var(--background-primary));
+  --tm-input-line: var(--input-border, var(--background-modifier-border));
+  --tm-input-shadow: var(--input-shadow, 0 0 0 1px var(--background-modifier-border));
+  --tm-btn-radius: var(--button-radius, var(--tm-radius-ctl));
+  --tm-input-height: var(--input-height, 30px);
   --tm-ink: var(--text-normal);
   --tm-ink-soft: var(--text-muted);
   --tm-ink-faint: var(--text-faint);
@@ -138,7 +148,7 @@
    2. BUTTON SYSTEM — exclusive roles
    ═══════════════════════════════════════════════════════════════════════ */
 
-/* Shared control shell — every action button inherits this geometry */
+/* Shared control shell — Obsidian button geometry (input-height / button-radius) */
 .tm-submit-btn,
 .tm-btn-primary,
 .tm-btn-secondary,
@@ -154,10 +164,11 @@
 .tm-feed-layout-btn {
   box-sizing: border-box;
   font-family: var(--font-interface);
-  height: var(--tm-btn-h);
-  border-radius: var(--tm-radius-ctl);
+  height: var(--tm-input-height);
+  min-height: var(--tm-btn-h);
+  border-radius: var(--tm-btn-radius);
   font-size: var(--tm-type-label);
-  font-weight: 550;
+  font-weight: var(--input-font-weight, 500);
   line-height: 1;
   display: inline-flex;
   align-items: center;
@@ -168,6 +179,10 @@
   cursor: pointer;
   transition: var(--tm-transition-ui);
   flex-shrink: 0;
+  border: 1px solid transparent;
+  color: var(--tm-control-ink);
+  background-color: var(--tm-control-bg);
+  box-shadow: var(--tm-input-shadow);
 }
 
 .tm-submit-btn svg,
@@ -188,26 +203,26 @@
   stroke-width: 1.8;
 }
 
-/* ── Primary — accent fill. ONE per region. ── */
+/* ── Primary — native mod-cta. ONE per region. ── */
 .tm-submit-btn,
 .tm-btn-primary,
 .tm-btn-init-workspace,
 .tm-suggestion-actions .tm-btn-confirm {
   padding: 0 16px;
-  border: none;
-  background: var(--tm-accent);
+  border-color: transparent;
+  background-color: var(--interactive-accent);
   color: var(--text-on-accent);
-  font-weight: 650;
-  box-shadow: none;
+  font-weight: 600;
+  box-shadow: var(--tm-input-shadow);
 }
 
 .tm-submit-btn:hover:not(:disabled),
 .tm-btn-primary:hover:not(:disabled),
 .tm-btn-init-workspace:hover,
 .tm-suggestion-actions .tm-btn-confirm:hover:not(:disabled) {
-  filter: brightness(1.05);
-  background: var(--tm-accent);
+  background-color: var(--interactive-accent-hover);
   color: var(--text-on-accent);
+  filter: none;
   transform: none;
 }
 
@@ -215,7 +230,8 @@
 .tm-btn-primary:active:not(:disabled),
 .tm-btn-init-workspace:active {
   transform: none;
-  filter: brightness(0.98);
+  filter: none;
+  background-color: var(--interactive-accent-hover);
 }
 
 .tm-submit-btn:disabled,
@@ -226,22 +242,22 @@
   filter: none;
 }
 
-/* ── Secondary — hairline outline only. Never a gray fill. ── */
+/* ── Secondary — native default button (interactive-normal + hairline). ── */
 .tm-btn-secondary,
 .tm-suggestion-actions .tm-btn-open {
   border: 1px solid var(--tm-line);
-  background: transparent;
-  background-color: transparent;
-  color: var(--tm-ink-soft);
-  box-shadow: none;
+  background-color: var(--tm-control-bg);
+  color: var(--tm-control-ink);
+  box-shadow: var(--tm-input-shadow);
+  font-weight: 550;
 }
 
 .tm-btn-secondary:hover:not(:disabled),
 .tm-suggestion-actions .tm-btn-open:hover {
-  background: var(--tm-state-hover);
-  background-color: var(--tm-bg-hover);
+  background-color: var(--tm-control-bg-hover);
   border-color: var(--tm-line-strong);
   color: var(--tm-ink);
+  box-shadow: var(--tm-input-shadow);
 }
 
 .tm-btn-secondary:disabled {
@@ -427,15 +443,16 @@
 }
 
 .tm-feed-layout-btn[data-active="true"] {
-  background: var(--tm-bg-hover);
-  background-color: var(--tm-bg-hover);
-  color: var(--tm-ink);
+  background: var(--tm-accent-softer);
+  background-color: var(--tm-accent-softer);
+  color: var(--tm-accent-ink);
   box-shadow: none;
+  font-weight: 650;
 }
 
 .tm-feed-layout-btn:hover:not([data-active="true"]) {
   color: var(--tm-ink);
-  background: var(--tm-accent-softer);
+  background: var(--tm-bg-hover);
 }
 
 /* Solid submit sits a step taller inside compose / modal */
@@ -573,10 +590,11 @@
   display: flex;
   align-items: baseline;
   gap: var(--tm-gap-sm);
-  font-size: var(--tm-type-body);
+  font-size: var(--tm-type-title);
   font-weight: var(--font-semibold, 600);
   color: var(--tm-ink);
   min-width: 0;
+  line-height: var(--line-height-tight, 1.25);
 }
 
 .tm-section-title-text {
@@ -597,13 +615,27 @@ select.tm-tag-input,
   height: var(--tm-btn-h-sm);
   max-width: 160px;
   padding: 0 8px;
-  border-radius: var(--tm-radius-ctl);
-  border: 1px solid var(--tm-line);
-  background: var(--tm-bg-soft);
+  border-radius: var(--tm-btn-radius);
+  border: 1px solid var(--tm-input-line);
+  background: var(--tm-input-bg);
   color: var(--tm-ink);
   font-family: var(--font-interface);
   font-size: var(--tm-type-meta);
   font-weight: 550;
+  box-shadow: var(--tm-input-shadow);
+  transition: var(--tm-transition-ui);
+}
+
+.tm-period-select:hover,
+.tm-chat-switcher-select:hover,
+select.tm-tag-input:hover {
+  background: var(--tm-control-bg-hover);
+}
+
+.tm-period-select:focus,
+.tm-chat-switcher-select:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
 }
 
 /* Feed chrome (memory layer chips row) */
@@ -618,9 +650,10 @@ select.tm-tag-input,
   display: flex;
   align-items: center;
   gap: var(--tm-gap-md);
-  margin: 18px 2px 8px;
-  padding: 0;
+  margin: 22px 2px 10px;
+  padding: 0 2px 8px;
   border: 0;
+  border-bottom: 1px solid var(--tm-line);
   background: transparent;
 }
 
@@ -951,11 +984,11 @@ select.tm-tag-input,
 
 .tm-card-tag {
   font-size: var(--tm-type-meta);
-  font-weight: 700;
-  letter-spacing: 0.03em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--tm-ink-soft);
   background: var(--tm-bg-soft);
-  border: none;
+  border: 1px solid var(--tm-line);
   border-radius: var(--tm-radius-pill);
   padding: 3px 9px;
   white-space: nowrap;
@@ -1186,14 +1219,14 @@ select.tm-tag-input,
 .tm-wb-compose {
   padding: 16px 18px 14px;
   border-radius: var(--tm-radius-card);
-  border: 1px solid var(--tm-line);
+  border: 1px solid var(--tm-input-line);
   background: var(--tm-bg-card);
   box-shadow: var(--tm-shadow-card);
 }
 
 .tm-wb-compose:focus-within {
-  border-color: color-mix(in srgb, var(--tm-accent) 45%, var(--tm-line));
-  box-shadow: 0 0 0 3px var(--tm-accent-soft), var(--tm-shadow-pop);
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 3px var(--tm-accent-soft), var(--tm-shadow-card);
 }
 
 .tm-wb-compose .tm-input-field {
@@ -1295,18 +1328,18 @@ select.tm-tag-input,
     "time body";
   gap: 4px 8px;
   padding: 16px 18px;
-  margin-bottom: var(--tm-gap-sm);
+  margin-bottom: var(--tm-gap-md);
   border-radius: var(--tm-radius-card);
   border: 1px solid var(--tm-line);
   background: var(--tm-bg-card);
   box-shadow: var(--tm-shadow-card);
-  transition: border-color var(--tm-transition), box-shadow var(--tm-transition);
+  transition: border-color var(--tm-transition), box-shadow var(--tm-transition), background-color var(--tm-transition);
 }
 
 .tm-wb-card:hover {
   border-color: var(--tm-line-strong);
   background: var(--tm-bg-card);
-  box-shadow: var(--tm-shadow-card);
+  box-shadow: var(--tm-shadow-pop);
 }
 
 .tm-wb-card .tm-card-actions {
@@ -1351,12 +1384,18 @@ select.tm-tag-input,
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 12px 4px;
+  padding: 14px 10px;
   border: none;
   border-bottom: 1px solid var(--tm-line);
-  border-radius: 0;
+  border-radius: var(--tm-radius-sm);
   background: transparent;
   box-shadow: none;
+  transition: background-color var(--tm-transition);
+}
+
+.tm-wb-timeline[data-layout="list"] .tm-wb-card:hover,
+.tm-stream-container[data-layout="list"] .tm-wb-card:hover {
+  background: var(--tm-bg-card-alt);
 }
 
 .tm-wb-timeline[data-layout="list"] .tm-card-body p,
@@ -1447,18 +1486,19 @@ select.tm-tag-input,
 }
 
 .tm-memory-feed[data-layout="list"] .tm-memory-card {
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--tm-line);
-  border-radius: 0;
-  margin-bottom: 0;
-  padding: 12px 4px;
-  box-shadow: none;
+  background: var(--tm-bg-card);
+  border: 1px solid var(--tm-line);
+  border-radius: var(--tm-radius-card);
+  margin-bottom: var(--tm-gap-sm);
+  padding: 14px 16px;
+  box-shadow: var(--tm-shadow-card);
+  transition: border-color var(--tm-transition), box-shadow var(--tm-transition), background-color var(--tm-transition);
 }
 
 .tm-memory-feed[data-layout="list"] .tm-memory-card:hover {
-  box-shadow: none;
-  background: var(--tm-bg-hover);
+  border-color: var(--tm-line-strong);
+  box-shadow: var(--tm-shadow-pop);
+  background: var(--tm-bg-card);
 }
 
 .tm-memory-feed[data-layout="card"] .tm-memory-card {
@@ -1637,11 +1677,11 @@ select.tm-tag-input,
 .tm-tab-btn.tm-tab-active,
 .tm-tab-btn.active,
 .tm-tab-btn[data-active="true"] {
-  background: var(--nav-item-background-active, var(--background-modifier-hover));
-  background-color: var(--nav-item-background-active, var(--background-modifier-hover));
-  color: var(--nav-item-color-active, var(--text-normal));
+  background: var(--nav-item-background-active, var(--tm-accent-softer));
+  background-color: var(--nav-item-background-active, var(--tm-accent-softer));
+  color: var(--nav-item-color-active, var(--tm-accent-ink));
   box-shadow: none;
-  font-weight: var(--font-semibold, 600);
+  font-weight: var(--font-semibold, 650);
 }
 
 .tm-tab-icon {
@@ -2159,10 +2199,11 @@ button.tm-suggestion-path:focus-visible {
   display: flex;
   align-items: center;
   gap: var(--tm-gap-xs);
-  padding: 4px 6px;
-  border-radius: var(--tm-radius-ctl);
-  border: 1px solid var(--tm-line);
-  background: var(--tm-bg-soft);
+  padding: 5px 8px;
+  border-radius: var(--tm-btn-radius);
+  border: 1px solid var(--tm-input-line);
+  background: var(--tm-input-bg);
+  box-shadow: var(--tm-input-shadow);
   flex-wrap: wrap;
 }
 
@@ -3275,15 +3316,16 @@ button.tm-btn-polish:hover {
   overflow-y: auto;
 }
 
-/* User = compact right bubble. AI = full-width quiet panel. */
+/* User = compact right bubble. AI = full-width paper panel. */
 .tm-chat-message.tm-chat-user {
   align-self: flex-end;
   max-width: var(--tm-bubble-user-max);
   padding: var(--tm-gap-md) var(--tm-gap-lg);
   border-radius: var(--tm-radius-bubble) var(--tm-radius-bubble) var(--tm-radius-sm) var(--tm-radius-bubble);
-  border: none;
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 28%, transparent);
   background: var(--tm-accent-soft);
   color: var(--tm-ink);
+  box-shadow: var(--tm-shadow-card);
 }
 
 .tm-chat-message.tm-chat-ai {
@@ -3293,6 +3335,7 @@ button.tm-btn-polish:hover {
   border-radius: var(--tm-radius-card);
   border: 1px solid var(--tm-line);
   background: var(--tm-bg-card);
+  box-shadow: var(--tm-shadow-card);
 }
 
 .tm-chat-message.tm-chat-user .tm-chat-role {
@@ -3454,18 +3497,20 @@ button.tm-chat-msg-btn:hover {
   min-height: var(--tm-hit-lg);
   max-height: 120px;
   padding: var(--tm-gap-md) var(--tm-bubble-pad-y);
-  border-radius: var(--tm-input-radius);
-  border: 1px solid var(--tm-line);
-  background: var(--tm-bg-soft);
+  border-radius: var(--tm-btn-radius);
+  border: 1px solid var(--tm-input-line);
+  background: var(--tm-input-bg);
   color: var(--tm-ink);
   font-family: inherit;
   font-size: var(--tm-type-body);
   resize: none;
+  box-shadow: var(--tm-input-shadow);
+  transition: var(--tm-transition-ui), box-shadow var(--tm-transition);
 }
 
 .tm-chat-input:focus {
   outline: none;
-  border-color: color-mix(in srgb, var(--tm-accent) 45%, var(--tm-line));
+  border-color: var(--interactive-accent);
   box-shadow: 0 0 0 3px var(--tm-accent-soft);
 }
 
@@ -3509,6 +3554,9 @@ button.tm-chat-clear-btn:hover {
   font-weight: 550;
   cursor: pointer;
   transition: var(--tm-transition-ui), box-shadow 120ms ease, transform 120ms ease;
+}
+.tm-wb-quick-chip:active {
+  background: var(--tm-bg-active);
 }
 .tm-wb-quick-chip:hover {
   background: var(--tm-bg-hover);

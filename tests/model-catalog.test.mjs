@@ -109,9 +109,9 @@ describe("settings + chat wiring (static, shipped source)", () => {
     const raw = fs.readFileSync(path.join(srcDir, "settings", "settings-tab.ts"), "utf8");
     const src = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
     assert.match(src, /override getSettingDefinitions\s*\(\s*\)\s*:\s*SettingDefinitionItem\[\]/u);
-    assert.doesNotMatch(src, /\bdisplay\s*\(\s*\)\s*:\s*void/u);
+    assert.match(src, /override display\s*\(\s*\)\s*:\s*void/u);
     assert.doesNotMatch(src, /paintSettings\(setting\.settingEl\)/);
-    assert.match(src, /type:\s*"group"/);
+    assert.match(src, /override display\s*\(\s*\)\s*:\s*void/);
     assert.match(src, /renderProviderBoard/);
     assert.match(src, /renderModelPicker/);
     // Credential board must expose key fields for the major providers.
