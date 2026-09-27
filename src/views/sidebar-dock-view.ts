@@ -41,6 +41,8 @@ interface ChatMessage {
   reasoning?: string;
   /** Whether this message was an error */
   isError?: boolean;
+  /** Turn was paused (not abandoned) — keep goal ledger for Resume. */
+  paused?: boolean;
   /** The user message that triggered this AI response (for regenerate) */
   prompt?: string;
   /** Agent tool timeline for continuous-work visibility. */
@@ -67,14 +69,16 @@ export class SidebarDockView extends ItemView {
   private activeTab: SidebarTab = "chat";
   private chatHistory: ChatMessage[] = [];
   private chatThinking = false;
+  /** True while a turn is paused waiting for Resume / redirect / abandon. */
+  private chatPaused = false;
   /** Live agent progress line while a turn is working (step / tool / auto-continue). */
   private chatStatus = "";
   /** Turn start timestamp for elapsed progress. */
   private chatStartedAt = 0;
   /** Folded reasoning shown while the turn is still running. */
   private chatReasoningLive = "";
-  /** Set by the stop button; the in-flight turn checks it between steps. */
-  private chatAbort: { aborted: boolean } | null = null;
+  /** Set by pause/stop; the in-flight turn checks it between steps. */
+  private chatAbort: { aborted: boolean; pause?: boolean } | null = null;
   /** Set on user-initiated chat renders (tab open / send) — never on vault-event refreshes. */
   private chatFocusOnRender = false;
   /** Re-entrancy guard for suggestion generation (workbench parity). */
@@ -1023,26 +1027,36 @@ export class SidebarDockView extends ItemView {
     });
 
     // Enter to send, Shift+Enter for newline. IME confirm must not send.
-    // Esc while thinking → stop generation (Desktop / industry parity).
+    // Esc while thinking → PAUSE (Desktop parity: interrupt, not abandon).
     const chatIme = bindImeEnterGuard(input);
     input.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Escape" && this.chatThinking) {
         e.preventDefault();
-        this.stopChat();
+        this.pauseChat();
         return;
       }
       if (e.key === "Enter" && !e.shiftKey) {
         if (isImeEnter(e, chatIme)) return;
         e.preventDefault();
-        if (!this.chatThinking) this.sendChatMessage(input);
+        if (this.chatThinking) return;
+        if (this.chatPaused) {
+          void this.resumeChat(input);
+          return;
+        }
+        void this.sendChatMessage(input);
       }
     });
 
     if (this.chatThinking) {
       setIcon(sendBtn, "square");
-      sendBtn.setAttribute("aria-label", t("chat_stop"));
-      sendBtn.setAttribute("title", t("chat_stop"));
-      sendBtn.addEventListener("click", () => this.stopChat());
+      sendBtn.setAttribute("aria-label", t("chat_pause"));
+      sendBtn.setAttribute("title", t("chat_pause"));
+      sendBtn.addEventListener("click", () => this.pauseChat());
+    } else if (this.chatPaused) {
+      setIcon(sendBtn, "play");
+      sendBtn.setAttribute("aria-label", t("chat_resume"));
+      sendBtn.setAttribute("title", t("chat_resume"));
+      sendBtn.addEventListener("click", () => void this.resumeChat(input));
     } else {
       sendBtn.addEventListener("click", () => this.sendChatMessage(input));
     }
@@ -1422,10 +1436,65 @@ export class SidebarDockView extends ItemView {
   }
 
   private stopChat(): void {
-    if (this.chatAbort) this.chatAbort.aborted = true;
+    // Hard stop / abandon — honest cancelled semantics.
+    if (this.chatAbort) {
+      this.chatAbort.aborted = true;
+      this.chatAbort.pause = false;
+    }
+    this.chatPaused = false;
     this.chatStatus = t("chat_stopped");
     const statusEl = this.contentContainer?.querySelector("[data-chat-status]");
     if (statusEl) statusEl.textContent = this.chatStatus;
+  }
+
+  /**
+   * Pause ≠ abandon (Desktop parity): abort the call but keep the goal ledger
+   * so Resume can continue the open criteria. Finished edits stay on disk.
+   */
+  private pauseChat(): void {
+    if (!this.chatThinking) return;
+    if (this.chatAbort) {
+      this.chatAbort.aborted = true;
+      this.chatAbort.pause = true;
+    }
+    this.chatPaused = true;
+    this.chatStatus = t("chat_paused");
+    const statusEl = this.contentContainer?.querySelector("[data-chat-status]");
+    if (statusEl) statusEl.textContent = this.chatStatus;
+  }
+
+  /** Resume a paused turn. Optional `redirect` is folded into the continue prompt. */
+  private async resumeChat(input?: HTMLTextAreaElement | null, redirect?: string): Promise<void> {
+    if (!this.chatPaused || this.chatThinking) return;
+    this.chatPaused = false;
+    const goal = this.loadChatGoal();
+    const extra = String(redirect || input?.value || "").trim();
+    const parts = [
+      "[系统] 任务被用户暂停后恢复，可能尚未完成。请继续完成用户原始目标；若已完成则给出简短结论与路径回执。",
+    ];
+    if (goal?.goal) parts.push(`原目标：${goal.goal}`);
+    if (goal?.plan?.length) {
+      parts.push(`计划：\n${goal.plan.map((s, i) => `${i + 1}. ${s}`).join("\n")}`);
+    }
+    if (goal?.openCriteria?.length) {
+      parts.push(`未完成验收项：\n${goal.openCriteria.map((s) => `- ${s}`).join("\n")}`);
+    }
+    if (extra) parts.push(`用户补充指示：${extra}`);
+    parts.push("先更新/执行剩余步骤，再收尾。收尾时输出结论 + 路径回执 + [DONE]；若无法完成则 [INCOMPLETE 原因]。");
+    if (input) {
+      input.value = "";
+      input.setCssStyles({ height: "auto" });
+    }
+    await this.sendChatMessageText(parts.join("\n"));
+  }
+
+  /** Abandon a paused turn (true cancel). */
+  private abandonPausedChat(): void {
+    if (!this.chatPaused) return;
+    this.chatPaused = false;
+    this.saveChatGoal(null);
+    this.stopChat();
+    void this.renderActiveTab();
   }
 
   /** Update the working row in place so a progress tick does not rebuild the composer. */
@@ -1446,16 +1515,22 @@ export class SidebarDockView extends ItemView {
   private async sendChatMessage(input: HTMLTextAreaElement): Promise<void> {
     const text = input.value.trim();
     if (!text || this.chatThinking) return;
+    input.value = "";
+    input.setCssStyles({ height: "auto" });
+    await this.sendChatMessageText(text);
+  }
+
+  private async sendChatMessageText(text: string): Promise<void> {
+    if (!text || this.chatThinking) return;
 
     // Add user message
     this.chatHistory.push({ role: "user", content: text });
     this.saveChatHistory();
-    input.value = "";
-    input.setCssStyles({ height: "auto" });
 
-    const gate = { aborted: false };
+    const gate = { aborted: false, pause: false };
     this.chatAbort = gate;
     this.chatThinking = true;
+    this.chatPaused = false;
     this.chatStartedAt = Date.now();
     this.chatStatus = t("chat_working");
     this.chatReasoningLive = "";
@@ -1482,6 +1557,7 @@ export class SidebarDockView extends ItemView {
         steps: response.steps,
         autoContinues: response.autoContinues,
         stepLimitHit: response.stepLimitHit,
+        paused: gate.pause || undefined,
         goal: (response as { goal?: ChatMessage["goal"] }).goal || null,
       });
       this.saveChatGoal((response as { goal?: ChatMessage["goal"] }).goal || null);
@@ -1490,9 +1566,11 @@ export class SidebarDockView extends ItemView {
       if (gate.aborted || (err instanceof Error && err.name === "AbortError")) {
         this.chatHistory.push({
           role: "assistant",
-          content: t("chat_stopped"),
+          content: gate.pause ? t("chat_paused") : t("chat_stopped"),
           reasoning: this.chatReasoningLive || undefined,
           prompt: text,
+          paused: gate.pause || undefined,
+          goal: gate.pause ? this.loadChatGoal() : null,
         });
       } else {
         const msg = err instanceof Error ? err.message : String(err);
@@ -1507,7 +1585,8 @@ export class SidebarDockView extends ItemView {
     } finally {
       this.chatAbort = null;
       this.chatThinking = false;
-      this.chatStatus = "";
+      if (!gate.pause) this.chatPaused = false;
+      this.chatStatus = gate.pause ? t("chat_paused") : "";
       this.chatReasoningLive = "";
       this.chatFocusOnRender = true;
       void this.renderActiveTab();
