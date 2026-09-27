@@ -56,7 +56,8 @@ function replaceDir(src, dest) {
   cpSync(src, dest, { recursive: true });
 }
 
-const engineRoot = resolveEngineRoot();
+const vendoredOnly = process.argv.includes("--vendored");
+const engineRoot = vendoredOnly ? null : resolveEngineRoot();
 
 if (engineRoot) {
   const engineLib = path.join(engineRoot, "lib");

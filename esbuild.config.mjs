@@ -26,29 +26,22 @@ const outDir = path.join(root, "dist");
 
 /**
  * Resolve the topmind engine (Kernel lib/ + templates/).
- * Order: TOPMIND_SRC env → sibling ../topmind → ./.topmind-src (CI) →
- * vendored ./lib (community clean-build / offline).
+ * Production `npm run build` always bundles the committed ./lib unless
+ * TOPMIND_SRC is set explicitly. A sibling ../topmind must not change the
+ * bytes the community scanner compares to the Release asset.
  */
 function resolveEngineRoot() {
-  const candidates = [
-    process.env.TOPMIND_SRC,
-    path.resolve(root, "..", "topmind"),
-    path.resolve(root, ".topmind-src"),
-  ].filter(Boolean);
-  for (const dir of candidates) {
-    if (dir && existsSync(path.join(dir, "lib", "kernel-api.mjs"))) {
-      return { engineRoot: path.resolve(dir), source: "live" };
-    }
+  const explicit = process.env.TOPMIND_SRC;
+  if (explicit && existsSync(path.join(explicit, "lib", "kernel-api.mjs"))) {
+    return { engineRoot: path.resolve(explicit), source: "live" };
   }
   if (existsSync(path.join(root, "lib", "kernel-api.mjs"))) {
     return { engineRoot: root, source: "vendored" };
   }
   console.error(
     "[topmind-obsidian] Kernel source not found and lib/ is not vendored.\n" +
-      "  Set TOPMIND_SRC=/path/to/topmind  (repo containing lib/kernel-api.mjs)\n" +
-      "  or clone https://github.com/topmindspace/topmind as a sibling directory ../topmind\n" +
-      "  or place a checkout at ./.topmind-src (CI)\n" +
-      "  or commit a snapshot of lib/ (required for community clean-build).",
+      "  Commit a snapshot of lib/ (required so the community build matches the Release).\n" +
+      "  Set TOPMIND_SRC only when a test run must read a live engine.",
   );
   process.exit(1);
 }

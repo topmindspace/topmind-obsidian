@@ -161,6 +161,11 @@ describe("Obsidian plugin guidelines", () => {
     const buildAt = workflow.indexOf("Build vendored plugin");
     const engineAt = workflow.indexOf("Checkout topmind engine");
     assert.ok(buildAt > 0 && engineAt > buildAt, "npm run build must finish before the live engine checkout");
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+    assert.match(pkg.scripts.prebuild, /ensure-engine\.mjs --vendored/);
+    const esbuild = fs.readFileSync(path.join(root, "esbuild.config.mjs"), "utf8");
+    assert.match(esbuild, /TOPMIND_SRC/);
+    assert.doesNotMatch(esbuild, /path\.resolve\(root,\s*"\.\.",\s*"topmind"\)/);
     assert.doesNotMatch(
       workflow.slice(0, buildAt),
       /TOPMIND_SRC/,
