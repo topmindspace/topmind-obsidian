@@ -478,4 +478,9 @@ export const zhCN = {
   settings_ai_model_enter_custom: "输入自定义模型 ID",
   settings_ai_model_select_hint: "请选择 AI 模型",
   settings_ai_model_select_hint_desc: "已检测到 AI 密钥，但未选择模型。请在上方选择模型，或留空使用服务商默认模型。",
+  // ── Chat starters (empty-state, one-click fill) ──
+  chat_starter_digest: "总结我最近的动态",
+  chat_starter_todos: "看看还有什么待办",
+  chat_starter_profile: "更新我的情况",
+
 };

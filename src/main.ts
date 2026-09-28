@@ -157,6 +157,12 @@ export default class TopmindPlugin extends Plugin {
   private _unloaded = false;
 
   async onload(): Promise<void> {
+    // Two-layer style load:
+    // 1) token bootstrap — guarantees --tm-* exists even if styles.css is rejected
+    // 2) full styles.css read from disk and injected here — bypasses the host
+    //    plugin-CSS loader, which can silently drop or partially apply the sheet.
+    await this.injectStyles();
+
     try {
       await this._onload();
     } catch (err) {
@@ -166,6 +172,96 @@ export default class TopmindPlugin extends Plugin {
       new Notice(`[topmind] ${t("notice_load_failed")}: ${msg.slice(0, 200)}`, 10000);
       throw err; // Re-throw so Obsidian also reports it
     }
+  }
+
+  /**
+   * Style bootstrap. Obsidian's plugin-CSS pipeline has repeatedly failed to
+   * paint this UI (tokens empty, sheets dropped). We therefore:
+   *   1) inject tokens
+   *   2) inject the real styles.css from disk
+   *   3) inject a LAST-WORD layer using CSS system colors that cannot fail
+   *      to resolve, plus a visible load marker for diagnostics.
+   */
+  private async injectStyles(): Promise<void> {
+    const parts: string[] = [];
+
+    parts.push([
+      ":root{",
+      "--tm-radius-sm:4px;--tm-radius-ctl:8px;--tm-radius-card:12px;--tm-radius-pill:999px;",
+      "--tm-hit:32px;--tm-hit-sm:28px;--tm-hit-lg:36px;--tm-hit-xs:24px;",
+      "--tm-gap-xs:4px;--tm-gap-sm:6px;--tm-gap-md:8px;--tm-gap-lg:12px;",
+      "--tm-feed-max-width:46rem;",
+      "--tm-bg-page:var(--background-secondary);--tm-bg-card:var(--background-primary);",
+      "--tm-bg-soft:var(--interactive-normal);--tm-bg-hover:var(--background-modifier-hover);",
+      "--tm-bg-sunken:var(--background-primary-alt);",
+      "--tm-line:var(--background-modifier-border);",
+      "--tm-line-strong:var(--background-modifier-border-hover,var(--background-modifier-border));",
+      "--tm-ink:var(--text-normal);--tm-ink-soft:var(--text-muted);--tm-ink-faint:var(--text-faint);",
+      "--tm-accent:var(--interactive-accent);--tm-accent-ink:var(--text-accent,var(--interactive-accent));",
+      "--tm-accent-soft:var(--nav-item-background-active,var(--background-modifier-hover));",
+      "--tm-accent-softer:var(--nav-item-background-active,var(--background-modifier-hover));",
+      "--tm-on-surface:var(--text-normal);--tm-on-surface-var:var(--text-muted);",
+      "--tm-state-hover:var(--background-modifier-hover);",
+      "--tm-shadow-card:var(--shadow-xs,none);--tm-elev-1:var(--shadow-xs,none);--tm-input-shadow:var(--input-shadow,none);",
+      "--tm-type-display:var(--font-ui-large);--tm-type-title:var(--font-ui-medium);",
+      "--tm-type-body:var(--font-ui-small);--tm-type-label:var(--font-ui-small);--tm-type-meta:var(--font-ui-smaller);",
+      "--tm-lh-body:var(--line-height-normal,1.5);--tm-lh-tight:var(--line-height-tight,1.25);",
+      "--tm-transition:120ms ease",
+      "}",
+    ].join(""));
+
+    const dir = this.manifest.dir;
+    let loadedFromDisk = false;
+    if (dir) {
+      try {
+        const raw = await this.app.vault.adapter.read(`${dir}/styles.css`);
+        if (raw && raw.length > 100) {
+          parts.push(raw);
+          loadedFromDisk = true;
+        }
+      } catch (err) {
+        console.error("[topmind] styles.css read failed:", err);
+      }
+    }
+
+    // LAST WORD — leaf-scoped + !important so host-loaded styles.css cannot
+    // overwrite us. Use native Obsidian vars (proven working via mod-cta).
+    // System colors were only for diagnosis; now we paint with the theme.
+    parts.push([
+      ".workspace-leaf-content .tm-page,.workspace-leaf-content .tm-wb-shell{box-sizing:border-box;width:100%;max-width:48rem;margin:0 auto;padding:16px clamp(18px,3vw,36px) 32px;display:flex;flex-direction:column;gap:10px}",
+      ".workspace-leaf-content .tm-wb-hero,.workspace-leaf-content .tm-wb-section{gap:8px;margin:0}",
+      ".workspace-leaf-content .tm-wb-hero-title{display:flex;align-items:baseline;gap:8px!important;flex-wrap:wrap;font-size:var(--font-ui-medium)!important;font-weight:600!important}",
+      ".workspace-leaf-content .tm-wb-hero-title .tm-section-controls{margin-left:auto;display:flex;align-items:center;gap:6px}",
+      ".workspace-leaf-content .tm-wb-compose{display:flex;flex-direction:column!important;background:var(--background-primary-alt)!important;border:1px solid var(--background-modifier-border)!important;border-radius:12px!important;padding:12px 14px 10px!important;box-shadow:none!important;gap:6px!important}",
+      ".workspace-leaf-content .tm-wb-compose .tm-input-field{min-height:44px!important;max-height:160px!important;padding:8px 10px!important}",
+      ".workspace-leaf-content .tm-wb-compose-foot{margin-top:0!important;padding-top:4px!important;border-top:none!important;display:flex;align-items:center;gap:8px;flex-wrap:nowrap}",
+      ".workspace-leaf-content .tm-wb-card,.workspace-leaf-content .tm-card,.workspace-leaf-content .tm-memory-card{background:var(--background-primary)!important;border:1px solid var(--background-modifier-border)!important;border-radius:10px!important;padding:12px 14px!important;margin:0 0 8px!important;box-shadow:0 1px 2px rgba(0,0,0,.04)!important;display:block!important}",
+      ".workspace-leaf-content .tm-wb-card:hover,.workspace-leaf-content .tm-card:hover{background:var(--background-primary)!important;border-color:var(--background-modifier-border-hover,var(--background-modifier-border))!important;box-shadow:0 2px 8px rgba(0,0,0,.06)!important}",
+      ".workspace-leaf-content .tm-card-header.tm-card-meta{display:flex;align-items:center;justify-content:space-between;gap:8px!important;min-height:22px!important;margin:0 0 4px!important;padding:0!important}",
+      ".workspace-leaf-content .tm-card-time,.workspace-leaf-content .tm-day-count{font-size:var(--font-ui-smaller)!important;color:var(--text-faint);flex-shrink:0}",
+      ".workspace-leaf-content .tm-card-actions{margin-left:auto!important;opacity:0;transition:opacity .12s ease;display:flex;gap:2px}",
+      ".workspace-leaf-content .tm-card:hover .tm-card-actions{opacity:1}",
+      ".workspace-leaf-content .tm-card-body{font-size:var(--font-ui-small)!important;line-height:var(--line-height-normal,1.5)!important;color:var(--text-normal)}",
+      ".workspace-leaf-content .tm-day-group{display:flex;flex-direction:column;gap:0!important;margin:0 0 18px!important;background:transparent!important;border:0!important;padding:0!important}",
+      ".workspace-leaf-content .tm-day-label{font-size:var(--font-ui-medium)!important;font-weight:600!important}",
+      ".workspace-leaf-content .tm-chat-input-area{flex-direction:column!important;gap:6px!important}",
+      ".workspace-leaf-content .tm-chat-input-foot{display:flex!important;align-items:center;gap:6px}",
+      ".workspace-leaf-content .tm-chat-input-foot .mod-cta{margin-left:auto!important;width:28px!important;height:28px!important;min-width:28px!important;padding:0!important;border-radius:8px!important}",
+      ".workspace-leaf-content .tm-sidebar-header-min{min-height:0!important;padding:2px 8px!important;border-bottom:none!important}",
+      ".workspace-leaf-content .tm-footer-status{width:18px!important;height:18px!important;border-radius:50%!important;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}",
+      ".workspace-leaf-content .tm-footer-status .tm-status-dot{width:7px!important;height:7px!important}",
+      ".workspace-leaf-content .tm-chat-input-foot .tm-header-model{margin-left:2px!important}",
+      ".workspace-leaf-content .tm-chat-input-foot .tm-header-model-select{max-width:96px!important;height:22px!important;font-size:var(--font-ui-smaller)!important}",
+      ".workspace-leaf-content .tm-feed-chrome{gap:6px!important;margin:8px 0 16px!important;flex-wrap:wrap}",
+      ".workspace-leaf-content button.tm-feed-layout-btn[data-active=true]{background:var(--nav-item-background-active,var(--background-modifier-hover))!important;color:var(--text-normal)!important}",
+    ].join("\n"));
+
+    const style = document.createElement("style");
+    style.id = "topmind-stream-style";
+    style.textContent = parts.join("\n");
+    document.head.appendChild(style);
+    this.register(() => style.remove());
+    console.info(`[topmind] styles injected (fromDisk=${loadedFromDisk}, parts=${parts.length}, bytes=${style.textContent.length})`);
   }
 
   private async _onload(): Promise<void> {
@@ -198,8 +294,12 @@ export default class TopmindPlugin extends Plugin {
     );
 
     // ── Ribbon icon: quick capture (pen) ──
+    // Activity bar order: 记一下 (capture) on top, 动态 (workbench) below it.
     this.addRibbonIcon("pencil", t("quick_capture_title"), () => {
       this.openQuickCapture();
+    });
+    this.addRibbonIcon("waves", t("sidebar_open_workbench"), () => {
+      void this.openWorkbench();
     });
 
     // ── Commands ──

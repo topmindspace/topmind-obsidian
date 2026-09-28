@@ -480,4 +480,9 @@ export const enUS: typeof zhCN = {
   settings_ai_model_enter_custom: "Enter custom model ID",
   settings_ai_model_select_hint: "Please select an AI model",
   settings_ai_model_select_hint_desc: "An API key was detected but no model is selected. Please choose a model above, or leave empty to use the provider default.",
+  // ── Chat starters (empty-state, one-click fill) ──
+  chat_starter_digest: "Summarize my recent stream",
+  chat_starter_todos: "What is still on my list",
+  chat_starter_profile: "Update my profile",
+
 };

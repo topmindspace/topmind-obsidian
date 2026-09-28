@@ -296,7 +296,6 @@ export class SidebarDockView extends ItemView {
     await this.renderActiveTab();
 
     // ── Bottom Quick Actions ──
-    this.renderBottomActions(contentEl);
   }
 
   /** Refresh only the active tab content (lighter than full render) */
@@ -316,58 +315,11 @@ export class SidebarDockView extends ItemView {
   // ── Header ─────────────────────────────────────────────────────────────
 
   private renderHeader(container: HTMLElement): void {
-    const header = container.createDiv({ cls: "tm-sidebar-header" });
-
-    // Compact AI status chip — click = quick test / open settings. No model here:
-    // model lives in the chat switcher + settings + Obsidian status bar.
-    const aiReady = hasConfiguredProvider(this.plugin.settings.ai);
-    const statusDiv = header.createDiv({ cls: "tm-sidebar-status tm-sidebar-status-compact" });
-    statusDiv.setAttribute("role", "button");
-    statusDiv.setAttribute("tabindex", "0");
-    statusDiv.setAttribute("title", aiReady ? t("settings_ai_quick_test") : t("chat_configure_ai"));
-    const dot = statusDiv.createSpan({ cls: `tm-status-dot ${aiReady ? "tm-dot-ok" : "tm-dot-off"}` });
-    dot.setAttribute("aria-hidden", "true");
-    statusDiv.createSpan({
-      text: aiReady ? t("sidebar_ai_ready") : t("sidebar_ai_off"),
-      cls: "tm-status-label",
-    });
-    statusDiv.addEventListener("click", () => {
-      if (aiReady) void this.runAiQuickTest(statusDiv);
-      else this.openSettings();
-    });
-    statusDiv.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        statusDiv.click();
-      }
-    });
-
-    // Task progress badge (updated by subscribe)
+    // Header is now minimal: task badge only. AI status + model live on the
+    // chat input foot (with send), per IA — one control row, no header clutter.
+    const header = container.createDiv({ cls: "tm-sidebar-header tm-sidebar-header-min" });
     const taskBadge = header.createDiv({ cls: "tm-task-badge tm-task-badge-hidden" });
     taskBadge.setAttribute("data-header-badge", "true");
-
-    // Icon-only actions
-    const headerActions = header.createDiv({ cls: "tm-sidebar-header-actions" });
-
-    const workbenchBtn = headerActions.createEl("button", {
-      cls: "tm-sidebar-icon-btn tm-sidebar-btn-labeled",
-    });
-    setIcon(workbenchBtn, "waves");
-    workbenchBtn.createSpan({ text: t("sidebar_btn_workbench"), cls: "tm-sidebar-btn-label" });
-    workbenchBtn.setAttribute("aria-label", t("sidebar_open_workbench"));
-    workbenchBtn.setAttribute("title", t("sidebar_open_workbench"));
-    workbenchBtn.addEventListener("click", () => {
-      void this.openWorkbench();
-    });
-
-    const settingsBtn = headerActions.createEl("button", {
-      cls: "tm-sidebar-icon-btn tm-sidebar-btn-labeled",
-    });
-    setIcon(settingsBtn, "settings");
-    settingsBtn.createSpan({ text: t("sidebar_open_settings"), cls: "tm-sidebar-btn-label" });
-    settingsBtn.setAttribute("aria-label", t("sidebar_open_settings"));
-    settingsBtn.setAttribute("title", t("sidebar_open_settings"));
-    settingsBtn.addEventListener("click", () => this.openSettings());
   }
 
   /** Open plugin settings tab */
@@ -546,7 +498,7 @@ export class SidebarDockView extends ItemView {
     }
 
     const openFileBtn = openFileBar.createEl("button", {
-      cls: "tm-btn-ghost tm-btn-icon tm-btn-sm",
+      cls: "tm-btn-ghost tm-btn-icon tm-btn-sm clickable-icon",
     });
     setIcon(openFileBtn, "file-text");
     openFileBtn.setAttribute("aria-label", t("todo_open_file"));
@@ -773,7 +725,9 @@ export class SidebarDockView extends ItemView {
           const emptyHint = this.plugin.settings.autoSuggest
             ? t("suggestions_empty_hint")
             : t("suggestions_disabled_hint");
-          this.renderEmptyState(container, emptyTitle, emptyHint, "lightbulb");
+          this.renderEmptyState(container, emptyTitle, emptyHint, "lightbulb", this.plugin.settings.autoSuggest
+            ? { label: t("sidebar_op_suggestions"), onClick: () => { void this.renderSuggestionsTab(container, { force: true }); } }
+            : undefined);
         }
         return;
       }
@@ -861,7 +815,7 @@ export class SidebarDockView extends ItemView {
     // 2. AI operations dropdown button (if AI configured)
     if (hasConfiguredProvider(this.plugin.settings.ai)) {
       const aiOpsBtn = refreshBar.createEl("button", {
-        cls: "tm-btn-ghost tm-btn-icon tm-btn-sm",
+        cls: "tm-btn-ghost tm-btn-icon tm-btn-sm clickable-icon",
       });
       setIcon(aiOpsBtn, "sparkles");
       aiOpsBtn.setAttribute("aria-label", t("sidebar_op_menu"));
@@ -897,7 +851,7 @@ export class SidebarDockView extends ItemView {
 
     // 3. Force-refresh button
     const refreshBtn = refreshBar.createEl("button", {
-      cls: "tm-btn-ghost tm-btn-icon tm-btn-sm",
+      cls: "tm-btn-ghost tm-btn-icon tm-btn-sm clickable-icon",
     });
     setIcon(refreshBtn, "refresh-cw");
     refreshBtn.setAttribute("aria-label", t("cmd_refresh_suggestions"));
@@ -929,7 +883,7 @@ export class SidebarDockView extends ItemView {
       // Add actionable configure button
       const actionDiv = container.createDiv({ cls: "tm-empty-action" });
       const configureBtn = actionDiv.createEl("button", {
-        cls: "tm-btn-init-workspace",
+        cls: "tm-btn-init-workspace mod-cta",
         text: t("empty_action_configure"),
       });
       configureBtn.addEventListener("click", () => this.openSettings());
@@ -939,7 +893,8 @@ export class SidebarDockView extends ItemView {
     container.addClass("tm-chat-container");
 
     // ── Model switcher bar ──
-    this.renderChatModelSwitcher(container);
+    // ── Context bar (UI/UX 2.0 §31): make the workspace context explicit ──
+    void this.renderChatContextBar(container);
 
     // Chat messages area
     const messagesEl = container.createDiv({ cls: "tm-chat-messages" });
@@ -950,6 +905,27 @@ export class SidebarDockView extends ItemView {
       setIcon(chatIcon, "bot");
       emptyDiv.createDiv({ text: t("chat_empty"), cls: "tm-chat-empty-title" });
       emptyDiv.createDiv({ text: t("chat_empty_hint"), cls: "tm-chat-empty-hint" });
+      // Starter prompts — click fills the composer (Quiet UI: one clear next step).
+      const starters = emptyDiv.createDiv({ cls: "tm-chat-starters" });
+      for (const prompt of [
+        t("chat_starter_digest"),
+        t("chat_starter_todos"),
+        t("chat_starter_profile"),
+      ]) {
+        const chip = starters.createEl("button", {
+          text: prompt,
+          cls: "tm-chat-starter-chip",
+          attr: { type: "button" },
+        });
+        chip.addEventListener("click", () => {
+          const input = container.querySelector<HTMLTextAreaElement>("textarea.tm-chat-input");
+          if (input) {
+            input.value = prompt;
+            input.focus();
+            input.dispatchEvent(new Event("input"));
+          }
+        });
+      }
     } else {
       for (const msg of this.chatHistory) {
         this.renderChatMessage(messagesEl, msg);
@@ -971,8 +947,8 @@ export class SidebarDockView extends ItemView {
         attr: { "data-chat-status": "true" },
       });
       if (this.chatReasoningLive.trim()) {
+        // Progressive disclosure (UI/UX 2.0 §38): thinking/trace stays folded.
         const fold = thinkingEl.createEl("details", { cls: "tm-chat-reasoning" });
-        fold.setAttribute("open", "true");
         const summary = fold.createEl("summary", { cls: "tm-chat-reasoning-summary" });
         summary.setAttribute("title", t("chat_reasoning_show"));
         const reasonIcon = summary.createSpan({ cls: "tm-chat-reasoning-icon" });
@@ -992,7 +968,7 @@ export class SidebarDockView extends ItemView {
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
-    // Chat input area
+    // Chat input area — input on top, foot row below (send/clear right).
     const inputArea = container.createDiv({ cls: "tm-chat-input-area" });
     const input = inputArea.createEl("textarea", {
       cls: "tm-chat-input",
@@ -1009,18 +985,16 @@ export class SidebarDockView extends ItemView {
       input.setCssStyles({ height: `${Math.min(input.scrollHeight, 100)}px` });
     }
 
-    // Send button (icon-only)
-    const sendBtn = inputArea.createEl("button", {
-      cls: "tm-btn-primary tm-btn-icon",
-    });
-    setIcon(sendBtn, "send");
-    sendBtn.setAttribute("aria-label", t("chat_send"));
-    sendBtn.setAttribute("title", t("chat_send"));
+    const inputFoot = inputArea.createDiv({ cls: "tm-chat-input-foot" });
 
-    // Clear button (only if history exists)
+    // Left cluster: AI status dot (no words) + provider/model
+    this.renderFooterStatus(inputFoot);
+    this.renderHeaderModelChip(inputFoot);
+
+    // Clear (quiet, only with history)
     if (this.chatHistory.length > 0) {
-      const clearBtn = inputArea.createEl("button", {
-        cls: "tm-chat-clear-btn",
+      const clearBtn = inputFoot.createEl("button", {
+        cls: "tm-chat-clear-btn clickable-icon",
       });
       setIcon(clearBtn, "x");
       clearBtn.setAttribute("aria-label", t("chat_clear"));
@@ -1031,6 +1005,14 @@ export class SidebarDockView extends ItemView {
         void this.renderActiveTab();
       });
     }
+
+    // Send — far right
+    const sendBtn = inputFoot.createEl("button", {
+      cls: "tm-btn-primary tm-btn-icon mod-cta",
+    });
+    setIcon(sendBtn, "send");
+    sendBtn.setAttribute("aria-label", t("chat_send"));
+    sendBtn.setAttribute("title", t("chat_send"));
 
     // Auto-grow textarea
     input.addEventListener("input", () => {
@@ -1084,78 +1066,127 @@ export class SidebarDockView extends ItemView {
     }
   }
 
-  /** Render the model/provider switcher bar above chat messages */
-  private renderChatModelSwitcher(container: HTMLElement): void {
-    const switcherBar = container.createDiv({ cls: "tm-chat-model-switcher" });
+  /** Quiet context strip — what the agent can see right now (UI/UX 2.0 §31). */
+  private async renderChatContextBar(container: HTMLElement): Promise<void> {
+    const bar = container.createDiv({ cls: "tm-chat-context-bar", attr: { role: "status" } });
+    bar.createSpan({ text: t("chat_context_label"), cls: "tm-chat-context-label" });
 
+    const sources: string[] = [];
+    try {
+      const ctx = await this.plugin.kernelService.getStreamContext();
+      if (ctx.current) {
+        const { entries } = await this.plugin.kernelService.readPeriodNoteAsync(ctx.current.relPath);
+        if (entries.length > 0) {
+          sources.push(t("chat_context_stream"));
+        }
+      }
+    } catch {
+      /* stream unavailable */
+    }
+    try {
+      const active = this.plugin.kernelService.readTodos().filter((todo) => !todo.done);
+      if (active.length > 0) {
+        sources.push(t("chat_context_todos"));
+      }
+    } catch {
+      /* todos unavailable */
+    }
+    try {
+      const health = this.plugin.kernelService.profileHealth?.();
+      if (health && (health.activeCount || 0) > 0) {
+        sources.push(t("chat_context_profile"));
+      }
+    } catch {
+      /* profile unavailable */
+    }
+
+    if (sources.length === 0) {
+      bar.createSpan({ text: t("chat_context_empty"), cls: "tm-chat-context-empty" });
+      return;
+    }
+    for (const label of sources) {
+      bar.createSpan({ text: label, cls: "tm-chip tm-chat-context-chip" });
+    }
+  }
+
+  /** Status dot only (no label). Click = quick test / settings. */
+  private renderFooterStatus(container: HTMLElement): void {
+    const aiReady = hasConfiguredProvider(this.plugin.settings.ai);
+    const statusDiv = container.createDiv({ cls: "tm-footer-status" });
+    statusDiv.setAttribute("role", "button");
+    statusDiv.setAttribute("tabindex", "0");
+    statusDiv.setAttribute("aria-label", aiReady ? t("sidebar_ai_ready") : t("sidebar_ai_off"));
+    statusDiv.setAttribute("title", aiReady ? t("settings_ai_quick_test") : t("chat_configure_ai"));
+    const dot = statusDiv.createSpan({ cls: `tm-status-dot ${aiReady ? "tm-dot-ok" : "tm-dot-off"}` });
+    dot.setAttribute("aria-hidden", "true");
+    statusDiv.addEventListener("click", () => {
+      if (aiReady) void this.runAiQuickTest(statusDiv);
+      else this.openSettings();
+    });
+    statusDiv.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        statusDiv.click();
+      }
+    });
+  }
+
+  /** Compact provider·model control in the dock header (one row, no extra chrome). */
+  private renderHeaderModelChip(container: HTMLElement): void {
     const providers = this.plugin.kernelService.getConfiguredProviders();
     const activeProvider =
       this.chatProviderOverride || this.plugin.settings.ai.sourcePreference || providers[0]?.id || "";
+    const wrap = container.createDiv({ cls: "tm-header-model" });
+    wrap.setAttribute("title", t("chat_model_select"));
 
+    const modelSelect = wrap.createEl("select", {
+      cls: "tm-header-model-select",
+      attr: { "aria-label": t("chat_model_select") },
+    });
+    const preset = AI_PROVIDER_PRESETS[activeProvider];
     if (providers.length > 1) {
-      const providerSelect = switcherBar.createEl("select", {
-        cls: "tm-chat-switcher-select tm-chat-switcher-provider",
+      const providerSelect = wrap.createEl("select", {
+        cls: "tm-header-model-select",
+        attr: { "aria-label": t("chat_provider_select") },
       });
-      providerSelect.setAttribute("aria-label", t("chat_provider_select"));
-      for (const p of providers) {
-        providerSelect.createEl("option", { value: p.id, text: p.label });
-      }
+      for (const p of providers) providerSelect.createEl("option", { value: p.id, text: p.label });
       providerSelect.value = activeProvider;
       providerSelect.addEventListener("change", () => { void (async () => {
         this.chatProviderOverride = providerSelect.value;
         this.chatModelOverride = "";
         this.plugin.settings.ai.sourcePreference = providerSelect.value;
         await this.plugin.saveSettings();
-        void this.renderActiveTab();
+        void this.render();
       })(); });
+      wrap.createSpan({ cls: "tm-header-model-sep", text: "·", attr: { "aria-hidden": "true" } });
     } else if (providers[0]) {
-      switcherBar.createSpan({
-        cls: "tm-chat-switcher-static",
-        text: providers[0].label,
-        attr: { title: t("chat_provider_select") },
-      });
+      wrap.createSpan({ cls: "tm-header-model-static", text: providers[0].label });
+      wrap.createSpan({ cls: "tm-header-model-sep", text: "·", attr: { "aria-hidden": "true" } });
     }
 
-    switcherBar.createSpan({ cls: "tm-chat-switcher-sep", text: "·", attr: { "aria-hidden": "true" } });
-
-    const modelSelect = switcherBar.createEl("select", {
-      cls: "tm-chat-switcher-select tm-chat-model-select",
-    });
-    modelSelect.setAttribute("aria-label", t("chat_model_select"));
     modelSelect.createEl("option", { value: "", text: t("settings_ai_model_default") });
-
-    const preset = AI_PROVIDER_PRESETS[activeProvider];
     if (preset?.model) {
-      modelSelect.createEl("option", {
-        value: preset.model,
-        text: `${preset.model} (${t("settings_ai_model_default")})`,
-      });
+      modelSelect.createEl("option", { value: preset.model, text: preset.model });
     }
-    const fallback = PROVIDER_DEFAULT_MODELS[activeProvider] || [];
-    for (const m of fallback) {
-      if (m.id !== preset?.model) {
-        modelSelect.createEl("option", { value: m.id, text: m.label });
-      }
+    for (const m of PROVIDER_DEFAULT_MODELS[activeProvider] || []) {
+      if (m.id !== preset?.model) modelSelect.createEl("option", { value: m.id, text: m.label });
     }
-
     const currentModel = this.chatModelOverride || this.plugin.settings.ai.defaultModel || "";
     if (currentModel && !Array.from(modelSelect.options).some((o) => o.value === currentModel)) {
       modelSelect.createEl("option", { value: currentModel, text: currentModel });
     }
     modelSelect.value = currentModel;
-
     modelSelect.addEventListener("change", () => { void (async () => {
       this.chatModelOverride = modelSelect.value;
       this.plugin.settings.ai.defaultModel = modelSelect.value;
       this.plugin.settings.aiModel = modelSelect.value;
-      // Track context window for compact-budget scaling.
       const entry = (this.chatModelCatalog || []).find((m) => m.id === modelSelect.value);
       this.chatContextLimit = entry?.contextLimit;
       await this.plugin.saveSettings();
     })(); });
-
     void this.loadChatModels(activeProvider, modelSelect, currentModel);
   }
+
 
   /** Resolve official + community + curated and update the chat model select. */
   private async loadChatModels(providerId: string, selectEl: HTMLSelectElement, currentValue: string): Promise<void> {
@@ -1199,10 +1230,49 @@ export class SidebarDockView extends ItemView {
     if (msg.role === "assistant" && !msg.isError && (msg.toolCalls?.length || msg.steps)) {
       const toolsEl = msgEl.createDiv({ cls: "tm-chat-tools" });
       const count = msg.toolCalls?.filter((tc) => tc.ok).length ?? 0;
-      toolsEl.createSpan({
-        cls: "tm-chat-tools-label",
-        text: t("chat_tool_steps", { count }),
-      });
+      const allTools = msg.toolCalls || [];
+      // Progressive disclosure (UI/UX 2.0 §38): tool telemetry stays folded.
+      // Hide the fold entirely when there is nothing to inspect (0 steps).
+      if (allTools.length > 0) {
+        const toolFold = toolsEl.createEl("details", { cls: "tm-chat-reasoning tm-chat-tools-fold" });
+        const toolSummary = toolFold.createEl("summary", { cls: "tm-chat-reasoning-summary" });
+        const toolIcon = toolSummary.createSpan({ cls: "tm-chat-reasoning-icon" });
+        setIcon(toolIcon, "wrench");
+        toolSummary.createSpan({
+          cls: "tm-chat-reasoning-label",
+          text: t("chat_tool_steps", { count }),
+        });
+        const toolRow = toolFold.createDiv({ cls: "tm-chat-tools" });
+        const shown = allTools.slice(0, 12);
+        for (const tc of shown) {
+          const rel = String(tc.summary || "").trim();
+          const isPath = tc.ok && rel && /\.(?:md|txt|json|ya?ml|csv|png|jpe?g|webp)$/i.test(rel) && !rel.includes("\n");
+          const label = isPath
+            ? (rel.length > 36 ? `…${rel.slice(-35)}` : rel)
+            : tc.tool;
+          const chip = toolRow.createEl("button", {
+            cls: `tm-chat-tool-chip${tc.ok ? "" : " tm-chat-tool-chip-fail"}`,
+            text: label,
+            attr: { type: "button", title: isPath ? `${tc.tool} · ${rel}` : tc.summary || tc.tool },
+          });
+          if (isPath) {
+            chip.addEventListener("click", (e: MouseEvent) => {
+              e.stopPropagation();
+              void this.app.workspace.openLinkText(rel, "", false);
+            });
+          } else {
+            chip.setAttr("disabled", "true");
+            chip.addClass("tm-chat-tool-chip-static");
+          }
+        }
+        if (allTools.length > shown.length) {
+          toolRow.createSpan({
+            cls: "tm-chat-tools-label",
+            text: `+${allTools.length - shown.length}`,
+            attr: { title: t("chat_tool_steps", { count: allTools.length }) },
+          });
+        }
+      }
       if (msg.stepLimitHit || (msg.autoContinues || 0) > 0) {
         toolsEl.createSpan({
           cls: "tm-chat-tools-limit",
@@ -1282,39 +1352,6 @@ export class SidebarDockView extends ItemView {
           });
         }
       }
-      const allTools = msg.toolCalls || [];
-      const shown = allTools.slice(0, 12);
-      for (const tc of shown) {
-        const rel = String(tc.summary || "").trim();
-        const isPath = tc.ok && rel && /\.(?:md|txt|json|ya?ml|csv|png|jpe?g|webp)$/i.test(rel) && !rel.includes("\n");
-        // Path receipts: show the touched path (head-truncated), tool name as title.
-        // Bare `read_file` as the label is telemetry, not a receipt chip.
-        const label = isPath
-          ? (rel.length > 36 ? `…${rel.slice(-35)}` : rel)
-          : tc.tool;
-        const chip = toolsEl.createEl("button", {
-          cls: `tm-chat-tool-chip${tc.ok ? "" : " tm-chat-tool-chip-fail"}`,
-          text: label,
-          attr: { type: "button", title: isPath ? `${tc.tool} · ${rel}` : tc.summary || tc.tool },
-        });
-        // Clickable path chips (Desktop parity): open the touched file in the vault.
-        if (isPath) {
-          chip.addEventListener("click", (e: MouseEvent) => {
-            e.stopPropagation();
-            void this.app.workspace.openLinkText(rel, "", false);
-          });
-        } else {
-          chip.setAttr("disabled", "true");
-          chip.addClass("tm-chat-tool-chip-static");
-        }
-      }
-      if (allTools.length > shown.length) {
-        toolsEl.createSpan({
-          cls: "tm-chat-tools-label",
-          text: `+${allTools.length - shown.length}`,
-          attr: { title: t("chat_tool_steps", { count: allTools.length }) },
-        });
-      }
     }
 
     const bodyEl = msgEl.createDiv({ cls: "tm-chat-body" });
@@ -1326,7 +1363,7 @@ export class SidebarDockView extends ItemView {
       const actionsEl = msgEl.createDiv({ cls: "tm-chat-msg-actions" });
 
       // Copy button
-      const copyBtn = actionsEl.createEl("button", { cls: "tm-chat-msg-btn" });
+      const copyBtn = actionsEl.createEl("button", { cls: "tm-chat-msg-btn clickable-icon" });
       setIcon(copyBtn, "copy");
       copyBtn.setAttribute("aria-label", t("chat_copy"));
       copyBtn.setAttribute("title", t("chat_copy"));
@@ -1341,7 +1378,7 @@ export class SidebarDockView extends ItemView {
 
       // Regenerate button (only if there's a prompt)
       if (msg.prompt) {
-        const regenBtn = actionsEl.createEl("button", { cls: "tm-chat-msg-btn" });
+        const regenBtn = actionsEl.createEl("button", { cls: "tm-chat-msg-btn clickable-icon" });
         setIcon(regenBtn, "refresh-cw");
         regenBtn.setAttribute("aria-label", t("chat_regenerate"));
         regenBtn.setAttribute("title", t("chat_regenerate"));
@@ -1811,9 +1848,9 @@ export class SidebarDockView extends ItemView {
     const actionsBar = container.createDiv({ cls: "tm-sidebar-bottom-actions" });
     const aiConfigured = hasConfiguredProvider(this.plugin.settings.ai);
 
-    // 3 slots only (DESIGN §1.3): capture · organize · AI menu.
+    // 2 slots: capture (primary) · organize menu (merged — no separate AI 整理).
     const captureBtn = actionsBar.createEl("button", {
-      cls: "tm-sidebar-action-btn tm-sidebar-capture-primary",
+      cls: "tm-sidebar-action-btn tm-sidebar-capture-primary mod-cta",
     });
     const iconSpan = captureBtn.createSpan({ cls: "tm-action-icon-span" });
     setIcon(iconSpan, "pencil");
@@ -1822,47 +1859,46 @@ export class SidebarDockView extends ItemView {
     captureBtn.setAttribute("title", t("sidebar_btn_capture"));
     captureBtn.addEventListener("click", () => this.plugin.openQuickCapture());
 
-    this.addActionButton(actionsBar, "arrow-down-wide-narrow", t("sidebar_btn_organize"), async () => {
-      new Notice(t("notice_organizing"));
-      const streamCtx = await this.plugin.kernelService.getStreamContext();
-      if (streamCtx.current) {
-        this.plugin.kernelService.reconcilePeriod(streamCtx.current.relPath);
-      }
-      if (aiConfigured && this.plugin.settings.autoMaintainTodos) {
-        void this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar", true);
-      } else {
-        new Notice(t("notice_organize_done"));
-      }
-      void this.refreshActiveTab();
-    });
-
-    const aiOpsBtn = actionsBar.createEl("button", { cls: "tm-sidebar-action-btn" });
-    const aiIcon = aiOpsBtn.createSpan({ cls: "tm-action-icon-span" });
-    setIcon(aiIcon, "sparkles");
-    aiOpsBtn.createSpan({ text: t("sidebar_op_menu"), cls: "tm-sidebar-action-label" });
-    aiOpsBtn.setAttribute("aria-label", t("sidebar_op_menu"));
-    aiOpsBtn.setAttribute("title", t("sidebar_op_menu"));
-    aiOpsBtn.addEventListener("click", (evt: MouseEvent) => {
-      if (!aiConfigured) {
-        this.openSettings();
-        return;
-      }
+    const orgBtn = actionsBar.createEl("button", { cls: "tm-sidebar-action-btn" });
+    const orgIcon = orgBtn.createSpan({ cls: "tm-action-icon-span" });
+    setIcon(orgIcon, "arrow-down-wide-narrow");
+    orgBtn.createSpan({ text: t("sidebar_btn_organize"), cls: "tm-sidebar-action-label" });
+    orgBtn.setAttribute("aria-label", t("sidebar_btn_organize"));
+    orgBtn.setAttribute("title", t("sidebar_btn_organize"));
+    orgBtn.addEventListener("click", (evt: MouseEvent) => {
       const menu = new Menu();
       menu.addItem((item) => {
-        item.setTitle(t("sidebar_btn_todo")).setIcon("list-checks").onClick(() => {
-          void this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar");
-        });
+        item.setTitle(t("stream_organize")).setIcon("arrow-down-wide-narrow").onClick(() => { void (async () => {
+          new Notice(t("notice_organizing"));
+          const streamCtx = await this.plugin.kernelService.getStreamContext();
+          if (streamCtx.current) this.plugin.kernelService.reconcilePeriod(streamCtx.current.relPath);
+          if (aiConfigured && this.plugin.settings.autoMaintainTodos) {
+            void this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar", true);
+          } else {
+            new Notice(t("notice_organize_done"));
+          }
+          void this.refreshActiveTab();
+        })(); });
       });
-      menu.addItem((item) => {
-        item.setTitle(t("sidebar_btn_classify")).setIcon("tag").onClick(() => {
-          void this.plugin.enqueueAiOperation("topic_classify", "op_label_topic_classify", "notice_classify_done", "suggest");
+      if (aiConfigured) {
+        menu.addItem((item) => {
+          item.setTitle(t("sidebar_btn_todo")).setIcon("list-checks").onClick(() => {
+            void this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar");
+          });
         });
-      });
-      menu.addItem((item) => {
-        item.setTitle(t("sidebar_btn_memory")).setIcon("user").onClick(() => {
-          void this.plugin.enqueueAiOperation("memory_organize", "op_label_memory_organize", "notice_memory_done", "all");
+        menu.addItem((item) => {
+          item.setTitle(t("sidebar_btn_classify")).setIcon("tag").onClick(() => {
+            void this.plugin.enqueueAiOperation("topic_classify", "op_label_topic_classify", "notice_classify_done", "suggest");
+          });
         });
-      });
+        menu.addItem((item) => {
+          item.setTitle(t("sidebar_btn_memory")).setIcon("user").onClick(() => {
+            void this.plugin.enqueueAiOperation("memory_organize", "op_label_memory_organize", "notice_memory_done", "all");
+          });
+        });
+      } else {
+        menu.addItem((item) => item.setTitle(t("chat_configure_ai")).setIcon("settings").onClick(() => this.openSettings()));
+      }
       menu.showAtMouseEvent(evt);
     });
   }
@@ -1885,7 +1921,7 @@ export class SidebarDockView extends ItemView {
   /** Enqueue an AI task with progress tracking */
   // ── Helpers ────────────────────────────────────────────────────────────
 
-  private renderEmptyState(container: HTMLElement, title: string, hint: string, iconName?: string): void {
+  private renderEmptyState(container: HTMLElement, title: string, hint: string, iconName?: string, action?: { label: string; onClick: () => void }): void {
     const div = container.createDiv({ cls: "tm-empty-state tm-empty-compact" });
     if (iconName) {
       const iconDiv = div.createDiv({ cls: "tm-empty-icon" });
@@ -1895,13 +1931,18 @@ export class SidebarDockView extends ItemView {
     if (hint) {
       div.createDiv({ text: hint, cls: "tm-empty-hint" });
     }
+    if (action) {
+      const actionWrap = div.createDiv({ cls: "tm-empty-action" });
+      const btn = actionWrap.createEl("button", { text: action.label, cls: "tm-btn-secondary" });
+      btn.addEventListener("click", action.onClick);
+    }
   }
 
   private renderWorkspaceInit(container: HTMLElement): void {
     const emptyDiv = container.createDiv({ cls: "tm-empty-state tm-workspace-init" });
     emptyDiv.createDiv({ text: t("init_workspace_desc"), cls: "tm-init-desc" });
     const initBtn = emptyDiv.createEl("button", {
-      cls: "tm-btn-init-workspace",
+      cls: "tm-btn-init-workspace mod-cta",
       text: t("init_workspace"),
     });
     initBtn.setAttribute("aria-label", t("init_workspace"));

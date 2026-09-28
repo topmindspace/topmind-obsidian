@@ -194,3 +194,50 @@ test("DESIGN.md token values match styles.css", async (t) => {
     );
   }
 });
+
+test("src/: no runtime style injection outside injectStyles", async (t) => {
+  // Historical bug: a "surface lock" in onload fought styles.css with ad-hoc
+  // !important and hardcoded radii. That pattern is banned.
+  //
+  // Allowed exception: injectStyles() last-word layer. Obsidian appends the
+  // plugin styles.css AFTER onload, so a same-specificity rule there would be
+  // silently overwritten. The last-word layer uses .workspace-leaf-content
+  // scoping + !important on purpose — it is the only way to guarantee a
+  // visible skin. styles.css itself still forbids !important.
+  const srcDir = path.join(pluginRoot, "src");
+  const offenders = [];
+  const walk = (dir) => {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, ent.name);
+      if (ent.isDirectory()) walk(p);
+      else if (/\.(ts|tsx|js|mjs)$/.test(ent.name)) {
+        const text = fs.readFileSync(p, "utf8");
+        const isMain = path.basename(p) === "main.ts";
+        text.split("\n").forEach((line, i) => {
+          if (/^\s*(\/\*|\*|\/\/)/.test(line)) return;
+          if (/!important/.test(line) && !isMain) {
+            offenders.push(`${path.relative(pluginRoot, p)}:${i + 1}: ${line.trim().slice(0, 100)}`);
+          }
+          if (/surface-lock/.test(line)) {
+            offenders.push(`${path.relative(pluginRoot, p)}:${i + 1}: surface-lock`);
+          }
+        });
+      }
+    }
+  };
+  walk(srcDir);
+  assert.deepEqual(offenders, [], `runtime style injection found:\n${offenders.join("\n")}`);
+});
+
+test("styles.css: pill radius only on tag/status/filter/tool-chip", () => {
+  // UI/UX 2.0 §18: 999px is a semantic pill, not a default radius for nav/chips.
+  const blocks = [];
+  const ruleRe = /([^{}]+)\{([^{}]*)\}/g;
+  let match;
+  while ((match = ruleRe.exec(css))) blocks.push({ selector: match[1].trim().replace(/\s+/g, " "), body: match[2] });
+  const allowed = /tm-card-tag|tm-impact|tm-suggestion-count-badge|tm-chat-tool-chip|tm-radius-pill|status|badge|chip|tag|filter|tm-dot-/i;
+  const offenders = blocks
+    .filter((b) => /border-radius:\s*var\(--tm-radius-pill\)/.test(b.body) && !allowed.test(b.selector))
+    .map((b) => b.selector.slice(0, 100));
+  assert.deepEqual(offenders, [], `pill radius on non-semantic controls:\n${offenders.join("\n")}`);
+});

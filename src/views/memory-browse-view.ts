@@ -145,12 +145,15 @@ export class MemoryBrowseView extends ItemView {
     this.renderComp = new Component();
     this.renderComp.load();
     contentEl.empty();
+    // contentEl === Obsidian .view-content — surface only.
+    // Page width/gutters live on .tm-page (see styles.css §7).
     contentEl.addClass("tm-memory-browse");
+    const page = contentEl.createDiv({ cls: "tm-page tm-memory-page" });
     const layout = this.plugin.settings.feedLayout === "card" ? "card" : "list";
-    contentEl.setAttr("data-layout", layout);
-    contentEl.setAttr("data-memory-feed", "true");
+    page.setAttr("data-layout", layout);
+    page.setAttr("data-memory-feed", "true");
 
-    const header = contentEl.createDiv({ cls: "tm-section-header" });
+    const header = page.createDiv({ cls: "tm-section-header" });
     const titleWrap = header.createDiv({ cls: "tm-section-title" });
     titleWrap.createSpan({ text: t("toolbar_btn_profile"), cls: "tm-section-title-text" });
     const controls = header.createDiv({ cls: "tm-section-controls" });
@@ -170,8 +173,8 @@ export class MemoryBrowseView extends ItemView {
         "all",
       );
     });
-    contentEl.createDiv({ cls: "tm-memory-scope", text: t("memory_browse_scope") });
-    const layers = contentEl.createDiv({ cls: "tm-feed-chrome" });
+    page.createDiv({ cls: "tm-memory-scope", text: t("memory_browse_scope") });
+    const layers = page.createDiv({ cls: "tm-feed-chrome" });
     layers.setAttr("data-feed-chrome", "true");
     layers.setAttr("role", "tablist");
 
@@ -253,23 +256,25 @@ export class MemoryBrowseView extends ItemView {
       );
     }
     if (visible.length === 0) {
-      const empty = contentEl.createDiv({ cls: "tm-empty-state" });
+      const empty = page.createDiv({ cls: "tm-empty-state" });
       empty.createDiv({ text: t("memory_browse_empty"), cls: "tm-empty-title" });
       empty.createDiv({ text: t("memory_browse_empty_hint"), cls: "tm-empty-hint" });
       return;
     }
 
-    const feed = contentEl.createDiv({ cls: "tm-memory-feed" });
+    const feed = page.createDiv({ cls: "tm-memory-feed" });
     feed.setAttr("data-layout", layout);
     let lastHeading = "";
+    let group = feed.createDiv({ cls: "tm-day-group" });
     for (const item of visible) {
       const heading = item.kind === "profile" ? (item.heading || "") : "";
       if (heading && heading !== lastHeading) {
         const day = feed.createDiv({ cls: "tm-day-header" });
         day.createSpan({ text: heading, cls: "tm-day-label" });
         lastHeading = heading;
+        group = feed.createDiv({ cls: "tm-day-group" });
       }
-      await this.renderItem(feed, item, layout);
+      await this.renderItem(group, item, layout);
     }
   }
 
@@ -342,7 +347,7 @@ export class MemoryBrowseView extends ItemView {
     const actions = header.createDiv({ cls: "tm-card-actions" });
     if (item.history && item.kind === "profile") {
       const restoreBtn = actions.createEl("button", {
-        cls: "tm-card-action-btn",
+        cls: "tm-card-action-btn clickable-icon",
         attr: {
           "aria-label": t("memory_browse_restore"),
           title: t("memory_browse_restore"),
@@ -356,7 +361,7 @@ export class MemoryBrowseView extends ItemView {
       });
     }
     const openBtn = actions.createEl("button", {
-      cls: "tm-card-action-btn",
+      cls: "tm-card-action-btn clickable-icon",
       attr: { "aria-label": t("stream_open_in_editor"), title: t("stream_open_in_editor") },
     });
     setIcon(openBtn, "square-pen");

@@ -19,8 +19,9 @@
 │  承载：工具栏 + 极速输入 + 动态信息流（列表 / 单列卡片）          │
 │  建议：仅 count>0 时露出计数入口条 → 打开 Dock「建议」tab        │
 │  （完整确认面唯一在 Dock，不在画布堆第二套卡片列表）              │
-│  工具栏：动态标题 | 任务徽章 | [侧边栏] [设置] [新笔记]           │
-│  （AI 状态/模型只在：状态栏 · 侧栏状态点 · 对话切换器 · 设置）    │
+│  工具栏：动态标题 | [记一下][我的情况][建议][对话] | [侧边栏][设置][新笔记] │
+│  Hero 行：问候 · 日期 | 计数 · 周期 · 刷新 · 整理 · 列表/卡片        │
+│  输入框：单行起（44px），自增高；按钮行在下方（润色 · 记下）         │
 ├──────────────────────────────────────────────────────────────┤
 │  入口 2: AI 副驾面板 (Sidebar Dock View — 标签式)              │
 │  ────────────────────────────────────────────────────────    │
@@ -28,13 +29,13 @@
 │  ┌──────┬──────┬──────┬──────┐                                │
 │  │ 对话 │ 建议 │ 清单 │ 历史 │  ← 4 标签（动态流的家在主区）    │
 │  └──────┴──────┴──────┴──────┘                                │
-│  头部：AI 状态点 | 任务徽章 | [动态] [⚙设置]                     │
-│  底部：[⚡记一下] [⇩整理] [✨AI 操作菜单]                       │
-│  （模型切换只在「对话」tab + 设置；不复读到头部）                 │
+│  顶栏：仅任务徽章（极简）                                       │
+│  对话输入底行：●状态点 · 供应商 · 模型 · [清空] [发送]            │
+│  （状态只留圆点无文字；点击=测速/设置；底部不再放记一下/整理）    │
 ├──────────────────────────────────────────────────────────────┤
 │  入口 3: 记一下弹窗                                            │
 │  ────────────────────────────────────────────────────────    │
-│  Ribbon 图标触发（快捷键需在 Settings → Hotkeys 自行配置）       │
+│  Activity Bar（左栏 ribbon）：✏ 记一下 在上，≋ 动态 在下          │
 │  零阻碍输入 → Enter 提交 → 静默写入周期本 → 关闭                │
 ├──────────────────────────────────────────────────────────────┤
 │  入口 4: Obsidian 状态栏项 (Status Bar Item)                   │
@@ -483,12 +484,12 @@ System prompt 跟随 UI locale：
 - 使用 Obsidian CSS 变量（`--text-normal`, `--font-interface`, `--font-ui-*`, `--background-primary`, `--background-secondary`, `--interactive-accent`）
 - **三层表面**：页面 `--background-secondary`（和侧栏、设置页同一层灰底），卡片 `--background-primary`，顶栏/页签 `--background-secondary-alt`。侧栏叶子本身已是灰轨，卡片仍用 primary 浮起。不要整页同一张白底。正文字体是 `--font-interface`，字号走 `--font-ui-*`，行高走 `--line-height-normal`
 - **单一 Design Token 面**：`styles.css` 顶部 token 块作用于全部 `tm-*` 表面（workbench · sidebar · memory · capture）
-- 卡片样式：圆角 `--tm-radius-card`（14px）+ 发丝描边 + 微阴影 + hover 高亮（控件 4/8 · 胶囊 999）
+- 卡片样式：圆角 `--tm-radius-card`（12px）+ 发丝描边 + 微阴影 + hover 高亮（控件 4/8 · 胶囊 999）
 - 输入栏：单行高度起，自适应增长
 - AI 建议卡片：左侧带彩色边条（蓝=create_topic/inbox_organize/ai_summary/stream_digest，橙=stale_topic/catch_all，绿=promote_memory/open_profile）。**不用 purple**（Desktop 禁止紫作产品 AI 身份）。`promote_memory` 的 `payload.action` 为 `append_profile` / `update_profile` / `retire_profile` / `compact_history`（不是只追加）；**近重复事实融合为 update（保留最新），历史区可 compact 合并同类项**。聊天注入画像走 Kernel `readProfileActiveBody`（历史段折叠为计数，不 dump 全文）。Inbox 超期走 `inbox_organize` 归位（移入/新建专题），不再发 `inbox_review` 归档卡。模糊命中 update/retire 成功提示「相似命中」。
 - AI 对话：用户消息右对齐（强调色背景），AI 消息左对齐（卡片背景）
 - 全中文 UI（可切英文）
-- **与 Desktop 的有意差异**：主 CTA 用宿主 `--interactive-accent`（非 ink）；图标库 Lucide（非 Remix，语义映射见 Desktop DESIGN §0.0.2）；圆角 4/8/14/999（`--tm-radius-*`）；信息流默认宽 `56rem`（对齐 Desktop feed）
+- **与 Desktop 的有意差异**：主 CTA 用宿主 `--interactive-accent`（非 ink）；图标库 Lucide（非 Remix，语义映射见 Desktop DESIGN §0.0.2）；圆角 4/8/12/999（`--tm-radius-*`）；信息流默认宽 `56rem`（对齐 Desktop feed）
 
 ### 11.0 Design Token 与几何（唯一真源 `styles.css`）
 
@@ -496,11 +497,28 @@ System prompt 跟随 UI locale：
 |------|----|------|
 | `--tm-hit` / `--tm-hit-sm` / `--tm-hit-lg` / `--tm-hit-xs` | 32 / 28 / 36 / 24 px | 标准控件 / 区块栏 / 主 CTA / chip·mini |
 | `--tm-icon` / `--tm-icon-lg` / `--tm-icon-xs` | 16 / 18 / 14 px | 控件图标 / 底部主操作 / 内联 |
-| `--tm-radius-sm` / `--tm-radius-ctl` / `--tm-radius-card` / `--tm-radius-pill` | 4 / 8 / 14 / 999 px | mini / 控件 / 卡片 / 胶囊 |
-| `--tm-type-display/title/body/label/meta` | 派生自 `--font-ui-*` | 字号阶梯（禁止硬编码 px） |
+| `--tm-radius-sm` / `--tm-radius-ctl` / `--tm-radius-card` / `--tm-radius-pill` | 4 / 8 / 12 / 999 px | mini / 控件 / 卡片 / 胶囊 |
+| `--tm-type-display/title/body/label/meta` | `--font-ui-large/medium/small/smaller` | 字号阶梯（禁止硬编码 px；Title=medium/600，Body=small，Meta=smaller） |
 | `--tm-gap-xs/sm/md/lg` | 4 / 6 / 10 / 14 px | 间距节奏 |
 
 **Chrome 对齐**：`.tm-toolbar` · `.tm-section-header` · `.tm-sidebar-header` · `.tm-feed-chrome` · `.tm-suggestion-refresh-bar` · `.tm-todo-open-file-bar` 共用 `min-height: var(--tm-hit)` 与 `gap: var(--tm-gap-sm)`，多层标题栏不再错位。
+
+**样式注入链路（2026-09-28 确定性）**：Obsidian 的插件 CSS 加载器可能整表/部分丢弃 `styles.css`（token 变空、卡片变透明）。因此 `main.ts#injectStyles` 三层注入：
+1. `:root` token 保底；
+2. 读 `manifest.dir/styles.css` 全文；
+3. **leaf-scoped + `!important` 终层**（`.workspace-leaf-content .tm-*`）——原生 `mod-cta`/`clickable-icon` 已证明宿主变量可用，终层用 `--background-primary` / `--background-modifier-border` / `--interactive-accent` 等原生变量绘制纸面/描边/hover。`styles.css` 本体禁止 `!important`；仅 `main.ts` 终层允许（测试已豁免）。
+
+**Quiet Knowledge UI（UI/UX 2.0 吸收，2026-09-28）**：在既有 token / 按钮角色之上追加收敛规则——
+
+1. **Tab 是文字不是胶囊**：`.tm-tab-btn` 透明底 + `::after` 下划线指示；禁止 `nav-item-background-active` 色块选中。
+2. **动态 = Timeline，不是 Card List**：`tm-day-group` 无底色、行间发丝线；内容是视觉主体，时间弱化在左栏。
+3. **Pill 只留给语义对象**（tag / status / filter / tool-chip）；导航、快捷条、工具栏 nav 一律 `radius-ctl`，不用 999。
+4. **AI 渐进披露**：思考/推理默认 `<details>` 折叠（含 live thinking）；状态一行文案 + 轻 spinner，不展示字数/步数仪表盘。
+5. **Quick Capture 字数默认隐藏**，仅在 ≥80% 限额时出现，超限变 warning。
+6. **Empty state 必答三件事**：现在是什么、为什么空、下一步能做什么（尽量给一个行动按钮）。
+7. **CSS scope**：交互光标等宿主级规则限定在 `.tm-*` 工作区根内；禁止全局 `button {}`。
+8. **无装饰动效**：去掉 `translateY` 抬起、重阴影 pop；动画只服务状态解释（≤200ms）。
+
 
 ### 11.1 按钮系统规范（互斥角色）
 
@@ -551,11 +569,26 @@ System prompt 跟随 UI locale：
 - **禁止**把多行设置塞进同一个 Setting 的 `settingEl`（那是 flex 行，会把中文压成竖排）
 - 字号/颜色一律走 `--tm-*` 与 Obsidian 变量，禁止硬编码 px / hex
 
+### MD3 色阶 × Obsidian 变量（2026-09 UI）
+
+| MD3 | Obsidian | 用途 |
+|---|---|---|
+| surface / page | `--background-secondary` | 页面画布 |
+| surface-container | `--background-primary` | 分组面 / 输入 / 对话卡（白，抬升） |
+| surface-container-high | `--background-primary-alt` | chips / 次级面 |
+| primary | `--interactive-accent` | 主按钮 |
+| primary-container | accent 14% + primary | 用户气泡 |
+| on-surface / variant | `--text-normal` / `--text-muted` | 正文 / 辅助 |
+| state layer | `--background-modifier-hover` | hover / pressed |
+
+**不用描边做层次**（`--setting-items-border-width: 0`），靠色阶 + 微阴影 `--tm-elev-1/2`。
+按钮 hover = 亮度/状态层，focus = `--tm-focus-ring`。字体只用 `--font-ui-*` / `--font-interface`。
+
 所有字体大小使用 Obsidian CSS 变量（经 `--tm-type-*` 令牌派生），**禁止**硬编码 px：
 
 | 变量 | 用途 |
 |------|------|
-| `--tm-type-display` ← `--font-ui-medium * 1.7` | Hero 标题 |
+| `--tm-type-display` ← `--font-ui-medium * 1.85` | Hero 标题 |
 | `--tm-type-title` ← `--font-ui-medium * 1.05` | 区块标题、空状态标题 |
 | `--tm-type-body` ← `--font-ui-small` | 卡片正文、列表正文 |
 | `--tm-type-label` ← `--font-ui-small` | 按钮、标签、控件文字 |

@@ -31,13 +31,30 @@
 /* Tokens live on :root so Settings tab + Status Bar (outside the four view
    roots) resolve --tm-* correctly. Surface-only overrides stay scoped below. */
 :root {
-  /* type ramp — derived from Obsidian UI fonts (user font-size flows through) */
-  --tm-type-display: calc(var(--font-ui-medium) * 1.7);
-  --tm-type-title: calc(var(--font-ui-medium) * 1.05);
+  /* type ramp — Obsidian UI fonts */
+  --tm-type-display: var(--font-ui-large);
+  --tm-type-title: var(--font-ui-medium);
   --tm-type-body: var(--font-ui-small);
   --tm-type-label: var(--font-ui-small);
   --tm-type-meta: var(--font-ui-smaller);
   --tm-lh-body: var(--line-height-normal, 1.5);
+  --tm-lh-tight: var(--line-height-tight, 1.25);
+
+  /* Surfaces via official base scale — NO color-mix (it silently fails
+     and paints nothing). --color-base-* / --mono-rgb-* are the host's
+     real palette, same tokens moonstone uses. */
+  --tm-surface-page: var(--background-secondary);
+  --tm-surface-container: var(--background-primary);
+  --tm-surface-container-high: var(--background-primary-alt);
+  --tm-primary: var(--interactive-accent);
+  --tm-primary-container: var(--nav-item-background-active, var(--background-modifier-hover));
+  --tm-on-surface: var(--text-normal);
+  --tm-on-surface-var: var(--text-muted);
+  --tm-state-hover: var(--background-modifier-hover);
+  --tm-state-pressed: var(--background-modifier-active-hover);
+  --tm-elev-1: var(--shadow-xs, var(--background-modifier-box-shadow));
+  --tm-elev-2: var(--shadow-s);
+  --tm-focus-ring: 0 0 0 3px var(--color-base-30, var(--background-modifier-border));
 
   /* geometry */
   --tm-hit: 32px;
@@ -50,9 +67,8 @@
   --tm-radius-sm: 4px;
   --tm-radius-ctl: 8px;
   --tm-radius-md: var(--tm-radius-ctl);
-  --tm-radius-card: 14px;
+  --tm-radius-card: 12px;
   --tm-card-radius: var(--tm-radius-card);
-  --tm-input-radius: var(--tm-radius-ctl);
   --tm-radius-pill: 999px;
   --tm-radius-bubble: 16px;
   --tm-bubble-user-max: 88%;
@@ -60,24 +76,27 @@
   --tm-btn-h: var(--tm-hit);
   --tm-btn-h-sm: var(--tm-hit-sm);
 
-  /* surfaces — three host steps, not one white sheet.
-     page = secondary canvas (the sidebar / settings gray), card = primary
-     paper, chrome = secondary-alt. Themes retune all three. */
+  /* paper steps */
   --tm-bg-page: var(--background-secondary);
   --tm-bg-card: var(--background-primary);
-  --tm-bg-card-alt: var(--background-primary-alt, var(--background-secondary-alt));
-  --tm-bg-chrome: var(--background-secondary-alt, var(--background-modifier-hover));
-  --tm-bg-soft: var(--interactive-normal, var(--background-modifier-form-field, var(--background-primary-alt)));
-  --tm-bg-hover: var(--interactive-hover, var(--background-modifier-hover));
-  --tm-bg-active: var(--interactive-active, var(--background-modifier-active-hover));
-  --tm-line: var(--background-modifier-border);
-  --tm-line-strong: var(--background-modifier-border-hover, var(--background-modifier-border));
+  --tm-bg-card-alt: var(--background-primary-alt);
+  --tm-bg-raise: var(--background-primary);
+  --tm-bg-chrome: var(--background-secondary-alt);
+  --tm-bg-sunken: var(--background-primary-alt);
+  --tm-card-shadow: var(--shadow-xs, var(--background-modifier-box-shadow));
+
+  --tm-bg-soft: var(--interactive-normal);
+  --tm-bg-hover: var(--background-modifier-hover);
+  /* Borders must be VISIBLE: moonstone sets --background-modifier-border
+     to transparent in some scopes, which erased every card edge. */
+  --tm-line: var(--color-base-30, var(--background-modifier-border));
+  --tm-line-strong: var(--color-base-40, var(--background-modifier-border-hover, var(--background-modifier-border)));
   --tm-control-bg: var(--interactive-normal);
   --tm-control-bg-hover: var(--interactive-hover);
-  --tm-control-ink: var(--text-normal);
-  --tm-input-bg: var(--input-background, var(--background-primary));
-  --tm-input-line: var(--input-border, var(--background-modifier-border));
-  --tm-input-shadow: var(--input-shadow, 0 0 0 1px var(--background-modifier-border));
+  --tm-control-ink: var(--color-base-100, var(--text-normal));
+  --tm-input-bg: var(--color-base-00, var(--input-background, var(--background-primary)));
+  --tm-input-line: var(--color-base-35, var(--input-border, var(--background-modifier-border)));
+  --tm-input-shadow: var(--input-shadow);
   --tm-btn-radius: var(--button-radius, var(--tm-radius-ctl));
   --tm-input-height: var(--input-height, 30px);
   --tm-ink: var(--text-normal);
@@ -85,23 +104,18 @@
   --tm-ink-faint: var(--text-faint);
   --tm-accent: var(--interactive-accent);
   --tm-accent-ink: var(--text-accent, var(--interactive-accent));
-  --tm-accent-soft: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
-  --tm-accent-softer: color-mix(in srgb, var(--interactive-accent) 7%, transparent);
+  --tm-accent-soft: var(--nav-item-background-active, var(--background-modifier-hover));
+  --tm-accent-softer: var(--nav-item-background-active, var(--background-modifier-hover));
   --tm-text-accent: var(--text-accent, var(--interactive-accent));
-  --tm-shadow-card: 0 1px 2px color-mix(in srgb, var(--background-modifier-border) 55%, transparent);
-  --tm-shadow-pop: 0 8px 24px color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
+  --tm-shadow-card: var(--shadow-xs);
   --tm-suggestion-left-border: 3px solid;
   --tm-text-accent-hover: var(--text-accent-hover, var(--text-accent, var(--interactive-accent)));
 
-  /* MD3 state layers (Desktop parity) — overlay, never a bg-swap */
-  --tm-state-hover: color-mix(in srgb, var(--text-normal) 8%, transparent);
-  --tm-state-pressed: color-mix(in srgb, var(--text-normal) 10%, transparent);
-
-  /* Tonal containers — status chips. Selected controls use the host nav wash. */
-  --tm-container-success: color-mix(in srgb, var(--text-success, var(--color-green)) 12%, var(--background-primary));
-  --tm-container-warn: color-mix(in srgb, var(--text-warning, var(--color-orange)) 12%, var(--background-primary));
-  --tm-container-danger: color-mix(in srgb, var(--text-error, var(--color-red)) 12%, var(--background-primary));
-  --tm-container-neutral: var(--background-secondary);
+  /* status chips — solid base tints, no color-mix */
+  --tm-container-success: var(--background-modifier-hover);
+  --tm-container-warn: var(--background-modifier-hover);
+  --tm-container-danger: var(--background-modifier-hover);
+  --tm-container-neutral: var(--background-modifier-hover);
 
   /* rhythm */
   --tm-gap-xs: 4px;
@@ -109,7 +123,7 @@
   --tm-gap-md: 10px;
   --tm-gap-lg: 14px;
 
-  /* motion — named properties only (never `transition: all`) */
+  /* motion — named properties only */
   --tm-transition: 120ms ease;
   --tm-transition-ui:
     background-color var(--tm-transition),
@@ -117,9 +131,60 @@
     border-color var(--tm-transition),
     opacity var(--tm-transition);
 
-  --tm-feed-max-width: 56rem;
-  /* Opt-in brand wash for the workbench canvas; defaults to quiet paper. */
+  --tm-feed-max-width: 46rem;
   --tm-canvas-wash: var(--tm-bg-page);
+}
+
+
+/* ── MD3 tonal surfaces (Obsidian-mapped) ────────────────────────────
+   Hierarchy is tonal elevation, not outlines.
+   page (dim) → container (low) → card (raised) → hover (state layer).
+   Mapped onto Obsidian base scale so user themes flow through. */
+.workspace-leaf-content[data-type="topmind-stream-workbench"],
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .view-content,
+.workspace-leaf-content[data-type="topmind-memory-browse"],
+.workspace-leaf-content[data-type="topmind-memory-browse"] .view-content,
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .view-content,
+.tm-stream-workbench,
+.tm-memory-browse {
+  background-color: var(--tm-surface-page);
+}
+
+.tm-wb-compose,
+.tm-chat-model-switcher,
+.tm-chat-input,
+.tm-chat-message.tm-chat-ai {
+  background-color: var(--tm-surface-container);
+  border: none;
+  border-radius: var(--tm-radius-card);
+  box-shadow: var(--tm-elev-1);
+}
+
+/* Day group is structural (timeline), not a card. */
+.tm-day-group {
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.tm-wb-card,
+.tm-card,
+.tm-day-group > .tm-wb-card,
+.tm-day-group > .tm-card { background-color: var(--tm-bg-card); border: 1px solid var(--tm-line); box-shadow: var(--tm-shadow-card); }
+
+.tm-wb-card:hover,
+.tm-card:hover,
+.tm-day-group > .tm-wb-card:hover,
+.tm-day-group > .tm-card:hover {
+  background-color: var(--tm-state-hover);
+}
+
+.tm-chat-message.tm-chat-user {
+  background-color: var(--tm-primary-container);
+  border: none;
+  box-shadow: none;
+  border-radius: var(--tm-radius-bubble);
 }
 
 /* Host type and a real page plane. Cards and chrome opt into the other steps. */
@@ -136,12 +201,12 @@
 
 .tm-stream-workbench,
 .tm-memory-browse {
-  background: var(--tm-bg-page);
+  background: var(--tm-canvas-wash);
 }
 
 .tm-sidebar-dock {
-  /* The leaf is already the sidebar secondary. Cards use primary paper. */
-  background: transparent;
+  /* Sidebar leaf is secondary; message cards use primary paper. */
+  background: var(--background-secondary);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -470,7 +535,10 @@
 
 .tm-wb-compose .tm-submit-btn {
   height: var(--tm-hit);
-  min-width: 72px;
+  min-width: 96px;
+  padding: 0 18px;
+  font-size: var(--tm-type-label);
+  font-weight: 650;
 }
 
 .tm-wb-compose .tm-submit-btn.tm-btn-sm {
@@ -491,7 +559,7 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--tm-ink-soft) 35%, transparent);
+  border: 2px solid var(--color-base-35, var(--background-modifier-border));
   border-top-color: var(--tm-ink);
   animation: tm-spin 0.7s linear infinite;
 }
@@ -501,13 +569,13 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--text-on-accent) 35%, transparent);
+  border: 2px solid var(--color-base-00, var(--background-primary));
   border-top-color: var(--text-on-accent);
   animation: tm-spin 0.7s linear infinite;
 }
 
 .tm-btn-spinner-dark {
-  border-color: color-mix(in srgb, var(--tm-ink-soft) 35%, transparent);
+  border-color: var(--color-base-35, var(--background-modifier-border));
   border-top-color: var(--tm-ink);
 }
 
@@ -581,9 +649,12 @@
 
 /* Section bar */
 .tm-section-header {
-  margin: var(--tm-gap-md) 0 var(--tm-gap-xs);
-  padding: 0 2px;
+  margin: var(--tm-gap-lg) 0 var(--tm-gap-sm);
+  padding: 6px 4px;
   gap: var(--tm-gap-md);
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
 .tm-section-title {
@@ -603,8 +674,8 @@
 
 .tm-entry-count {
   font-size: var(--tm-type-meta);
-  font-weight: 550;
-  color: var(--tm-ink-faint);
+  font-weight: 500;
+  color: var(--tm-on-surface-var);
   font-variant-numeric: tabular-nums;
 }
 
@@ -648,20 +719,21 @@ select.tm-tag-input:hover {
 /* Day headers */
 .tm-day-header {
   display: flex;
-  align-items: center;
-  gap: var(--tm-gap-md);
+  align-items: baseline;
+  gap: var(--tm-gap-sm);
   margin: 22px 2px 10px;
-  padding: 0 2px 8px;
-  border: 0;
-  border-bottom: 1px solid var(--tm-line);
+  padding: 0 4px;
+  border: none;
+  border-radius: 0;
   background: transparent;
 }
 
 .tm-day-label {
-  font-size: var(--tm-type-label);
-  font-weight: 650;
-  letter-spacing: 0.02em;
-  color: var(--tm-ink);
+  font-size: var(--tm-type-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--tm-on-surface);
+  line-height: var(--tm-lh-tight);
 }
 
 .tm-day-count {
@@ -730,7 +802,7 @@ select.tm-tag-input:hover {
 
 .tm-task-badge-abort:hover {
   opacity: 1;
-  background: color-mix(in srgb, var(--text-on-accent) 18%, transparent);
+  background: var(--color-base-05, var(--background-primary-alt));
 }
 
 .tm-task-badge-abort svg {
@@ -802,8 +874,9 @@ select.tm-tag-input:hover {
 
 .tm-wb-compose {
   display: flex;
-  align-items: flex-end;
-  gap: var(--tm-gap-md);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--tm-gap-sm);
 }
 
 .tm-input-wrap {
@@ -818,16 +891,17 @@ select.tm-tag-input:hover {
 .tm-quick-capture-textarea,
 .tm-append-field,
 .tm-chat-input {
-  width: 100%;
-  border-radius: var(--tm-input-radius);
-  border: 1px solid var(--tm-line);
-  background: var(--tm-bg-soft);
+  flex: 1;
+  min-height: var(--tm-hit-lg);
+  max-height: 120px;
+  padding: var(--tm-gap-md) var(--tm-bubble-pad-y);
+  border-radius: var(--tm-card-radius);
+  border: none;
+  background: var(--tm-bg-sunken);
   color: var(--tm-ink);
-  font-size: var(--tm-type-body);
   font-family: inherit;
-  line-height: var(--tm-lh-body);
+  font-size: var(--tm-type-body);
   resize: none;
-  transition: border-color var(--tm-transition), box-shadow var(--tm-transition);
 }
 
 .tm-input-field {
@@ -901,16 +975,16 @@ select.tm-tag-input:hover {
    ═══════════════════════════════════════════════════════════════════════ */
 
 .tm-card {
-  background: var(--tm-bg-card);
+  background: var(--tm-bg-sunken);
   border: 1px solid var(--tm-line);
   border-radius: var(--tm-card-radius);
-  padding: 12px 14px;
-  transition: border-color var(--tm-transition), box-shadow var(--tm-transition), background var(--tm-transition);
+  padding: 14px 16px;
+  transition: background-color var(--tm-transition), box-shadow var(--tm-transition);
 }
 
 .tm-card:hover {
-  border-color: var(--tm-line-strong);
-  box-shadow: var(--tm-shadow-card);
+  background: var(--tm-bg-card);
+  box-shadow: var(--tm-card-shadow);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -965,11 +1039,11 @@ select.tm-tag-input:hover {
 .tm-card-time,
 .tm-card-time-soft {
   font-size: var(--tm-type-meta);
-  font-weight: 650;
-  color: var(--tm-ink-faint);
+  font-weight: 500;
+  color: var(--tm-on-surface-var);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
 }
 
 .tm-card-dot {
@@ -1007,7 +1081,7 @@ select.tm-tag-input:hover {
 }
 
 .tm-memory-card[data-memory-kind="periodic"] .tm-card-tag {
-  background: color-mix(in srgb, var(--color-green, var(--text-success)) 12%, transparent);
+  background: var(--color-base-05, var(--background-primary-alt));
   color: var(--color-green, var(--text-success));
 }
 
@@ -1152,29 +1226,67 @@ select.tm-tag-input:hover {
    7. STREAM WORKBENCH
    ═══════════════════════════════════════════════════════════════════════ */
 
-.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-stream-workbench,
-.tm-stream-workbench {
+/* ── Obsidian leaf surfaces ───────────────────────────────────────────
+   contentEl === .view-content. Never put page layout on it — official
+   app.css already owns padding (`--size-4-3` / `--size-4-8`). Resets use
+   :where() so they lose to .tm-page / .tm-wb-shell on purpose. */
+:where(.workspace-leaf-content[data-type="topmind-stream-workbench"] .view-content),
+:where(.workspace-leaf-content[data-type="topmind-memory-browse"] .view-content) {
+  display: block;
+  padding: 0;
+  background: var(--tm-canvas-wash);
+  overflow: auto;
+}
+
+:where(.workspace-leaf-content[data-type="topmind-sidebar-dock"] .view-content) {
+  background: var(--tm-canvas-wash);
+  padding: 0;
+}
+
+/* Page shell — the ONLY width/gutter owner. Works at any pane width. */
+.tm-page,
+.tm-wb-shell {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--tm-feed-max-width, 52rem);
+  margin-inline: auto;
+  /* clamp keeps 16px+ gutters on narrow panes; expands on wide ones */
+  padding-inline: clamp(16px, 3.5vw, 36px);
+  padding-block: 24px 56px;
   display: flex;
   flex-direction: column;
   gap: var(--tm-gap-lg);
-  padding: 0;
-  max-width: none;
-  margin: 0;
-  min-height: 100%;
+}
+
+/* Column flex stretches children — keep controls intrinsic width. */
+.tm-page > button,
+.tm-page > .tm-section-header,
+.tm-page > .tm-feed-chrome,
+.tm-wb-shell > button,
+.tm-wb-shell > .tm-toolbar,
+.tm-wb-shell > .tm-wb-hero,
+.tm-wb-shell > .tm-wb-section {
+  width: 100%;
+}
+.tm-page > button,
+.tm-wb-shell > button {
+  width: auto;
+  align-self: flex-start;
+}
+
+.tm-memory-browse,
+.tm-stream-workbench {
   color: var(--tm-ink);
-  /* Secondary canvas. Cards and the compose box are the primary paper. */
   background: var(--tm-canvas-wash);
+  min-height: 100%;
   container-type: inline-size;
   container-name: tm-workbench;
+  display: flex;
+  flex-direction: column;
 }
 
 .tm-wb-shell {
-  width: min(var(--tm-feed-max-width, 56rem), 100%);
-  margin: 0 auto;
-  padding: 28px 32px 56px;
-  display: flex;
-  flex-direction: column;
-  gap: 26px;
+  gap: var(--tm-gap-md);
 }
 
 .tm-wb-shell .tm-toolbar {
@@ -1185,7 +1297,7 @@ select.tm-tag-input:hover {
   display: flex;
   flex-direction: column;
   gap: var(--tm-gap-md);
-  padding: 0;
+  padding: 8px 4px 4px;
   margin: 0;
   background: transparent;
 }
@@ -1198,16 +1310,18 @@ select.tm-tag-input:hover {
 
 .tm-wb-hero-kicker {
   font-size: var(--tm-type-meta);
-  font-weight: 550;
-  color: var(--tm-ink-faint);
-  letter-spacing: 0.04em;
+  font-weight: 500;
+  color: var(--tm-on-surface-var);
+  letter-spacing: 0.02em;
 }
 
 .tm-wb-hero-title {
-  font-size: var(--tm-type-display);
-  font-weight: var(--font-semibold, 650);
-  color: var(--tm-ink);
-  line-height: var(--line-height-tight, 1.15);
+  font-size: var(--tm-type-title);
+  font-weight: var(--font-semibold, 600);
+  color: var(--tm-on-surface);
+  line-height: var(--tm-lh-tight);
+  letter-spacing: -0.015em;
+  margin: 2px 0;
 }
 
 .tm-wb-hero-sub {
@@ -1217,25 +1331,20 @@ select.tm-tag-input:hover {
 }
 
 .tm-wb-compose {
-  padding: 16px 18px 14px;
-  border-radius: var(--tm-radius-card);
-  border: 1px solid var(--tm-input-line);
-  background: var(--tm-bg-card);
-  box-shadow: var(--tm-shadow-card);
+  padding: 12px 14px 10px;
+  border-radius: var(--tm-card-radius);
+  border: none;
+  background: var(--tm-bg-sunken);
 }
 
 .tm-wb-compose:focus-within {
-  border-color: var(--interactive-accent);
-  box-shadow: 0 0 0 3px var(--tm-accent-soft), var(--tm-shadow-card);
+  border-color: var(--tm-primary);
+  box-shadow: var(--tm-focus-ring);
 }
 
 .tm-wb-compose .tm-input-field {
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  min-height: 48px;
-  padding: 4px 2px;
-  font-size: var(--tm-type-title);
+  min-height: 56px;
+  max-height: 180px;
 }
 
 .tm-wb-compose .tm-input-field:focus {
@@ -1247,8 +1356,10 @@ select.tm-tag-input:hover {
   display: flex;
   align-items: center;
   gap: var(--tm-gap-sm);
-  margin-top: 4px;
-  flex-wrap: wrap;
+  margin-top: 0;
+  padding-top: 6px;
+  border-top: none;
+  flex-wrap: nowrap;
 }
 
 .tm-wb-compose-hint {
@@ -1256,6 +1367,8 @@ select.tm-tag-input:hover {
   color: var(--tm-ink-faint);
   flex: 1;
   min-width: 0;
+  font-weight: 450;
+  opacity: .85;
 }
 
 .tm-wb-compose-actions {
@@ -1298,19 +1411,59 @@ select.tm-tag-input:hover {
   gap: var(--tm-gap-sm);
 }
 
-.tm-stream-container[data-layout="list"] .tm-card {
-  margin-bottom: 0;
-  padding: 10px 4px;
+/* Day group = timeline band; notes are quiet rows (content-first, §20). */
+.tm-day-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
   border: none;
-  border-bottom: 1px solid var(--tm-line);
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+  margin-bottom: var(--tm-gap-lg);
 }
 
-.tm-stream-container[data-layout="list"] .tm-card:hover {
+.tm-day-group > .tm-wb-card,
+.tm-day-group > .tm-card { margin-bottom: var(--tm-gap-xs); padding: 10px 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-ctl); background: var(--tm-bg-card); box-shadow: none; }
+
+.tm-day-group > .tm-wb-card + .tm-wb-card,
+.tm-day-group > .tm-card + .tm-card {
+  border-top: 1px solid var(--tm-line);
+  border-radius: 0;
+}
+
+.tm-day-group > .tm-wb-card:hover,
+.tm-day-group > .tm-card:hover {
+  background: var(--tm-state-hover);
   box-shadow: none;
-  background: var(--tm-bg-hover);
+}
+
+/* Standalone (no day-group) list notes — same quiet timeline row. */
+.tm-stream-container[data-layout="list"] .tm-card,
+.tm-wb-timeline[data-layout="list"] .tm-wb-card,
+.tm-stream-container[data-layout="list"] .tm-wb-card {
+  margin-bottom: var(--tm-gap-xs);
+  padding: 10px 12px;
+  border: 1px solid var(--tm-line);
+  border-radius: var(--tm-radius-ctl);
+  background: var(--tm-bg-card);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid var(--tm-line);
+}
+
+.tm-stream-container[data-layout="list"] .tm-card:last-child,
+.tm-wb-timeline[data-layout="list"] .tm-wb-card:last-child,
+.tm-stream-container[data-layout="list"] .tm-wb-card:last-child {
+  border-bottom: none;
+}
+
+.tm-stream-container[data-layout="list"] .tm-card:hover,
+.tm-wb-timeline[data-layout="list"] .tm-wb-card:hover {
+  background: var(--tm-state-hover);
+  box-shadow: none;
 }
 
 .tm-stream-container[data-layout="card"] .tm-card {
@@ -1319,27 +1472,11 @@ select.tm-tag-input:hover {
 }
 
 /* Workbench card grid: time gutter + content */
-.tm-wb-card {
-  position: relative;
-  display: grid;
-  grid-template-columns: 52px 1fr;
-  grid-template-areas:
-    "time head"
-    "time body";
-  gap: 4px 8px;
-  padding: 16px 18px;
-  margin-bottom: var(--tm-gap-md);
-  border-radius: var(--tm-radius-card);
-  border: 1px solid var(--tm-line);
-  background: var(--tm-bg-card);
-  box-shadow: var(--tm-shadow-card);
-  transition: border-color var(--tm-transition), box-shadow var(--tm-transition), background-color var(--tm-transition);
-}
+.tm-wb-card { position: relative; display: grid; grid-template-columns: 52px 1fr; grid-template-areas: "time head" "time body"; gap: 4px 8px; padding: 10px 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-card); background: var(--tm-bg-card); margin-bottom: var(--tm-gap-xs); }
 
 .tm-wb-card:hover {
-  border-color: var(--tm-line-strong);
-  background: var(--tm-bg-card);
-  box-shadow: var(--tm-shadow-pop);
+  background: var(--tm-bg-raise);
+  box-shadow: var(--tm-card-shadow);
 }
 
 .tm-wb-card .tm-card-actions {
@@ -1380,23 +1517,10 @@ select.tm-tag-input:hover {
 
 /* List mode flattens the grid */
 .tm-wb-timeline[data-layout="list"] .tm-wb-card,
-.tm-stream-container[data-layout="list"] .tm-wb-card {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 14px 10px;
-  border: none;
-  border-bottom: 1px solid var(--tm-line);
-  border-radius: var(--tm-radius-sm);
-  background: transparent;
-  box-shadow: none;
-  transition: background-color var(--tm-transition);
-}
+.tm-stream-container[data-layout="list"] .tm-wb-card { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-card); background: var(--tm-bg-card); margin-bottom: var(--tm-gap-xs); }
 
 .tm-wb-timeline[data-layout="list"] .tm-wb-card:hover,
-.tm-stream-container[data-layout="list"] .tm-wb-card:hover {
-  background: var(--tm-bg-card-alt);
-}
+.tm-stream-container[data-layout="list"] .tm-wb-card:hover { background: var(--tm-state-hover); border-color: var(--tm-line-strong); box-shadow: none; }
 
 .tm-wb-timeline[data-layout="list"] .tm-card-body p,
 .tm-stream-container[data-layout="list"] .tm-card-body p {
@@ -1456,18 +1580,45 @@ select.tm-tag-input:hover {
 
 /* ═══════════════════════════════════════════════════════════════════════
    8. MEMORY BROWSE (我的情况)
+   Width/gutters live on .tm-page (§7). This section is content only.
    ═══════════════════════════════════════════════════════════════════════ */
 
-.tm-memory-browse {
-  padding: 24px 32px 48px;
-  max-width: min(var(--tm-feed-max-width, 56rem), 100%);
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
+.tm-memory-page {
   gap: var(--tm-gap-md);
-  background: var(--tm-bg-page);
-  container-type: inline-size;
   container-name: tm-memory;
+}
+
+/* Visible paper for profile items — overrides the stream quiet reset. */
+.tm-memory-page .tm-memory-card,
+.tm-memory-feed .tm-memory-card {
+  background-color: var(--tm-bg-card);
+  border: 1px solid var(--tm-line);
+  border-radius: var(--tm-radius-card);
+  box-shadow: var(--tm-shadow-card);
+  padding: 14px 16px;
+  margin-bottom: var(--tm-gap-sm);
+}
+
+.tm-memory-page .tm-memory-card:hover,
+.tm-memory-feed .tm-memory-card:hover {
+  background-color: var(--tm-bg-hover);
+  border-color: var(--tm-line-strong);
+  box-shadow: var(--tm-elev-1);
+}
+
+/* Kind tag stays a readable chip. */
+.tm-memory-page .tm-card-tag,
+.tm-memory-feed .tm-card-tag {
+  background: var(--tm-bg-soft);
+  border: 1px solid var(--tm-line);
+  color: var(--tm-on-surface-var);
+}
+
+.tm-memory-page .tm-feed-layout-btn[data-active="true"],
+.tm-memory-feed .tm-feed-layout-btn[data-active="true"] {
+  background: var(--tm-accent-softer);
+  color: var(--tm-accent-ink);
+  box-shadow: none;
 }
 
 .tm-memory-browse .tm-section-header {
@@ -1488,17 +1639,15 @@ select.tm-tag-input:hover {
 .tm-memory-feed[data-layout="list"] .tm-memory-card {
   background: var(--tm-bg-card);
   border: 1px solid var(--tm-line);
-  border-radius: var(--tm-radius-card);
-  margin-bottom: var(--tm-gap-sm);
-  padding: 14px 16px;
-  box-shadow: var(--tm-shadow-card);
-  transition: border-color var(--tm-transition), box-shadow var(--tm-transition), background-color var(--tm-transition);
+  border-bottom: 1px solid var(--tm-line);
+  border-radius: 0;
+  margin-bottom: 0;
+  padding: 12px 10px;
+  transition: background-color var(--tm-transition);
 }
 
 .tm-memory-feed[data-layout="list"] .tm-memory-card:hover {
-  border-color: var(--tm-line-strong);
-  box-shadow: var(--tm-shadow-pop);
-  background: var(--tm-bg-card);
+  background: var(--tm-state-hover);
 }
 
 .tm-memory-feed[data-layout="card"] .tm-memory-card {
@@ -1633,12 +1782,12 @@ select.tm-tag-input:hover {
 .tm-tab-bar {
   display: flex;
   gap: 2px;
-  padding: 4px 6px;
+  padding: 0 6px;
   border-bottom: 1px solid var(--tm-line);
   flex-shrink: 0;
   overflow-x: auto;
-  background: var(--tm-bg-chrome);
-  background-color: var(--tm-bg-chrome);
+  background: transparent;
+  background-color: transparent;
 }
 
 .tm-tab-bar::-webkit-scrollbar {
@@ -1646,19 +1795,20 @@ select.tm-tag-input:hover {
   width: 0;
 }
 
+/* Text tabs (UI/UX 2.0 §15.5) — never pill buttons. Active = ink + underline. */
 .tm-tab-btn {
   flex: 1 1 0%;
   min-width: 0;
   height: var(--tm-btn-h);
-  padding: 0 var(--tm-gap-xs);
+  padding: 0 var(--tm-gap-sm);
   border: none;
-  border-radius: var(--tm-radius-ctl);
+  border-radius: var(--tm-radius-sm);
   background: transparent;
   background-color: transparent;
   color: var(--tm-ink-soft);
   cursor: pointer;
   font-size: var(--tm-type-meta);
-  font-weight: 600;
+  font-weight: 550;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1666,6 +1816,7 @@ select.tm-tag-input:hover {
   transition: var(--tm-transition-ui);
   white-space: nowrap;
   box-shadow: none;
+  position: relative;
 }
 
 .tm-tab-btn:hover {
@@ -1677,11 +1828,25 @@ select.tm-tag-input:hover {
 .tm-tab-btn.tm-tab-active,
 .tm-tab-btn.active,
 .tm-tab-btn[data-active="true"] {
-  background: var(--nav-item-background-active, var(--tm-accent-softer));
-  background-color: var(--nav-item-background-active, var(--tm-accent-softer));
-  color: var(--nav-item-color-active, var(--tm-accent-ink));
+  background: transparent;
+  background-color: transparent;
+  color: var(--tm-on-surface);
   box-shadow: none;
   font-weight: var(--font-semibold, 650);
+}
+
+.tm-tab-btn.tm-tab-active::after,
+.tm-tab-btn.active::after,
+.tm-tab-btn[data-active="true"]::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  translate: -50% 0;
+  width: calc(100% - 12px);
+  height: 2px;
+  border-radius: 1px;
+  background: var(--tm-accent);
 }
 
 .tm-tab-icon {
@@ -1984,10 +2149,14 @@ select.tm-tag-input:hover {
   border: 1px solid var(--tm-line);
   border-left: var(--tm-suggestion-left-border) var(--tm-line);
   border-radius: var(--tm-card-radius);
-  padding: 10px 12px;
+  padding: 12px 14px;
   margin-bottom: var(--tm-gap-sm);
-  box-shadow: var(--tm-shadow-card);
-  transition: opacity 180ms ease, transform 180ms ease, max-height 200ms ease, padding 200ms ease, margin 200ms ease;
+  box-shadow: none;
+  transition: opacity 180ms ease, max-height 200ms ease, padding 200ms ease, margin 200ms ease;
+}
+
+.tm-suggestion-card:hover {
+  background: var(--tm-state-hover);
 }
 
 .tm-suggestion-card.tm-card-removing {
@@ -2054,22 +2223,23 @@ select.tm-tag-input:hover {
 
 .tm-impact-badge {
   font-size: var(--tm-type-meta);
-  padding: 2px 8px;
+  padding: 1px 6px;
   border-radius: var(--tm-radius-pill);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   white-space: nowrap;
   flex-shrink: 0;
+  background: var(--tm-container-neutral);
+  color: var(--tm-on-surface-var);
 }
 
 .tm-impact-high {
-  background: color-mix(in srgb, var(--color-red, var(--text-error)) 12%, transparent);
+  background: var(--color-base-05, var(--background-primary-alt));
   color: var(--color-red, var(--text-error));
 }
 
 .tm-impact-medium {
-  background: color-mix(in srgb, var(--color-orange, var(--text-warning)) 12%, transparent);
+  background: var(--color-base-05, var(--background-primary-alt));
   color: var(--color-orange, var(--text-warning));
 }
 
@@ -2198,34 +2368,38 @@ button.tm-suggestion-path:focus-visible {
 .tm-chat-model-switcher {
   display: flex;
   align-items: center;
-  gap: var(--tm-gap-xs);
-  padding: 5px 8px;
-  border-radius: var(--tm-btn-radius);
-  border: 1px solid var(--tm-input-line);
-  background: var(--tm-input-bg);
-  box-shadow: var(--tm-input-shadow);
+  gap: var(--tm-gap-sm);
+  padding: 6px 8px;
+  border-radius: var(--tm-card-radius);
+  border: none;
+  background: var(--tm-bg-sunken);
   flex-wrap: wrap;
 }
 
 .tm-chat-switcher-select {
-  max-width: 48%;
+  max-width: 52%;
   min-width: 0;
   appearance: auto;
-  background-color: var(--tm-bg-card);
-  border-color: var(--tm-line);
+  background-color: var(--tm-bg-raise);
+  border: none;
   color: var(--tm-ink);
+  font-weight: 550;
+  box-shadow: none;
+  height: var(--tm-hit-sm);
+  border-radius: var(--tm-radius-sm);
+  padding: 0 6px;
 }
 
 .tm-chat-switcher-static {
   display: inline-flex;
   align-items: center;
   height: var(--tm-btn-h-sm);
-  padding: 0 var(--tm-gap-sm);
-  border-radius: var(--tm-radius-ctl);
-  background: var(--tm-bg-card);
-  border: 1px solid var(--tm-line);
+  padding: 0 var(--tm-gap-md);
+  border-radius: var(--tm-btn-radius);
+  background: var(--tm-bg-soft);
+  border: none;
   font-size: var(--tm-type-meta);
-  color: var(--tm-ink-soft);
+  color: var(--tm-ink);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -2494,8 +2668,8 @@ button.tm-suggestion-path:focus-visible {
 }
 
 .tm-chat-error-msg {
-  border-color: color-mix(in srgb, var(--color-red, var(--text-error)) 30%, transparent);
-  background: color-mix(in srgb, var(--color-red, var(--text-error)) 5%, transparent);
+  border-color: var(--color-red, var(--text-error));
+  background: var(--color-base-05, var(--background-primary-alt));
 }
 
 .tm-chat-error-msg .tm-chat-body {
@@ -2698,6 +2872,7 @@ button.tm-suggestion-path:focus-visible {
    ═══════════════════════════════════════════════════════════════════════ */
 
 .tm-empty-state {
+  background: var(--tm-bg-card-alt);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2850,6 +3025,18 @@ button.tm-suggestion-path:focus-visible {
   font-size: var(--tm-type-meta);
   color: var(--tm-ink-faint);
   font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity var(--tm-transition);
+}
+
+/* Only surface the counter when it becomes useful (near the limit). */
+.tm-char-count.tm-char-count-visible {
+  opacity: 1;
+}
+
+.tm-char-count.tm-char-count-warn {
+  color: var(--text-warning, var(--color-orange));
+  opacity: 1;
 }
 
 .tm-quick-capture-footer {
@@ -2857,6 +3044,14 @@ button.tm-suggestion-path:focus-visible {
   align-items: flex-end;
   gap: var(--tm-gap-md);
   flex-wrap: wrap;
+  padding-top: var(--tm-gap-sm);
+  border-top: none;
+}
+
+.tm-quick-capture-footer .tm-footer-label {
+  font-size: var(--tm-type-meta);
+  font-weight: 500;
+  color: var(--tm-ink-faint);
 }
 
 .tm-footer-left {
@@ -2877,7 +3072,7 @@ button.tm-suggestion-path:focus-visible {
 .tm-footer-label {
   font-size: var(--tm-type-meta);
   color: var(--tm-ink-soft);
-  font-weight: 550;
+  font-weight: 500;
   margin-right: var(--tm-gap-xs);
 }
 
@@ -2992,17 +3187,17 @@ button.tm-suggestion-path:focus-visible {
 }
 
 .tm-status-ok {
-  background: color-mix(in srgb, var(--color-green, var(--text-success)) 12%, transparent);
+  background: var(--color-base-05, var(--background-primary-alt));
   color: var(--color-green, var(--text-success));
 }
 
 .tm-status-info {
-  background: color-mix(in srgb, var(--color-blue, var(--text-accent)) 12%, transparent);
+  background: var(--color-base-05, var(--background-primary-alt));
   color: var(--color-blue, var(--text-accent));
 }
 
 .tm-status-warning {
-  background: color-mix(in srgb, var(--color-orange, var(--text-warning)) 12%, transparent);
+  background: var(--color-base-05, var(--background-primary-alt));
   color: var(--color-orange, var(--text-warning));
 }
 
@@ -3060,7 +3255,7 @@ button.tm-suggestion-path:focus-visible {
   height: 2.5em;
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--tm-bg-card) 0%, transparent),
+    var(--tm-bg-card),
     var(--tm-bg-card)
   );
   pointer-events: none;
@@ -3119,7 +3314,7 @@ button.tm-suggestion-path:focus-visible {
 
 .tm-btn-polish:hover {
   background: var(--tm-accent-soft);
-  border-color: color-mix(in srgb, var(--tm-accent) 45%, var(--tm-line));
+  border-color: var(--tm-accent);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -3185,7 +3380,9 @@ button.tm-suggestion-path:focus-visible {
    Higher specificity via `button.tm-*` (element + two classes).
    ═══════════════════════════════════════════════════════════════════════ */
 
+/* Ghost / icon tools stay quiet. Filled controls keep real chrome. */
 button.tm-toolbar-btn,
+button.tm-toolbar-nav-btn,
 button.tm-btn-ghost,
 button.tm-btn-ghost.tm-btn-icon,
 button.tm-btn-ghost.tm-btn-sm,
@@ -3197,18 +3394,27 @@ button.tm-feed-layout-btn,
 button.tm-tab-btn,
 button.tm-chat-msg-btn,
 button.tm-chat-clear-btn,
+button.tm-chat-starter-chip,
 button.tm-suggestion-path,
-button.tm-sidebar-action-btn:not(.tm-sidebar-capture-primary),
-button.tm-btn-secondary,
-button.tm-btn-open,
-button.tm-btn-dismiss,
-button.tm-btn-polish {
+button.tm-sidebar-action-btn:not(.tm-sidebar-capture-primary) {
   background-color: transparent;
   background-image: none;
   border: none;
   box-shadow: none;
   text-shadow: none;
-  color: var(--tm-ink-soft);
+  color: var(--tm-on-surface-var);
+  transition: background-color var(--tm-transition), color var(--tm-transition);
+}
+button.tm-toolbar-btn:hover,
+button.tm-toolbar-nav-btn:hover,
+button.tm-btn-ghost:hover,
+button.tm-card-action-btn:hover,
+button.tm-btn-mini:hover,
+button.tm-chat-msg-btn:hover,
+button.tm-chat-clear-btn:hover,
+button.tm-chat-starter-chip:hover {
+  background-color: var(--tm-state-hover);
+  color: var(--tm-on-surface);
 }
 
 button.tm-toolbar-btn:hover,
@@ -3230,16 +3436,21 @@ button.tm-sidebar-action-btn:not(.tm-sidebar-capture-primary):hover {
   box-shadow: none;
 }
 
-/* Hairline secondary keeps an outline; still no fill */
+/* Secondary = native default button (fill + hairline). */
 button.tm-btn-secondary,
 button.tm-btn-open,
 button.tm-btn-dismiss {
-  border: 1px solid var(--tm-line);
+  border: none;
+  background-color: var(--tm-bg-card);
+  color: var(--tm-ink);
+  box-shadow: var(--tm-input-shadow);
 }
 button.tm-btn-secondary:hover,
 button.tm-btn-open:hover,
 button.tm-btn-dismiss:hover {
   border-color: var(--tm-line-strong);
+  background-color: var(--tm-control-bg-hover);
+  color: var(--tm-ink);
 }
 
 /* Accent fill controls — the only solid surfaces */
@@ -3247,36 +3458,60 @@ button.tm-submit-btn,
 button.tm-btn-primary,
 button.tm-btn-init-workspace,
 button.tm-suggestion-actions .tm-btn-confirm,
-button.tm-sidebar-action-btn.tm-sidebar-capture-primary {
-  background-color: var(--tm-accent);
+button.tm-sidebar-action-btn.tm-sidebar-capture-primary,
+.tm-wb-compose button.tm-submit-btn {
+  background-color: var(--tm-primary);
   background-image: none;
   border: none;
   color: var(--text-on-accent);
-  box-shadow: none;
+  box-shadow: var(--tm-elev-1);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: background-color var(--tm-transition), box-shadow var(--tm-transition), filter var(--tm-transition);
+}
+button.tm-submit-btn:hover,
+button.tm-btn-primary:hover,
+button.tm-btn-init-workspace:hover,
+.tm-suggestion-actions .tm-btn-confirm:hover,
+button.tm-sidebar-action-btn.tm-sidebar-capture-primary:hover {
+  background-color: var(--tm-primary);
+  color: var(--text-on-accent);
+  filter: brightness(1.06);
+  box-shadow: var(--tm-elev-2);
+}
+button.tm-submit-btn:active,
+button.tm-btn-primary:active {
+  filter: brightness(0.96);
+  box-shadow: var(--tm-elev-1);
+}
+button.tm-submit-btn:focus-visible,
+button.tm-btn-primary:focus-visible {
+  box-shadow: var(--tm-focus-ring);
 }
 button.tm-submit-btn:hover,
 button.tm-btn-primary:hover,
 button.tm-btn-init-workspace:hover,
 button.tm-suggestion-actions .tm-btn-confirm:hover,
 button.tm-sidebar-action-btn.tm-sidebar-capture-primary:hover {
-  background-color: var(--tm-accent);
+  background-color: var(--interactive-accent-hover);
   color: var(--text-on-accent);
-  filter: brightness(1.06);
+  filter: none;
 }
 
-/* Segmented active = host nav wash, never a side or bottom accent bar. */
+/* Segmented active = quiet ink, never a side/bottom accent bar. */
 button.tm-feed-layout-btn[data-active="true"] {
-  background-color: var(--background-modifier-hover);
-  color: var(--text-normal);
+  background-color: var(--tm-accent-softer);
+  color: var(--tm-accent-ink);
   box-shadow: none;
+  font-weight: 650;
 }
 button.tm-tab-btn.tm-tab-active,
 button.tm-tab-btn.active,
 button.tm-tab-btn[data-active="true"] {
-  background-color: var(--nav-item-background-active, var(--background-modifier-hover));
-  color: var(--nav-item-color-active, var(--text-normal));
+  background-color: transparent;
+  color: var(--tm-on-surface);
   box-shadow: none;
-  font-weight: var(--font-semibold, 600);
+  font-weight: var(--font-semibold, 650);
 }
 
 /* MD3 state layers on interactive shells (overlay, not bg-swap) */
@@ -3289,15 +3524,16 @@ button.tm-tab-btn[data-active="true"] {
   background-image: linear-gradient(var(--tm-state-pressed), var(--tm-state-pressed));
 }
 
-/* Compose primary sits in a row with ghost polish — keep heights aligned */
+/* Compose polish = accent-tinted secondary next to the solid submit. */
 button.tm-btn-polish {
-  border: 1px solid var(--tm-line);
-  background-color: var(--tm-bg-soft);
+  border: none;
+  background-color: var(--tm-bg-card);
   color: var(--tm-accent-ink);
+  box-shadow: var(--tm-input-shadow);
 }
 button.tm-btn-polish:hover {
   background-color: var(--tm-accent-soft);
-  border-color: color-mix(in srgb, var(--tm-accent) 40%, var(--tm-line));
+  border-color: var(--interactive-accent);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -3320,22 +3556,21 @@ button.tm-btn-polish:hover {
 .tm-chat-message.tm-chat-user {
   align-self: flex-end;
   max-width: var(--tm-bubble-user-max);
-  padding: var(--tm-gap-md) var(--tm-gap-lg);
-  border-radius: var(--tm-radius-bubble) var(--tm-radius-bubble) var(--tm-radius-sm) var(--tm-radius-bubble);
-  border: 1px solid color-mix(in srgb, var(--interactive-accent) 28%, transparent);
-  background: var(--tm-accent-soft);
-  color: var(--tm-ink);
-  box-shadow: var(--tm-shadow-card);
+  padding: 10px 14px;
+  border-radius: var(--tm-radius-bubble) var(--tm-radius-bubble) 6px var(--tm-radius-bubble);
+  border: none;
+  background: var(--tm-primary-container);
+  color: var(--tm-on-surface);
+  line-height: var(--tm-lh-body);
 }
 
 .tm-chat-message.tm-chat-ai {
   align-self: stretch;
   max-width: 100%;
   padding: var(--tm-bubble-pad-y) var(--tm-gap-lg) var(--tm-gap-md);
-  border-radius: var(--tm-radius-card);
-  border: 1px solid var(--tm-line);
-  background: var(--tm-bg-card);
-  box-shadow: var(--tm-shadow-card);
+  border-radius: var(--tm-card-radius);
+  border: none;
+  background: var(--tm-bg-sunken);
 }
 
 .tm-chat-message.tm-chat-user .tm-chat-role {
@@ -3345,11 +3580,10 @@ button.tm-btn-polish:hover {
 .tm-chat-message.tm-chat-ai .tm-chat-role {
   display: block;
   font-size: var(--tm-type-meta);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: none;
-  color: var(--tm-ink-faint);
-  margin-bottom: var(--tm-gap-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--tm-on-surface-var);
+  margin-bottom: 6px;
 }
 
 .tm-chat-body {
@@ -3410,6 +3644,17 @@ button.tm-btn-polish:hover {
   align-items: center;
 }
 
+/* Folded tool telemetry — same quiet shell as reasoning. */
+.tm-chat-tools-fold {
+  flex: 1 0 100%;
+  margin: 0 0 var(--tm-gap-sm);
+}
+
+.tm-chat-tools-fold .tm-chat-tools {
+  margin: 0 0 var(--tm-gap-sm);
+  padding: 0 var(--tm-gap-md) var(--tm-gap-sm);
+}
+
 .tm-chat-tools-label {
   width: auto;
   font-size: var(--tm-type-meta);
@@ -3445,7 +3690,7 @@ button.tm-btn-polish:hover {
 
 .tm-chat-tool-chip-fail {
   color: var(--color-red, var(--text-error));
-  border-color: color-mix(in srgb, var(--color-red, var(--text-error)) 30%, transparent);
+  border-color: var(--color-red, var(--text-error));
 }
 
 /* Actions — ghost mini row under the answer */
@@ -3498,13 +3743,13 @@ button.tm-chat-msg-btn:hover {
   max-height: 120px;
   padding: var(--tm-gap-md) var(--tm-bubble-pad-y);
   border-radius: var(--tm-btn-radius);
-  border: 1px solid var(--tm-input-line);
-  background: var(--tm-input-bg);
+  border: none;
+  background: var(--tm-bg-card);
   color: var(--tm-ink);
   font-family: inherit;
   font-size: var(--tm-type-body);
   resize: none;
-  box-shadow: var(--tm-input-shadow);
+  box-shadow: var(--tm-card-shadow);
   transition: var(--tm-transition-ui), box-shadow var(--tm-transition);
 }
 
@@ -3533,45 +3778,28 @@ button.tm-chat-clear-btn:hover {
   background-color: var(--tm-bg-hover);
 }
 
-/* ── Stream workbench quick-access strip (Landing thinking) ── */
-.tm-wb-quick {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--tm-gap-xs);
-  margin-top: var(--tm-gap-sm);
-}
-.tm-wb-quick-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--tm-gap-xs);
-  height: var(--tm-hit-xs);
-  padding: 0 var(--tm-gap-sm) 0 var(--tm-gap-md);
-  border: 1px solid transparent;
-  border-radius: var(--tm-radius-pill);
-  background: transparent;
-  color: var(--tm-ink-soft);
+/* Toolbar nav labels — icon-first; label appears when the shell is wide. */
+.tm-toolbar-nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--tm-type-meta);
   font-weight: 550;
-  cursor: pointer;
-  transition: var(--tm-transition-ui), box-shadow 120ms ease, transform 120ms ease;
+  line-height: 1;
 }
-.tm-wb-quick-chip:active {
-  background: var(--tm-bg-active);
-}
-.tm-wb-quick-chip:hover {
-  background: var(--tm-bg-hover);
-  border-color: var(--tm-line);
-  color: var(--tm-ink);
-  box-shadow: var(--tm-shadow-card);
-  transform: translateY(-1px);
-}
-.tm-wb-quick-chip:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-}
-.tm-wb-quick-icon svg {
+
+.tm-toolbar-nav-icon svg {
   width: var(--tm-icon-xs);
   height: var(--tm-icon-xs);
+}
+
+@container tm-workbench (max-width: 720px) {
+  .tm-toolbar-nav-label {
+    display: none;
+  }
+  .tm-toolbar-nav-btn {
+    padding: 0 8px;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -3598,8 +3826,6 @@ button.tm-chat-clear-btn:hover {
   .tm-card-removing,
   .tm-suggestion-card,
   .tm-suggestion-card.tm-card-removing,
-  .tm-wb-quick-chip,
-  .tm-wb-quick-chip:hover,
   .tm-chat-msg-actions,
   .tm-wb-card .tm-card-actions,
   .tm-wb-card::before,
@@ -3639,4 +3865,726 @@ button.tm-chat-clear-btn:hover {
     opacity: 1;
     transition: none;
   }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   23. HOMEPAGE CHROME — Desktop parity (header nav · compose · entries)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.tm-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--tm-gap-md);
+  min-height: var(--tm-hit);
+  margin-bottom: 4px;
+}
+
+.tm-toolbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: var(--tm-gap-md);
+  padding-left: var(--tm-gap-md);
+  border-left: 1px solid var(--tm-state-hover);
+}
+
+.tm-toolbar-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--tm-hit-sm);
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--tm-radius-ctl);
+  background: transparent;
+  color: var(--tm-on-surface-var);
+  font-size: var(--tm-type-meta);
+  font-weight: 550;
+  cursor: pointer;
+  transition: background-color var(--tm-transition), color var(--tm-transition);
+}
+
+.tm-toolbar-nav-btn:hover {
+  background: var(--tm-state-hover);
+  color: var(--tm-on-surface);
+}
+
+.tm-toolbar-nav-btn:active {
+  background: var(--tm-state-pressed);
+}
+
+.tm-toolbar-nav-icon svg {
+  width: var(--tm-icon-xs);
+  height: var(--tm-icon-xs);
+}
+
+/* Compose: real input field inside an elevated card */
+.tm-wb-compose .tm-input-field {
+  width: 100%;
+  min-height: 72px;
+  padding: 12px 14px;
+  border: 1px solid var(--tm-state-hover);
+  border-radius: var(--tm-radius-ctl);
+  background: var(--tm-surface-container-high);
+  color: var(--tm-on-surface);
+  font-family: var(--font-interface);
+  font-size: var(--tm-type-body);
+  line-height: var(--tm-lh-body);
+  resize: none;
+  cursor: text;
+  transition: border-color var(--tm-transition), background-color var(--tm-transition), box-shadow var(--tm-transition);
+}
+
+.tm-wb-compose .tm-input-field:focus {
+  outline: none;
+  border-color: var(--tm-primary);
+  background: var(--tm-surface-container);
+  box-shadow: var(--tm-focus-ring);
+}
+
+.tm-wb-compose .tm-input-field::placeholder {
+  color: var(--tm-on-surface-var);
+  opacity: 0.75;
+}
+
+/* Compose actions: unmistakable buttons */
+.tm-wb-compose-actions .tm-btn-polish,
+.tm-wb-compose-actions .tm-submit-btn {
+  cursor: pointer;
+  height: var(--tm-hit);
+  padding: 0 14px;
+  font-size: var(--tm-type-label);
+  font-weight: 600;
+}
+
+.tm-wb-compose-actions .tm-btn-polish {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--tm-surface-container-high);
+  border: 1px solid var(--tm-state-hover);
+  border-radius: var(--tm-radius-ctl);
+  color: var(--tm-on-surface);
+  transition: background-color var(--tm-transition), border-color var(--tm-transition), box-shadow var(--tm-transition);
+}
+
+.tm-wb-compose-actions .tm-btn-polish:hover {
+  background: var(--tm-state-hover);
+  border-color: var(--tm-line-strong);
+  box-shadow: var(--tm-elev-1);
+  color: var(--tm-on-surface);
+}
+
+.tm-wb-compose-actions .tm-submit-btn {
+  border-radius: var(--tm-radius-ctl);
+  min-width: 88px;
+}
+
+/* Entries: Desktop-like rows with a quiet time gutter */
+.tm-day-group > .tm-wb-card {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 2px 12px;
+  padding: 12px 10px;
+  border-radius: var(--tm-radius-ctl);
+}
+
+.tm-day-group > .tm-wb-card:hover {
+  background: var(--tm-state-hover);
+  border-radius: var(--tm-radius-ctl);
+}
+
+.tm-wb-card .tm-card-time {
+  padding-top: 3px;
+  font-size: var(--tm-type-meta);
+  font-weight: 550;
+  color: var(--tm-on-surface-var);
+  font-variant-numeric: tabular-nums;
+}
+
+.tm-wb-card .tm-card-body {
+  font-size: var(--tm-type-body);
+  line-height: var(--tm-lh-body);
+  color: var(--tm-on-surface);
+}
+
+/* Interactive cursor — scoped to TopMind surfaces only (host-native §16). */
+.topmind button,
+.tm-stream-workbench button,
+.tm-sidebar-dock button,
+.tm-memory-browse button,
+.tm-quick-capture-content button,
+.tm-settings-host button,
+.tm-stream-workbench select,
+.tm-sidebar-dock select,
+.tm-memory-browse select,
+.tm-quick-capture-content select,
+.tm-settings-host select,
+.tm-stream-workbench summary,
+.tm-sidebar-dock summary,
+.tm-memory-browse summary,
+.tm-quick-capture-content summary,
+.tm-settings-host summary,
+[role="button"].tm-feed-layout-btn,
+[role="button"].tm-tab-btn {
+  cursor: pointer;
+}
+
+.tm-memory-browse .tm-feed-chrome {
+  margin: 12px 0 16px;
+  padding: 0;
+  gap: var(--tm-gap-sm);
+}
+
+.tm-memory-browse .tm-memory-search {
+  flex: 1 1 220px;
+  min-width: 160px;
+  max-width: 320px;
+}
+
+.tm-memory-browse .tm-memory-card {
+  padding: 12px 10px;
+}
+
+/* Quick-capture modal: layered field + actions */
+.tm-quick-capture-content .tm-input-field {
+  width: 100%;
+  min-height: 120px;
+  padding: 12px 14px;
+  border: 1px solid var(--tm-state-hover);
+  border-radius: var(--tm-radius-ctl);
+  background: var(--tm-surface-container-high);
+  color: var(--tm-on-surface);
+  resize: vertical;
+  cursor: text;
+}
+
+.tm-quick-capture-content .tm-input-field:focus {
+  outline: none;
+  border-color: var(--tm-primary);
+  box-shadow: var(--tm-focus-ring);
+  background: var(--tm-surface-container);
+}
+
+
+/* Quick capture textarea — real form field, not a white void */
+.tm-quick-capture-textarea {
+  width: 100%;
+  min-height: 140px;
+  padding: 14px 16px;
+  border: 1px solid var(--tm-state-hover);
+  border-radius: var(--tm-radius-ctl);
+  background: var(--tm-surface-container-high);
+  color: var(--tm-on-surface);
+  font-family: var(--font-interface);
+  font-size: var(--tm-type-body);
+  line-height: var(--tm-lh-body);
+  resize: vertical;
+  cursor: text;
+  transition: border-color var(--tm-transition), background-color var(--tm-transition), box-shadow var(--tm-transition);
+}
+
+.tm-quick-capture-textarea:focus {
+  outline: none;
+  border-color: var(--tm-primary);
+  background: var(--tm-surface-container);
+  box-shadow: var(--tm-focus-ring);
+}
+
+.tm-quick-capture-textarea::placeholder {
+  color: var(--tm-on-surface-var);
+}
+
+.tm-quick-capture-textarea-wrap {
+  margin: 12px 0;
+}
+
+.tm-quick-capture-footer .tm-submit-btn {
+  cursor: pointer;
+  min-width: 100px;
+  height: var(--tm-hit);
+  border-radius: var(--tm-radius-ctl);
+}
+
+.tm-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--tm-type-title);
+  font-weight: 600;
+  color: var(--tm-on-surface);
+}
+
+
+/* Entry rows — quiet timeline, content is the subject (UI/UX 2.0 §20) */
+.tm-day-group {
+  padding: 0;
+  gap: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.tm-day-group > .tm-wb-card {
+  background: var(--tm-bg-card);
+  box-shadow: none;
+  padding: 10px 12px;
+  border-radius: var(--tm-radius-ctl);
+  border: 1px solid var(--tm-line);
+  margin-bottom: var(--tm-gap-xs);
+}
+
+.tm-day-group > .tm-wb-card:last-child {
+  border-bottom: none;
+}
+
+.tm-day-group > .tm-wb-card:hover {
+  background: var(--tm-state-hover);
+  box-shadow: none;
+}
+
+/* Profile: keep chips/search off the edge */
+.tm-memory-browse .tm-section-header {
+  padding: 4px 2px;
+}
+
+/* Page title (我的情况) — the only display-size text on this surface. */
+.tm-memory-browse .tm-section-title-text {
+  font-size: var(--tm-type-display);
+}
+
+.tm-memory-browse .tm-memory-scope {
+  margin: 4px 2px 8px;
+}
+
+.tm-memory-feed[data-layout="list"] .tm-memory-card {
+  background: var(--tm-bg-card);
+  border: 1px solid var(--tm-line);
+  border-bottom: 1px solid var(--tm-line);
+  border-radius: 0;
+  margin-bottom: 0;
+  padding: 12px 10px;
+  transition: background-color var(--tm-transition);
+}
+
+.tm-memory-feed[data-layout="list"] .tm-memory-card:hover {
+  background: var(--tm-state-hover);
+}
+
+.tm-memory-card .tm-card-header {
+  gap: var(--tm-gap-sm);
+}
+
+/* ── Chat context bar + starters (UI/UX 2.0 §31) ── */
+.tm-chat-context-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tm-gap-xs);
+  padding: 4px 2px;
+  font-size: var(--tm-type-meta);
+  color: var(--tm-ink-faint);
+}
+
+.tm-chat-context-label {
+  font-weight: 550;
+  color: var(--tm-on-surface-var);
+  margin-right: 2px;
+}
+
+.tm-chat-context-empty {
+  color: var(--tm-ink-faint);
+}
+
+.tm-chip.tm-chat-context-chip {
+  display: inline-flex;
+  align-items: center;
+  height: var(--tm-hit-xs);
+  padding: 0 var(--tm-gap-sm);
+  border-radius: var(--tm-radius-pill);
+  background: var(--tm-container-neutral);
+  color: var(--tm-on-surface-var);
+  font-size: var(--tm-type-meta);
+  font-weight: 500;
+}
+
+.tm-chat-starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tm-gap-xs);
+  justify-content: center;
+  margin-top: var(--tm-gap-sm);
+  max-width: 36rem;
+}
+
+.tm-chat-starter-chip {
+  display: inline-flex;
+  align-items: center;
+  height: var(--tm-hit-sm);
+  padding: 0 var(--tm-gap-md);
+  border: 1px solid var(--tm-line);
+  border-radius: var(--tm-radius-ctl);
+  background: transparent;
+  color: var(--tm-on-surface-var);
+  font-size: var(--tm-type-label);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--tm-transition), color var(--tm-transition);
+}
+
+.tm-chat-starter-chip:hover {
+  background: var(--tm-state-hover);
+  color: var(--tm-on-surface);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   24. NATIVE BUTTON HARMONY — final layer
+   Official killer rule: `button:not(.clickable-icon)` → gray slab
+   specificity (0,2,1). Bare `button.tm-*` is only (0,1,1) and loses.
+   Therefore:
+     - ghost/icon tools carry `.clickable-icon` (official transparent shell)
+     - primary fills carry `.mod-cta` (official accent shell)
+   This layer only tints; it must not fight the host shells.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Ghost tools — native clickable-icon already transparent. */
+button.clickable-icon.tm-toolbar-btn,
+button.clickable-icon.tm-toolbar-nav-btn,
+button.clickable-icon.tm-btn-ghost,
+button.clickable-icon.tm-card-action-btn,
+button.clickable-icon.tm-btn-mini,
+button.clickable-icon.tm-feed-layout-btn,
+button.clickable-icon.tm-tab-btn,
+button.clickable-icon.tm-chat-msg-btn,
+button.clickable-icon.tm-chat-clear-btn,
+button.clickable-icon.tm-sidebar-icon-btn,
+button.clickable-icon.tm-sidebar-btn-labeled {
+  background-color: transparent;
+  border: none;
+  border-radius: var(--tm-radius-ctl);
+  box-shadow: none;
+  color: var(--tm-on-surface-var);
+}
+
+button.clickable-icon.tm-toolbar-btn:hover,
+button.clickable-icon.tm-toolbar-nav-btn:hover,
+button.clickable-icon.tm-btn-ghost:hover,
+button.clickable-icon.tm-card-action-btn:hover,
+button.clickable-icon.tm-feed-layout-btn:hover,
+button.clickable-icon.tm-tab-btn:hover {
+  background-color: var(--tm-bg-hover);
+  color: var(--tm-ink);
+}
+
+/* Ghost text buttons that stay without clickable-icon. */
+button.tm-chat-starter-chip,
+button.tm-suggestion-path,
+button.tm-sidebar-action-btn:not(.tm-sidebar-capture-primary) {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  border-radius: var(--tm-radius-ctl);
+  box-shadow: none;
+  color: var(--tm-on-surface-var);
+}
+
+button.tm-chat-starter-chip:hover {
+  background-color: var(--tm-bg-hover);
+  color: var(--tm-ink);
+}
+
+/* Secondary text buttons */
+button.tm-btn-secondary,
+button.tm-btn-polish {
+  background-color: var(--tm-bg-card);
+  border: none;
+  border-radius: var(--tm-radius-ctl);
+  box-shadow: var(--tm-input-shadow);
+  color: var(--tm-ink);
+}
+
+/* Primary — official mod-cta shell + our geometry. */
+button.mod-cta.tm-submit-btn,
+button.mod-cta.tm-btn-primary,
+button.mod-cta.tm-btn-init-workspace,
+button.mod-cta.tm-sidebar-capture-primary,
+button.tm-suggestion-actions .tm-btn-confirm {
+  background-color: var(--interactive-accent);
+  background-image: none;
+  border: none;
+  border-radius: var(--tm-radius-ctl);
+  color: var(--text-on-accent);
+  box-shadow: none;
+  font-weight: 600;
+}
+
+button.mod-cta.tm-submit-btn:hover,
+button.mod-cta.tm-btn-primary:hover,
+button.mod-cta.tm-btn-init-workspace:hover,
+button.mod-cta.tm-sidebar-capture-primary:hover,
+button.tm-suggestion-actions .tm-btn-confirm:hover {
+  background-color: var(--interactive-accent-hover);
+  color: var(--text-on-accent);
+}
+
+/* Tabs stay text + underline, never slabs. */
+button.tm-tab-btn.tm-tab-active,
+button.tm-tab-btn.active,
+button.tm-tab-btn[data-active="true"] {
+  background-color: transparent;
+  color: var(--tm-on-surface);
+  font-weight: var(--font-semibold, 650);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   25. VISIBLE SURFACES — final word
+   The quiet-timeline reset made every .tm-card transparent. Profile and
+   suggestion surfaces must read as paper again. Leaf-scoped so it beats
+   the stream quiet reset without !important.
+   ═══════════════════════════════════════════════════════════════════════ */
+.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-memory-card,
+.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-memory-page .tm-memory-card,
+.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-memory-feed .tm-memory-card,
+.tm-memory-browse .tm-memory-page .tm-memory-card,
+.tm-memory-page .tm-memory-feed .tm-memory-card {
+  background-color: var(--tm-bg-card);
+  background-image: none;
+  border: 1px solid var(--tm-line);
+  border-radius: var(--tm-radius-card);
+  box-shadow: var(--tm-shadow-card);
+  padding: 14px 16px;
+  margin-bottom: var(--tm-gap-sm);
+  color: var(--tm-ink);
+}
+
+.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-memory-card:hover,
+.tm-memory-browse .tm-memory-page .tm-memory-card:hover,
+.tm-memory-page .tm-memory-feed .tm-memory-card:hover {
+  background-color: var(--tm-bg-hover);
+  border-color: var(--tm-line-strong);
+}
+
+.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-card-tag {
+  background-color: var(--tm-bg-soft);
+  border: 1px solid var(--tm-line);
+  border-radius: var(--tm-radius-pill);
+  padding: 2px 8px;
+  color: var(--tm-on-surface-var);
+}
+
+/* Filter / layout chips must show a real selected wash. */
+button.tm-feed-layout-btn {
+  border: 1px solid var(--tm-line);
+  background-color: var(--tm-bg-soft);
+  color: var(--tm-on-surface-var);
+}
+
+button.tm-feed-layout-btn[data-active="true"] {
+  background-color: var(--tm-accent-softer);
+  color: var(--tm-accent-ink);
+  border-color: var(--tm-line-strong);
+  box-shadow: none;
+}
+
+button.tm-feed-layout-btn:hover {
+  background-color: var(--tm-bg-hover);
+  color: var(--tm-ink);
+}
+
+/* Stream timeline: hairline rows, compact, visible edges. */
+.tm-day-group {
+  gap: 0;
+  margin-bottom: var(--tm-gap-md);
+  background: transparent;
+  box-shadow: none;
+  border: none;
+}
+
+.tm-day-group > .tm-wb-card,
+.tm-day-group > .tm-card {
+  background: var(--tm-bg-card);
+  border: 1px solid var(--tm-line);
+  border-radius: var(--tm-radius-ctl);
+  box-shadow: none;
+  padding: 10px 12px;
+  margin-bottom: var(--tm-gap-xs);
+}
+
+.tm-day-group > .tm-wb-card:hover {
+  background: var(--tm-bg-hover);
+  border-color: var(--tm-line-strong);
+  box-shadow: none;
+}
+
+.tm-wb-card .tm-card-body p {
+  margin: 0.15em 0;
+}
+
+.tm-wb-shell,
+.tm-page {
+  gap: var(--tm-gap-md);
+  padding-block: 20px 40px;
+}
+
+
+/* ── Header model chip (compact, one row with AI status) ── */
+.tm-header-model {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  min-width: 0;
+  flex-shrink: 1;
+}
+.tm-header-model-select {
+  height: 22px;
+  max-width: 110px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tm-ink-soft);
+  font-size: var(--tm-type-meta);
+  font-weight: 550;
+}
+.tm-header-model-select:hover { background: var(--tm-bg-hover); color: var(--tm-ink); }
+.tm-header-model-static {
+  font-size: var(--tm-type-meta);
+  color: var(--tm-ink-soft);
+  white-space: nowrap;
+}
+.tm-header-model-sep {
+  color: var(--tm-ink-faint);
+  font-size: var(--tm-type-meta);
+}
+
+
+/* ── Stream hero title row hosts controls (saves the old section bar) ── */
+.tm-wb-hero-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tm-gap-sm);
+  flex-wrap: wrap;
+  font-size: var(--tm-type-title);
+  font-weight: var(--font-semibold, 600);
+}
+.tm-wb-hero-title .tm-section-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--tm-gap-xs);
+}
+.tm-wb-hero-title .tm-entry-count {
+  font-size: var(--tm-type-meta);
+  color: var(--tm-ink-faint);
+  margin-right: var(--tm-gap-xs);
+}
+
+/* Card meta row: time left, actions right */
+.tm-card-header.tm-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tm-gap-sm);
+  min-height: 22px;
+  margin: 0 0 4px;
+}
+.tm-card-meta .tm-card-time {
+  font-size: var(--tm-type-meta);
+  color: var(--tm-ink-faint);
+}
+.tm-card-meta .tm-card-actions {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  display: flex;
+  gap: 2px;
+}
+.tm-wb-card:hover .tm-card-actions,
+.tm-card:hover .tm-card-actions {
+  opacity: 1;
+}
+
+
+/* ── Chat input: full-width field + foot row below ── */
+.tm-chat-input-area {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: var(--tm-gap-sm);
+  border-top: 1px solid var(--tm-line);
+  flex-shrink: 0;
+}
+.tm-chat-input {
+  width: 100%;
+  min-height: 56px;
+  max-height: 140px;
+}
+.tm-chat-input-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--tm-gap-xs);
+  min-height: 28px;
+}
+.tm-chat-input-foot .tm-btn-primary,
+.tm-chat-input-foot .mod-cta {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+
+/* ── Chat input foot: status dot · model · send ── */
+.tm-sidebar-header-min {
+  min-height: 0;
+  padding: 2px 8px;
+  border-bottom: none;
+}
+.tm-footer-status {
+  display: inline-flex;
+  align-items: center;
+  width: 18px;
+  height: 18px;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.tm-footer-status:hover { background: var(--tm-bg-hover); }
+.tm-footer-status .tm-status-dot {
+  width: 7px;
+  height: 7px;
+}
+.tm-chat-input-foot .tm-header-model {
+  margin-left: 2px;
+}
+.tm-chat-input-foot .tm-header-model-select {
+  max-width: 96px;
+  height: 22px;
+  font-size: var(--tm-type-meta);
+}
+
+/* ── Type ramp: map everything onto Obsidian --font-ui-* ──
+   display=large(20) title=medium(15) body=small(13) meta=smaller(12) */
+.tm-wb-hero-title, .tm-section-title, .tm-memory-browse .tm-section-title-text {
+  font-size: var(--tm-type-title);
+  font-weight: var(--font-semibold, 600);
+}
+.tm-wb-hero-kicker, .tm-wb-hero-sub, .tm-entry-count,
+.tm-card-time, .tm-day-count, .tm-header-model-select,
+.tm-header-model-static, .tm-header-model-sep {
+  font-size: var(--tm-type-meta);
+  font-weight: 450;
+}
+.tm-day-label {
+  font-size: var(--tm-type-title);
+  font-weight: var(--font-semibold, 600);
+}
+.tm-card-body, .tm-suggestion-body, .tm-chat-body {
+  font-size: var(--tm-type-body);
+  line-height: var(--tm-lh-body);
 }

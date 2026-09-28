@@ -153,8 +153,9 @@ describe("Obsidian labeled-button chrome (shipped)", () => {
     assert.match(workbench, /this\.organizeBtn\.addEventListener\("click".*organizePeriod/s);
     assert.doesNotMatch(workbench, /setIcon\(this\.organizeBtn,\s*"refresh-cw"\)/);
     assert.doesNotMatch(workbench, /setIcon\(this\.organizeBtn,\s*"list-checks"\)/);
-    assert.match(sidebar, /setIcon\(workbenchBtn,\s*"waves"\)/);
-    assert.doesNotMatch(sidebar, /setIcon\(workbenchBtn,\s*"monitor"\)/);
+    // Workbench entry moved to the Obsidian activity bar (main.ts ribbon).
+    const mainSrc = fs.readFileSync(path.join(srcDir, "main.ts"), "utf-8");
+    assert.match(mainSrc, /addRibbonIcon\("waves",\s*t\("sidebar_open_workbench"\)/);
   });
 
   test("icon-only and labeled buttons ship aria-label / title", () => {
@@ -162,8 +163,8 @@ describe("Obsidian labeled-button chrome (shipped)", () => {
     assert.match(workbench, /refreshStreamBtn\.setAttribute\("title"/);
     assert.match(workbench, /sidebarBtn\.setAttribute\("aria-label"/);
     assert.match(workbench, /newNoteBtn\.setAttribute\("title"/);
-    assert.match(sidebar, /workbenchBtn\.setAttribute\("aria-label"/);
-    assert.match(sidebar, /settingsBtn\.setAttribute\("title"/);
+    // Header icon buttons were removed (user request); ribbon icons carry titles via API.
+    assert.match(sidebar, /statusDiv\.setAttribute\("title"/);
   });
 
   test("toolbar label keys exist in both locales", () => {

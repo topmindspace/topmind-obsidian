@@ -153,15 +153,16 @@ export class StreamWorkbenchView extends ItemView {
       day: "numeric",
       weekday: "long",
     });
-    heroHead.createDiv({ cls: "tm-wb-hero-kicker", text: dateLabel });
     const hour = today.getHours();
     const greetKey =
       hour < 5 ? "stream_greet_night" :
       hour < 12 ? "stream_greet_morning" :
       hour < 18 ? "stream_greet_afternoon" :
       "stream_greet_evening";
-    heroHead.createDiv({ cls: "tm-wb-hero-title", text: t(greetKey) });
-    heroHead.createDiv({ cls: "tm-wb-hero-sub", text: t("stream_this_week") });
+    // One line: greeting + date; second line keeps the week label only.
+    const titleRow = heroHead.createDiv({ cls: "tm-wb-hero-title" });
+    titleRow.createSpan({ text: t(greetKey), cls: "tm-wb-hero-greet" });
+    titleRow.createSpan({ text: ` · ${dateLabel}`, cls: "tm-wb-hero-kicker" });
 
     const compose = hero.createDiv({ cls: "tm-wb-compose" });
     const inputWrap = compose.createDiv({ cls: "tm-input-wrap" });
@@ -186,7 +187,7 @@ export class StreamWorkbenchView extends ItemView {
 
     const composeActions = composeFoot.createDiv({ cls: "tm-wb-compose-actions" });
     const polishBtn = composeActions.createEl("button", {
-      cls: "tm-btn-polish",
+      cls: "tm-btn-secondary tm-btn-sm tm-btn-polish",
       attr: { "aria-label": t("stream_btn_polish"), title: t("stream_btn_polish") },
     });
     setIcon(polishBtn, "sparkles");
@@ -209,7 +210,7 @@ export class StreamWorkbenchView extends ItemView {
 
     this.submitBtn = composeActions.createEl("button", {
       text: t("quick_capture_log_it"),
-      cls: "tm-submit-btn",
+      cls: "tm-submit-btn mod-cta",
     });
     this.submitBtn.setAttribute("aria-label", t("quick_capture_log_it"));
 
@@ -227,58 +228,15 @@ export class StreamWorkbenchView extends ItemView {
     });
     this.submitBtn.addEventListener("click", () => this.submitInput());
 
-    // ── Quick access strip (workbench homepage · Landing thinking) ──
-    const quick = hero.createDiv({ cls: "tm-wb-quick" });
-    const quickItems: Array<{ id: string; icon: string; label: string; onClick: () => void }> = [
-      {
-        id: "capture",
-        icon: "pencil",
-        label: t("quick_capture_note_it"),
-        onClick: () => void this.plugin.openQuickCapture(),
-      },
-      {
-        id: "memory",
-        icon: "user",
-        label: t("sidebar_btn_memory"),
-        onClick: () => void this.plugin.openMemoryBrowse(),
-      },
-      {
-        id: "suggestions",
-        icon: "lightbulb",
-        label: t("sidebar_tab_suggestions"),
-        onClick: () => void this.openSidebarSuggestions(),
-      },
-      {
-        id: "chat",
-        icon: "bot",
-        label: t("sidebar_tab_chat"),
-        onClick: () => void this.openSidebarChat(),
-      },
-    ];
-    for (const item of quickItems) {
-      const btn = quick.createEl("button", {
-        cls: "tm-wb-quick-chip",
-        attr: { "aria-label": item.label, title: item.label, "data-quick": item.id },
-      });
-      setIcon(btn.createSpan({ cls: "tm-wb-quick-icon" }), item.icon);
-      btn.createSpan({ text: item.label, cls: "tm-wb-quick-label" });
-      btn.addEventListener("click", item.onClick);
-    }
-
-    // ── Timeline section ──
-    const section = shell.createDiv({ cls: "tm-wb-section" });
-    const streamHeader = section.createDiv({ cls: "tm-section-header" });
-    const streamTitleDiv = streamHeader.createDiv({ cls: "tm-section-title" });
-    streamTitleDiv.createSpan({ text: t("stream_this_week"), cls: "tm-section-title-text" });
-    this.entryCountEl = streamTitleDiv.createSpan({ cls: "tm-entry-count" });
-
-    const streamControls = streamHeader.createDiv({ cls: "tm-section-controls" });
+    // ── Stream controls ride the hero title row (saves a whole bar) ──
+    const streamControls = titleRow.createDiv({ cls: "tm-section-controls" });
+    this.entryCountEl = streamControls.createSpan({ cls: "tm-entry-count" });
     this.periodSelect = streamControls.createEl("select", { cls: "tm-period-select" });
     this.periodSelect.setAttribute("aria-label", t("stream_switch_period"));
     this.periodSelect.addEventListener("change", () => { void this.refreshStream(); });
 
     const refreshStreamBtn = streamControls.createEl("button", {
-      cls: "tm-btn-ghost tm-btn-icon tm-btn-sm",
+      cls: "tm-btn-ghost tm-btn-icon tm-btn-sm clickable-icon",
     });
     setIcon(refreshStreamBtn, "refresh-cw");
     refreshStreamBtn.setAttribute("aria-label", t("toolbar_btn_refresh"));
@@ -289,7 +247,7 @@ export class StreamWorkbenchView extends ItemView {
     });
 
     this.organizeBtn = streamControls.createEl("button", {
-      cls: "tm-btn-ghost tm-btn-icon tm-btn-sm",
+      cls: "tm-btn-ghost tm-btn-icon tm-btn-sm clickable-icon",
     });
     setIcon(this.organizeBtn, "arrow-down-wide-narrow");
     this.organizeBtn.setAttribute("aria-label", t("stream_organize"));
@@ -299,8 +257,9 @@ export class StreamWorkbenchView extends ItemView {
     });
 
     this.renderLayoutToggle(streamControls);
-    // 我的情况 lives in the page toolbar (single entry) — not repeated here.
 
+    // ── Timeline (no separate header row) ──
+    const section = shell.createDiv({ cls: "tm-wb-section" });
     this.streamContainer = section.createDiv({ cls: "tm-stream-container tm-wb-timeline" });
     this.applyFeedLayout();
 
@@ -311,6 +270,29 @@ export class StreamWorkbenchView extends ItemView {
     const toolbar = container.createDiv({ cls: "tm-toolbar" });
     const titleWrap = toolbar.createDiv({ cls: "tm-toolbar-title" });
     titleWrap.createSpan({ text: t("stream_workbench_title"), cls: "tm-toolbar-title-text" });
+
+    // Primary nav lives in the header row (Desktop parity) — left of utilities.
+    const nav = toolbar.createDiv({ cls: "tm-toolbar-nav" });
+    const navItems: Array<{ id: string; icon: string; label: string; onClick: () => void }> = [
+      { id: "capture", icon: "pencil", label: t("quick_capture_note_it"), onClick: () => void this.plugin.openQuickCapture() },
+      { id: "memory", icon: "user", label: t("sidebar_btn_memory"), onClick: () => void this.plugin.openMemoryBrowse() },
+      { id: "suggestions", icon: "lightbulb", label: t("sidebar_tab_suggestions"), onClick: () => void this.openSidebarSuggestions() },
+      { id: "chat", icon: "bot", label: t("sidebar_tab_chat"), onClick: () => void this.openSidebarChat() },
+    ];
+    for (const item of navItems) {
+      const btn = nav.createEl("button", {
+        cls: "tm-toolbar-nav-btn clickable-icon",
+        attr: {
+          "aria-label": item.label,
+          title: item.label,
+          "data-quick": item.id,
+          ...(item.id === "memory" ? { "data-stream-open-memory": "true" } : {}),
+        },
+      });
+      setIcon(btn.createSpan({ cls: "tm-toolbar-nav-icon" }), item.icon);
+      btn.createSpan({ text: item.label, cls: "tm-toolbar-nav-label" });
+      btn.addEventListener("click", item.onClick);
+    }
 
     this.taskBadgeEl = toolbar.createDiv({ cls: "tm-task-badge tm-task-badge-hidden" });
     this.taskBadgeEl.setAttribute("role", "button");
@@ -334,7 +316,7 @@ export class StreamWorkbenchView extends ItemView {
     // 我的情况 lives here as the single entry (not also in the section bar).
     const actionsDiv = toolbar.createDiv({ cls: "tm-toolbar-actions" });
 
-    const sidebarBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn" });
+    const sidebarBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn clickable-icon" });
     setIcon(sidebarBtn, "panel-right");
     sidebarBtn.setAttribute("aria-label", t("sidebar_open_sidebar"));
     sidebarBtn.setAttribute("title", t("sidebar_open_sidebar"));
@@ -342,13 +324,13 @@ export class StreamWorkbenchView extends ItemView {
       void this.openSidebar();
     });
 
-    const settingsBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn" });
+    const settingsBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn clickable-icon" });
     setIcon(settingsBtn, "settings");
     settingsBtn.setAttribute("aria-label", t("sidebar_open_settings"));
     settingsBtn.setAttribute("title", t("sidebar_open_settings"));
     settingsBtn.addEventListener("click", () => this.openSettings());
 
-    const newNoteBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn" });
+    const newNoteBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn clickable-icon" });
     setIcon(newNoteBtn, "file-plus");
     newNoteBtn.setAttribute("aria-label", t("toolbar_btn_new_note"));
     newNoteBtn.setAttribute("title", t("toolbar_btn_new_note"));
@@ -356,12 +338,6 @@ export class StreamWorkbenchView extends ItemView {
       void this.createNewNote();
     });
 
-    const memoryBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn" });
-    setIcon(memoryBtn, "user");
-    memoryBtn.setAttribute("aria-label", t("toolbar_btn_profile"));
-    memoryBtn.setAttribute("title", t("toolbar_btn_profile"));
-    memoryBtn.setAttribute("data-stream-open-memory", "true");
-    memoryBtn.addEventListener("click", () => void this.plugin.openMemoryBrowse());
   }
 
   private currentFeedLayout(): "list" | "card" {
@@ -712,6 +688,14 @@ export class StreamWorkbenchView extends ItemView {
     setIcon(iconDiv, "waves");
     emptyDiv.createDiv({ text: t("stream_empty"), cls: "tm-empty-title" });
     emptyDiv.createDiv({ text: t("stream_empty_hint"), cls: "tm-empty-hint" });
+    const action = emptyDiv.createDiv({ cls: "tm-empty-action" });
+    const captureBtn = action.createEl("button", {
+      text: t("quick_capture_title"),
+      cls: "tm-btn-primary mod-cta",
+    });
+    captureBtn.addEventListener("click", () => {
+      this.plugin.openQuickCapture();
+    });
   }
 
   private updateEntryCount(count: number): void {
@@ -726,13 +710,17 @@ export class StreamWorkbenchView extends ItemView {
     const ordered = orderStreamEntriesForFeed(entries, order);
 
     for (const group of ordered) {
-      if (ordered.length > 1 && group.label) {
+      // One gray surface per day (settings-card pattern) — hierarchy via fill,
+      // not outlines. Header sits above the block.
+      const showLabel = Boolean(group.label) || ordered.length > 1;
+      if (showLabel && group.label) {
         const dayHeader = container.createDiv({ cls: "tm-day-header" });
         dayHeader.createSpan({ text: group.label, cls: "tm-day-label" });
         dayHeader.createSpan({ text: `${group.entries.length}`, cls: "tm-day-count" });
       }
+      const dayGroup = container.createDiv({ cls: "tm-day-group" });
       for (const entry of group.entries) {
-        void this.renderStreamCard(container, entry, periodPath);
+        void this.renderStreamCard(dayGroup, entry, periodPath);
       }
     }
   }
@@ -744,23 +732,21 @@ export class StreamWorkbenchView extends ItemView {
 
     const card = container.createDiv({ cls: "tm-card tm-wb-card" });
 
-    // Time gutter (direct child → grid-area: time)
+    // Meta row: time left · actions right (saves a vertical line)
+    const header = card.createDiv({ cls: "tm-card-header tm-card-meta" });
     if (entry.time) {
-      card.createSpan({ cls: "tm-card-time", text: entry.time });
+      header.createSpan({ cls: "tm-card-time", text: entry.time });
     } else {
-      const timeCell = card.createDiv({ cls: "tm-card-time tm-card-time-soft" });
+      const timeCell = header.createDiv({ cls: "tm-card-time tm-card-time-soft" });
       timeCell.createSpan({ cls: "tm-card-dot" });
     }
 
-    // Head row: actions only (grid-area: head)
-    const header = card.createDiv({ cls: "tm-card-header" });
-
-    // Card actions (always visible, quiet)
+    // Card actions (hover-revealed, sit on the same row as time)
     const actionsEl = header.createDiv({ cls: "tm-card-actions" });
 
     // Copy button
     const copyBtn = actionsEl.createEl("button", {
-      cls: "tm-card-action-btn",
+      cls: "tm-card-action-btn clickable-icon",
       attr: { "aria-label": t("stream_btn_copy"), title: t("stream_btn_copy") },
     });
     setIcon(copyBtn, "copy");
@@ -776,7 +762,7 @@ export class StreamWorkbenchView extends ItemView {
 
     // Open in editor button
     const editBtn = actionsEl.createEl("button", {
-      cls: "tm-card-action-btn",
+      cls: "tm-card-action-btn clickable-icon",
       attr: { "aria-label": t("stream_btn_edit"), title: t("stream_open_in_editor") },
     });
     setIcon(editBtn, "square-pen");
@@ -787,7 +773,7 @@ export class StreamWorkbenchView extends ItemView {
 
     // Append continuation button
     const appendBtn = actionsEl.createEl("button", {
-      cls: "tm-card-action-btn",
+      cls: "tm-card-action-btn clickable-icon",
       attr: { "aria-label": t("stream_btn_append"), title: t("stream_btn_append") },
     });
     setIcon(appendBtn, "message-square-plus");
@@ -823,7 +809,7 @@ export class StreamWorkbenchView extends ItemView {
       });
 
       const submitAppendBtn = appendActions.createEl("button", {
-        cls: "tm-submit-btn tm-btn-sm",
+        cls: "tm-submit-btn tm-btn-sm mod-cta",
         text: t("stream_append_submit"),
       });
 

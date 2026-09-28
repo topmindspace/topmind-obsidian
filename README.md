@@ -135,7 +135,7 @@ Navigate to **Settings -> Topmind Stream -> AI Co-pilot & Save**:
 
 - Command palette -> **Topmind: Note it** (*bind a hotkey in Obsidian Settings -> Hotkeys*).
 - `Cmd/Ctrl + P` -> **Topmind: Open Stream** to open the timeline tab.
-- Click the **Pencil icon** in the left ribbon to open **Note it** instantly.
+- Left ribbon (Activity Bar): **Pencil** opens **Note it**; **Waves** opens the **Stream** workbench.
 
 Product vocabulary (aligned with Desktop): **Note it** / 记一下 · **Log it** / 记下 · stream · topic · My profile · delivery.
 

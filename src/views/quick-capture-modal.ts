@@ -53,6 +53,7 @@ export class QuickCaptureModal extends Modal {
 
     this.charCountEl = metaBar.createSpan({ cls: "tm-char-count" });
     this.charCountEl.textContent = "0";
+    this.charCountEl.setAttribute("aria-hidden", "true");
 
     // Footer
     const footer = contentEl.createDiv({ cls: "tm-quick-capture-footer" });
@@ -82,7 +83,7 @@ export class QuickCaptureModal extends Modal {
 
     this.submitBtn = footer.createEl("button", {
       text: t("quick_capture_note_it"),
-      cls: "tm-submit-btn",
+      cls: "tm-submit-btn mod-cta",
     });
     this.submitBtn.setAttribute("aria-label", t("quick_capture_note_it"));
 
@@ -124,9 +125,18 @@ export class QuickCaptureModal extends Modal {
   }
 
   private updateCharCount(): void {
-    if (this.charCountEl) {
-      this.charCountEl.textContent = String(this.textarea.value.length);
-    }
+    if (!this.charCountEl) return;
+    const len = this.textarea.value.length;
+    // Quiet by design (UI/UX 2.0 §27): stay hidden until the limit is in play.
+    const softLimit = 2000;
+    const warnAt = Math.floor(softLimit * 0.8);
+    const visible = len >= warnAt;
+    this.charCountEl.textContent = String(len);
+    this.charCountEl.classList.toggle("tm-char-count-visible", visible);
+    this.charCountEl.classList.toggle("tm-char-count-warn", len >= softLimit);
+    // Hidden counter is decorative; once visible it is real status for AT.
+    if (visible) this.charCountEl.removeAttribute("aria-hidden");
+    else this.charCountEl.setAttribute("aria-hidden", "true");
   }
 
   private updateUrlHint(): void {

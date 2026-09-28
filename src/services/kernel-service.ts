@@ -48,6 +48,7 @@ import {
   type ChatProgressEvent,
 } from "./kernel-workspace-ops.ts";
 import { setPendingWritesWorkspace } from "./pending-writes.ts";
+import { sanitizeAiContent } from "#kernel/ai-content-sanitize.mjs";
 import { t, getLocale } from "../i18n";
 import { hasConfiguredProvider, getProviderKey } from "../types.ts";
 
@@ -561,9 +562,10 @@ export class KernelService {
       const prompt = isZh
         ? `请润色以下随手记内容，使其表达更通顺、专业，同时保留原意与信息量。只输出润色后的正文，不要包含任何前置或后置说明解释、不要包含标签符号：\n\n${text}`
         : `Please polish the following note to make it smoother and more professional while preserving its original meaning and details. Output only the polished replacement text without any preamble or explanation:\n\n${text}`;
-      const res = await provider.generate(prompt, { operation: "polish", foldReasoning: false });
-      const cleaned = String(res || "").trim().replace(/^```[a-z]*\s*/i, "").replace(/\s*```$/i, "").trim();
-      return cleaned || null;
+      const res = await provider.generate(prompt, { operation: "polish", foldReasoning: true });
+      // Never leak thinking / meta into the composer — only the polished body.
+      const cleaned = sanitizeAiContent(String(res || ""));
+      return cleaned.trim() || null;
     } catch (e) {
       new Notice(`${t("notice_polish_failed")}: ${e instanceof Error ? e.message : String(e)}`);
       return null;
