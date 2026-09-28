@@ -132,13 +132,7 @@ export const HOST_OVERRIDE_CSS = `:root{
 .tm-task-progress-inline{display:flex!important;align-items:center!important;gap:8px!important;position:relative!important;padding-left:22px!important;flex-direction:row!important}
 .tm-task-progress-inline::before{content:''!important;position:absolute!important;left:0!important;top:50%!important;translate:0 -50%!important;width:12px!important;height:12px!important;border-radius:50%!important;border:2px solid var(--background-modifier-border)!important;border-top-color:var(--interactive-accent)!important;animation:tm-spin .7s linear infinite!important;flex-shrink:0!important}
 .tm-task-progress-inline > *{animation:none!important;transform:none!important;writing-mode:horizontal-tb!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
-.workspace-leaf-content[data-type=\
-] .tm-stream-workbench,.workspace-leaf-content[data-type=\
-] .tm-memory-browse,.workspace-leaf-content[data-type=\
-] .tm-sidebar-dock{background:var(--background-secondary)!important;background-image:linear-gradient(180deg,color-mix(in srgb,var(--color-blue,var(--interactive-accent)) 6%,var(--background-secondary)) 0%,color-mix(in srgb,var(--color-cyan,var(--color-blue,var(--interactive-accent))) 4%,var(--background-primary-alt)) 48%,var(--background-primary) 100%)!important;background-attachment:fixed!important}
-.workspace-leaf-content[data-type=\
-] .tm-page,.workspace-leaf-content[data-type=\
-] .tm-wb-shell,.workspace-leaf-content[data-type=\
-] .tm-page{background:transparent!important}
-\n
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-stream-workbench,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-memory-browse,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-dock{background:var(--background-secondary)!important;background-image:linear-gradient(180deg,color-mix(in srgb,var(--color-blue,var(--interactive-accent)) 6%,var(--background-secondary)) 0%,color-mix(in srgb,var(--color-cyan,var(--color-blue,var(--interactive-accent))) 4%,var(--background-primary-alt)) 48%,var(--background-primary) 100%)!important;background-attachment:fixed!important}
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-page,.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-wb-shell,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page{background:transparent!important}
+
 `;

@@ -272,3 +272,28 @@ test("styles.css: pill radius only on tag/status/filter/tool-chip", () => {
     .map((b) => b.selector.slice(0, 100));
   assert.deepEqual(offenders, [], `pill radius on non-semantic controls:\n${offenders.join("\n")}`);
 });
+
+test("styles.css parses: no broken escapes or literal \\n artifacts", () => {
+  // Regression: extracting CSS from TS string literals mangled `data-type=\"…\"`
+  // into `data-type=\\` + line break + `]`, and left a literal `\\n` line.
+  // That made the community CSS linter report "Unknown word \\n" and the host
+  // CSS parser drop the sheet (missing backgrounds).
+  const problems = [];
+  css.split("\n").forEach((line, i) => {
+    if (/\\$/.test(line.trimEnd()) && !/\\["']/.test(line)) {
+      // trailing lone backslash (line-continuation artifact)
+      if (!line.includes("data-type=") || !line.includes('"')) {
+        problems.push(`L${i + 1}: trailing backslash: ${line.trim().slice(0, 80)}`);
+      }
+    }
+    if (line.trim() === "\\n") {
+      problems.push(`L${i + 1}: literal \\n artifact`);
+    }
+    if (/data-type=\\$/.test(line.trimEnd())) {
+      problems.push(`L${i + 1}: broken data-type=\\ escape: ${line.trim().slice(0, 80)}`);
+    }
+  });
+  assert.deepEqual(problems, [], `styles.css syntax artifacts:\n${problems.join("\n")}`);
+  // brace balance
+  assert.equal(css.split("{").length, css.split("}").length, "styles.css braces unbalanced");
+});
