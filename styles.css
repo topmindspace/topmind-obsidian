@@ -594,6 +594,72 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   2b. VIEW CHROME — hide Obsidian view-header on topmind views
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Obsidian ItemView always paints a .view-header (back/forward + title + …).
+   topmind views carry their own top chrome (.tm-toolbar / .tm-tab-bar) with
+   in-view navigation, so the native header is a duplicate white bar. The tab
+   strip at the window top still names the view — users keep orientation.
+   Keep the "…" action menu reachable via the tab context menu. */
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .view-header,
+.workspace-leaf-content[data-type="topmind-memory-browse"] .view-header,
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .view-header {
+  display: none;
+}
+
+/* Full-bleed content starts at the pane edge — no leftover header gap. */
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .view-content,
+.workspace-leaf-content[data-type="topmind-memory-browse"] .view-content,
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .view-content {
+  height: 100%;
+  min-height: 0;
+}
+
+/* ── Shared top-chrome band (main toolbar ↔ sidebar header + tabs) ──
+   One visual language across the window: same height, same divider, same
+   tonal step. Plugin chrome is the top band of every topmind surface —
+   no more native white view-header in the middle of the product UI. */
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,
+.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page > .tm-section-header:first-child,
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header,
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar {
+  min-height: var(--tm-hit);
+  background: var(--tm-bg-chrome);
+  border-bottom: 1px solid var(--tm-line);
+}
+
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,
+.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page > .tm-section-header:first-child {
+  padding-top: var(--tm-gap-xs);
+  padding-bottom: var(--tm-gap-xs);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header {
+  padding: var(--tm-gap-xs) var(--tm-gap-sm);
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar {
+  padding: 0 var(--tm-gap-sm);
+  position: sticky;
+  top: var(--tm-hit);
+  z-index: 2;
+}
+
+/* Title weight matches across main toolbar and sidebar labels. */
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar-title-text,
+.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-section-title-text {
+  font-size: var(--tm-type-title);
+  font-weight: var(--font-semibold, 600);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    3. CHROME BARS — shared height + gap so layers align
    ═══════════════════════════════════════════════════════════════════════ */
 
@@ -4872,3 +4938,5 @@ button.tm-feed-layout-btn:hover {
 .tm-task-progress-inline > *{animation:none!important;transform:none!important;writing-mode:horizontal-tb!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
 .workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-stream-workbench,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-memory-browse,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-dock{background:var(--background-secondary)!important;background-image:linear-gradient(180deg,color-mix(in srgb,var(--color-blue,var(--interactive-accent)) 6%,var(--background-secondary)) 0%,color-mix(in srgb,var(--color-cyan,var(--color-blue,var(--interactive-accent))) 4%,var(--background-primary-alt)) 48%,var(--background-primary) 100%)!important;background-attachment:fixed!important}
 .workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-page,.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-wb-shell,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page{background:transparent!important}
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .view-header,.workspace-leaf-content[data-type="topmind-memory-browse"] .view-header,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .view-header{display:none!important}
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page>.tm-section-header:first-child,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar{min-height:var(--tm-hit)!important;background:var(--tm-bg-chrome)!important;border-bottom:1px solid var(--tm-line)!important}.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page>.tm-section-header:first-child,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar{position:sticky!important;z-index:2!important}.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page>.tm-section-header:first-child{top:0!important}.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header{top:0!important;z-index:3!important}.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar{top:var(--tm-hit)!important}
