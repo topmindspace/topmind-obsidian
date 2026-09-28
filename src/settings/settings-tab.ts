@@ -10,7 +10,7 @@
 //   - Model picker (official list-models → models.dev → curated) + custom ID
 //   - Connection test + writeback policy
 //
-// Renders through `display()` + stock `Setting` rows on `containerEl` so
+// Renders through `getSettingDefinitions()` + stock `Setting` rows so
 // Obsidian's own setting-group / setting-item CSS applies (native card +
 // info|control row look). Do NOT nest Settings inside another Setting's
 // `settingEl` — that is a flex row and squeezes CJK labels vertically.
@@ -221,162 +221,169 @@ export class TopmindSettingTab extends PluginSettingTab {
   }
 
   /**
-   * Paint into `containerEl` with stock `Setting` rows so Obsidian's own
-   * `.setting-group` / `.setting-items` / `.setting-item` CSS applies (the
-   * card + info|control row look of Settings → Editor).
-   *
-   * `getSettingDefinitions()` returns empty so `display()` is the render path.
-   * Stuffing nested Settings into one `setting.settingEl` (a flex row) is what
-   * squeezed CJK labels into one-character-wide vertical columns.
+   * Declarative settings surface (Obsidian 1.13+). `display()` is deprecated
+   * and must not be overridden when this returns a non-empty array — the
+   * community scanner flags `obsidianmd/settings-tab/no-deprecated-display`.
+   * Simple rows bind through `getControlValue`/`setControlValue`; custom
+   * rows paint via a `render` callback.
    */
   override getSettingDefinitions(): SettingDefinitionItem[] {
-    return [];
-  }
-
-  override display(): void {
     this.hydrateWriteback();
-    const host = this.containerEl;
-    host.empty();
     this.templateSelect = null;
-
-    // Section headings match native Settings → Editor ("显示" style).
-    const heading = (text: string): void => {
-      new Setting(host).setName(text).setHeading();
-    };
-
-    heading(t("settings_workspace"));
-    this.renderWorkspaceStatusRow(new Setting(host).setName(t("workspace_status")).setDesc(t("settings_workspace_status_desc")));
-    this.renderContractDoctorRow(new Setting(host).setName(t("workspace_contract_doctor")).setDesc(t("workspace_contract_doctor_desc")));
-    this.renderInitWorkspaceRow(new Setting(host).setName(t("init_workspace")).setDesc(t("init_workspace_desc")));
-
-    heading(t("settings_stream"));
     const s = this.plugin.settings;
-    new Setting(host)
-      .setName(t("settings_auto_open"))
-      .setDesc(t("settings_auto_open_desc"))
-      .addToggle((toggle) =>
-        toggle.setValue(s.autoOpenWorkbench).onChange(async (v) => {
-          s.autoOpenWorkbench = v;
-          await this.save();
-        }),
-      );
-    new Setting(host)
-      .setName(t("settings_timeline_order"))
-      .setDesc(t("settings_timeline_order_desc"))
-      .addDropdown((dd) =>
-        dd
-          .addOption("desc", t("timeline_desc"))
-          .addOption("asc", t("timeline_asc"))
-          .setValue(s.timelineOrder)
-          .onChange(async (v) => {
-            s.timelineOrder = v === "asc" ? "asc" : "desc";
-            await this.save();
-          }),
-      );
-    new Setting(host)
-      .setName(t("settings_auto_tag"))
-      .setDesc(t("settings_auto_tag_desc"))
-      .addToggle((toggle) =>
-        toggle.setValue(s.autoTag).onChange(async (v) => {
-          s.autoTag = v;
-          await this.save();
-        }),
-      );
-    this.renderLocaleOverrideRow(new Setting(host).setName(t("settings_locale_override")).setDesc(t("settings_locale_override_desc")));
-    new Setting(host)
-      .setName(t("settings_feed_layout"))
-      .setDesc(t("settings_feed_layout_desc"))
-      .addDropdown((dd) =>
-        dd
-          .addOption("list", t("feed_layout_list"))
-          .addOption("card", t("feed_layout_card"))
-          .setValue(s.feedLayout)
-          .onChange(async (v) => {
-            s.feedLayout = v === "card" ? "card" : "list";
-            await this.save();
-            this.refreshViews();
-          }),
-      );
 
-    heading(t("settings_ai"));
-    this.renderAiStatusRow(new Setting(host).setName(t("settings_ai_status")).setDesc(t("settings_ai_status_desc")));
-    this.renderAiImportRow(new Setting(host).setName(t("settings_ai_import")).setDesc(t("settings_ai_import_desc")));
-    this.renderProviderPreference(new Setting(host).setName(t("settings_ai_preference")).setDesc(t("settings_ai_preference_desc")));
-    this.renderModelPicker(new Setting(host).setName(t("settings_ai_model")));
-    // Credential board is multi-row — paint as sibling rows under a sub-heading.
-    this.renderProviderBoard(host);
-    this.renderConnectionTestRow(new Setting(host).setName(t("settings_ai_test")).setDesc(t("settings_security_note")));
-    new Setting(host)
-      .setName(t("settings_writeback_mode"))
-      .setDesc(t("settings_writeback_mode_desc"))
-      .addDropdown((dd) =>
-        dd
-          .addOption("auto", t("writeback_auto"))
-          .addOption("confirm", t("writeback_confirm"))
-          .setValue(s.writebackMode)
-          .onChange(async (v) => {
-            const mode = v === "confirm" ? "confirm" : "auto";
-            s.writebackMode = mode;
-            this.plugin.kernelService.mirrorWritebackMode(mode);
-            await this.save();
-          }),
-      );
-    new Setting(host)
-      .setName(t("settings_max_agent_steps"))
-      .setDesc(t("settings_max_agent_steps_desc"))
-      .addSlider((slider) =>
-        slider
-          .setLimits(3, 80, 1)
-          .setValue(s.maxAgentSteps || 32)
-          .onChange(async (v) => {
-            s.maxAgentSteps = v;
-            await this.save();
-          }),
-      );
-    new Setting(host)
-      .setName(t("settings_auto_suggest"))
-      .setDesc(t("settings_auto_suggest_desc"))
-      .addToggle((toggle) =>
-        toggle.setValue(s.autoSuggest).onChange(async (v) => {
-          s.autoSuggest = v;
-          await this.save();
-        }),
-      );
-    new Setting(host)
-      .setName(t("settings_auto_maintain_todos"))
-      .setDesc(t("settings_auto_maintain_todos_desc"))
-      .addToggle((toggle) =>
-        toggle.setValue(s.autoMaintainTodos).onChange(async (v) => {
-          s.autoMaintainTodos = v;
-          await this.save();
-        }),
-      );
-
-    heading(t("settings_security"));
-    new Setting(host)
-      .setName(t("settings_backup_keep"))
-      .setDesc(t("settings_backup_keep_desc"))
-      .addSlider((slider) =>
-        slider
-          .setLimits(0, 10, 1)
-          .setValue(s.backupKeep)
-          .onChange(async (v) => {
-            s.backupKeep = v;
-            await this.save();
-          }),
-      );
-    new Setting(host)
-      .setName(t("settings_receipt_keep"))
-      .setDesc(t("settings_receipt_keep_desc"))
-      .addSlider((slider) =>
-        slider
-          .setLimits(10, 200, 10)
-          .setValue(s.receiptKeep)
-          .onChange(async (v) => {
-            s.receiptKeep = v;
-            await this.save();
-          }),
-      );
+    return [
+      {
+        type: "group",
+        heading: t("settings_workspace"),
+        items: [
+          {
+            name: t("workspace_status"),
+            desc: t("settings_workspace_status_desc"),
+            render: (setting) => this.renderWorkspaceStatusRow(setting),
+          },
+          {
+            name: t("workspace_contract_doctor"),
+            desc: t("workspace_contract_doctor_desc"),
+            render: (setting) => this.renderContractDoctorRow(setting),
+          },
+          {
+            name: t("init_workspace"),
+            desc: t("init_workspace_desc"),
+            render: (setting) => this.renderInitWorkspaceRow(setting),
+          },
+        ],
+      },
+      {
+        type: "group",
+        heading: t("settings_stream"),
+        items: [
+          {
+            name: t("settings_auto_open"),
+            desc: t("settings_auto_open_desc"),
+            control: { type: "toggle", key: "autoOpenWorkbench", defaultValue: s.autoOpenWorkbench },
+          },
+          {
+            name: t("settings_timeline_order"),
+            desc: t("settings_timeline_order_desc"),
+            control: {
+              type: "dropdown",
+              key: "timelineOrder",
+              defaultValue: s.timelineOrder,
+              options: { desc: t("timeline_desc"), asc: t("timeline_asc") },
+            },
+          },
+          {
+            name: t("settings_auto_tag"),
+            desc: t("settings_auto_tag_desc"),
+            control: { type: "toggle", key: "autoTag", defaultValue: s.autoTag },
+          },
+          {
+            name: t("settings_locale_override"),
+            desc: t("settings_locale_override_desc"),
+            render: (setting) => this.renderLocaleOverrideRow(setting),
+          },
+          {
+            name: t("settings_feed_layout"),
+            desc: t("settings_feed_layout_desc"),
+            control: {
+              type: "dropdown",
+              key: "feedLayout",
+              defaultValue: s.feedLayout,
+              options: { list: t("feed_layout_list"), card: t("feed_layout_card") },
+            },
+          },
+        ],
+      },
+      {
+        type: "group",
+        heading: t("settings_ai"),
+        items: [
+          {
+            name: t("settings_ai_status"),
+            desc: t("settings_ai_status_desc"),
+            render: (setting) => this.renderAiStatusRow(setting),
+          },
+          {
+            name: t("settings_ai_import"),
+            desc: t("settings_ai_import_desc"),
+            render: (setting) => this.renderAiImportRow(setting),
+          },
+          {
+            name: t("settings_ai_preference"),
+            desc: t("settings_ai_preference_desc"),
+            render: (setting) => this.renderProviderPreference(setting),
+          },
+          {
+            name: t("settings_ai_model"),
+            render: (setting) => this.renderModelPicker(setting),
+          },
+          {
+            // Provider credential board is multi-row; paint siblings into the
+            // group's list so rows stack as native .setting-item cards.
+            name: t("settings_ai_provider"),
+            desc: t("settings_ai_provider_desc"),
+            searchable: false,
+            render: (_setting, group) => {
+              this.renderProviderBoard(group.listEl);
+            },
+          },
+          {
+            name: t("settings_ai_test"),
+            desc: t("settings_security_note"),
+            render: (setting) => this.renderConnectionTestRow(setting),
+          },
+          {
+            name: t("settings_writeback_mode"),
+            desc: t("settings_writeback_mode_desc"),
+            control: {
+              type: "dropdown",
+              key: "writebackMode",
+              defaultValue: s.writebackMode,
+              options: { auto: t("writeback_auto"), confirm: t("writeback_confirm") },
+            },
+          },
+          {
+            name: t("settings_max_agent_steps"),
+            desc: t("settings_max_agent_steps_desc"),
+            control: {
+              type: "slider",
+              key: "maxAgentSteps",
+              defaultValue: s.maxAgentSteps || 32,
+              min: 3,
+              max: 80,
+              step: 1,
+            },
+          },
+          {
+            name: t("settings_auto_suggest"),
+            desc: t("settings_auto_suggest_desc"),
+            control: { type: "toggle", key: "autoSuggest", defaultValue: s.autoSuggest },
+          },
+          {
+            name: t("settings_auto_maintain_todos"),
+            desc: t("settings_auto_maintain_todos_desc"),
+            control: { type: "toggle", key: "autoMaintainTodos", defaultValue: s.autoMaintainTodos },
+          },
+        ],
+      },
+      {
+        type: "group",
+        heading: t("settings_security"),
+        items: [
+          {
+            name: t("settings_backup_keep"),
+            desc: t("settings_backup_keep_desc"),
+            control: { type: "slider", key: "backupKeep", defaultValue: s.backupKeep, min: 0, max: 10, step: 1 },
+          },
+          {
+            name: t("settings_receipt_keep"),
+            desc: t("settings_receipt_keep_desc"),
+            control: { type: "slider", key: "receiptKeep", defaultValue: s.receiptKeep, min: 10, max: 200, step: 10 },
+          },
+        ],
+      },
+    ];
   }
 
   override getControlValue(key: string): unknown {

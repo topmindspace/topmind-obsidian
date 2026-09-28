@@ -1,8 +1,13 @@
 import tseslint from "typescript-eslint";
+import { fileURLToPath } from "node:url";
 
 // Flat config. The parser is attached via `extends: [tseslint.configs.base]`
 // rather than `parser: tseslint.parser` — that property write is `any`-typed
 // and the community no-unsafe-assignment scan flags it.
+// `import.meta.dirname` is `string | undefined` under NodeNext and the same
+// scan flags the assignment; resolve through fileURLToPath to keep it `string`.
+const tsconfigRootDir = fileURLToPath(new URL(".", import.meta.url));
+
 export default tseslint.config(
   {
     files: ["src/**/*.ts"],
@@ -10,7 +15,7 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: true,
-        tsconfigRootDir: import.meta.dirname,
+        tsconfigRootDir,
       },
     },
     linterOptions: {

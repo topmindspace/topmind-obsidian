@@ -195,15 +195,10 @@ test("DESIGN.md token values match styles.css", async (t) => {
   }
 });
 
-test("src/: no runtime style injection outside injectStyles", async (t) => {
-  // Historical bug: a "surface lock" in onload fought styles.css with ad-hoc
-  // !important and hardcoded radii. That pattern is banned.
-  //
-  // Allowed exception: injectStyles() last-word layer. Obsidian appends the
-  // plugin styles.css AFTER onload, so a same-specificity rule there would be
-  // silently overwritten. The last-word layer uses .workspace-leaf-content
-  // scoping + !important on purpose — it is the only way to guarantee a
-  // visible skin. styles.css itself still forbids !important.
+test("src/: no runtime style injection (styles.css is the only CSS channel)", () => {
+  // Community plugin review ERROR: creating/attaching <style> elements is not
+  // allowed. Obsidian loads styles.css for us — that is the only CSS channel.
+  // Also ban ad-hoc `!important` / surface-lock in src (styles.css owns CSS).
   const srcDir = path.join(pluginRoot, "src");
   const offenders = [];
   const walk = (dir) => {
@@ -212,14 +207,19 @@ test("src/: no runtime style injection outside injectStyles", async (t) => {
       if (ent.isDirectory()) walk(p);
       else if (/\.(ts|tsx|js|mjs)$/.test(ent.name)) {
         const text = fs.readFileSync(p, "utf8");
-        const isMain = path.basename(p) === "main.ts";
         text.split("\n").forEach((line, i) => {
           if (/^\s*(\/\*|\*|\/\/)/.test(line)) return;
-          if (/!important/.test(line) && !isMain) {
-            offenders.push(`${path.relative(pluginRoot, p)}:${i + 1}: ${line.trim().slice(0, 100)}`);
+          if (/!important/.test(line)) {
+            offenders.push(`${path.relative(pluginRoot, p)}:${i + 1}: !important → ${line.trim().slice(0, 100)}`);
           }
           if (/surface-lock/.test(line)) {
             offenders.push(`${path.relative(pluginRoot, p)}:${i + 1}: surface-lock`);
+          }
+          if (/createElement\(\s*["']style["']\s*\)/.test(line)) {
+            offenders.push(`${path.relative(pluginRoot, p)}:${i + 1}: createElement("style")`);
+          }
+          if (/document\.(head|body)\.appendChild/.test(line) && /style/i.test(line)) {
+            offenders.push(`${path.relative(pluginRoot, p)}:${i + 1}: document.*.appendChild(style)`);
           }
         });
       }

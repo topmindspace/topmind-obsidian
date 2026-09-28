@@ -503,10 +503,7 @@ System prompt 跟随 UI locale：
 
 **Chrome 对齐**：`.tm-toolbar` · `.tm-section-header` · `.tm-sidebar-header` · `.tm-feed-chrome` · `.tm-suggestion-refresh-bar` · `.tm-todo-open-file-bar` 共用 `min-height: var(--tm-hit)` 与 `gap: var(--tm-gap-sm)`，多层标题栏不再错位。
 
-**样式注入链路（2026-09-28 确定性）**：Obsidian 的插件 CSS 加载器可能整表/部分丢弃 `styles.css`（token 变空、卡片变透明）。因此 `main.ts#injectStyles` 三层注入：
-1. `:root` token 保底；
-2. 读 `manifest.dir/styles.css` 全文；
-3. **leaf-scoped + `!important` 终层**（`.workspace-leaf-content .tm-*`）——原生 `mod-cta`/`clickable-icon` 已证明宿主变量可用，终层用 `--background-primary` / `--background-modifier-border` / `--interactive-accent` 等原生变量绘制纸面/描边/hover。`styles.css` 本体禁止 `!important`；仅 `main.ts` 终层允许（测试已豁免）。
+**样式加载（社区规范）**：Obsidian 自动加载插件目录 `styles.css`，这是**唯一** CSS 通道。社区插件审查**禁止** `createElement("style")` / `document.head` 注入（Error）。全部 token、组件样式与宿主覆盖写在 `styles.css`；`src/` 内禁止 `!important` 与运行时样式注入（测试 `src/: no runtime style injection` 守护）。
 
 **工作区底色（2026-09-28 冷调渐变）**：动态页与我的情况页使用上冷下暖的极轻渐变——顶部 `color-mix(--color-blue 6%, --background-secondary)`，中部 `color-mix(--color-cyan 4%, --background-primary-alt)`，底部 `--background-primary` 纸白。`background-attachment: fixed` 保证滚动稳定。取色走主题 `--color-blue/--color-cyan`，明暗主题自动适配；`color-mix` 不可用时回退纯 `--background-secondary`。**不用死色值**。
 
@@ -564,10 +561,10 @@ System prompt 跟随 UI locale：
 
 ### 设置页版式（对齐 Obsidian 原生）
 
-- 渲染路径：`display()` + `new Setting(this.containerEl)` —— 让 Obsidian 自带的
+- 渲染路径：`getSettingDefinitions()` 声明式分组（Obsidian 1.13+）—— 让 Obsidian 自带的
   `.setting-group` / `.setting-items` / `.setting-item` 样式生效（卡片 + info|control 两栏横排，
-  与 Settings → 编辑器 一致）
-- 分组标题 = `new Setting(host).setName(...).setHeading()`
+  与 Settings → 编辑器 一致）；**禁止** override 废弃的 `display()`
+- 分组标题 = `SettingDefinitionGroup.heading`
 - **禁止**把多行设置塞进同一个 Setting 的 `settingEl`（那是 flex 行，会把中文压成竖排）
 - 字号/颜色一律走 `--tm-*` 与 Obsidian 变量，禁止硬编码 px / hex
 
