@@ -138,6 +138,7 @@ export const enUS: typeof zhCN = {
   chat_reasoning: "Reasoning",
   chat_reasoning_show: "Show reasoning",
   chat_reasoning_chars: "{{count}} chars",
+  chat_new_chat: "New chat",
   chat_clear: "Clear chat",
   chat_error: "Chat error, please try again",
   chat_you: "You",

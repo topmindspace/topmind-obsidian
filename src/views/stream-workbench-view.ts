@@ -578,10 +578,8 @@ export class StreamWorkbenchView extends ItemView {
     if (isFirstLoad && !this.streamLoading) {
       this.streamLoading = true;
       streamContainer.empty();
-      streamContainer.createDiv({
-        cls: "tm-loading tm-loading-spinner",
-        text: t("stream_loading"),
-      });
+      const loadingRow = streamContainer.createDiv({ cls: "tm-task-progress-inline" });
+      loadingRow.createSpan({ text: t("stream_loading") });
     }
 
     if (!this.plugin.kernelService.isWorkspaceReady()) {

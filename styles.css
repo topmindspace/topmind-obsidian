@@ -4588,3 +4588,176 @@ button.tm-feed-layout-btn:hover {
   font-size: var(--tm-type-body);
   line-height: var(--tm-lh-body);
 }
+
+
+/* ── Suggestion action buttons: uniform height + width rhythm ── */
+.tm-suggestion-actions .tm-btn-confirm,
+.tm-suggestion-actions .tm-btn-open,
+.tm-suggestion-actions .tm-btn-dismiss {
+  height: var(--tm-hit-sm);
+  min-width: 72px;
+  padding: 0 14px;
+  border-radius: var(--tm-radius-ctl);
+  font-size: var(--tm-type-label);
+  font-weight: 550;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.tm-suggestion-actions .tm-btn-dismiss {
+  width: auto;
+  min-width: 72px;
+  background: transparent;
+  border: none;
+  color: var(--tm-ink-soft);
+}
+.tm-suggestion-actions .tm-btn-dismiss:hover {
+  background: var(--tm-bg-hover);
+  color: var(--tm-ink);
+}
+
+/* ── Chat input must be visible at rest, not only on hover ── */
+.tm-chat-input {
+  width: 100%;
+  min-height: 56px;
+  max-height: 140px;
+  padding: 10px 12px;
+  border: 1px solid var(--tm-line);
+  border-radius: var(--tm-radius-ctl);
+  background: var(--tm-bg-card);
+  color: var(--tm-ink);
+  font-family: inherit;
+  font-size: var(--tm-type-body);
+  line-height: var(--tm-lh-body);
+  resize: none;
+}
+.tm-chat-input:focus {
+  outline: none;
+  border-color: var(--tm-primary);
+  box-shadow: var(--tm-focus-ring);
+}
+.tm-chat-input::placeholder {
+  color: var(--tm-ink-faint);
+}
+
+/* ── Input foot: left cluster left-aligned, right cluster right-aligned ── */
+.tm-chat-input-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.tm-chat-input-foot .tm-footer-left {
+  margin-right: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+.tm-chat-input-foot .tm-footer-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.tm-header-model {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  flex-shrink: 1;
+}
+.tm-header-model-select,
+.tm-header-model-static {
+  max-width: 110px;
+  height: 24px;
+  font-size: var(--tm-type-meta);
+  color: var(--tm-ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 0 4px;
+}
+.tm-header-model-select:hover,
+.tm-header-model-static:hover {
+  background: var(--tm-bg-hover);
+  color: var(--tm-ink);
+}
+.tm-header-model-sep {
+  color: var(--tm-ink-faint);
+  font-size: var(--tm-type-meta);
+  flex-shrink: 0;
+}
+
+/* ── Narrow sidebar: never let role labels rotate/wrap vertically ── */
+.tm-chat-role {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@container tm-sidebar (max-width: 320px) {
+  .tm-chat-role {
+    display: none;
+  }
+}
+
+
+/* ── Anti vertical-text: labels must never wrap char-by-char ── */
+.tm-chat-role,
+.tm-chat-tools-label,
+.tm-task-progress-inline,
+.tm-task-progress-inline span,
+.tm-suggestion-summary,
+.tm-empty-title,
+.tm-empty-hint,
+.tm-status-label,
+.tm-entry-count,
+.tm-day-label,
+.tm-day-count,
+.tm-card-time,
+.tm-sidebar-action-label,
+.tm-tab-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-task-progress-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--tm-gap-sm);
+  min-width: 0;
+  width: 100%;
+}
+.tm-task-progress-inline span {
+  min-width: 0;
+}
+
+/* ── Footer model chip: never overflow, collapse provider when tight ── */
+.tm-header-model {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  flex: 0 1 auto;
+}
+.tm-header-model-static {
+  max-width: 72px;
+}
+.tm-header-model-select {
+  max-width: 96px;
+}
+@container tm-sidebar (max-width: 300px) {
+  .tm-header-model-static,
+  .tm-header-model-sep {
+    display: none;
+  }
+}

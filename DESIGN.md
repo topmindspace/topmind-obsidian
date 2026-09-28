@@ -30,7 +30,7 @@
 │  │ 对话 │ 建议 │ 清单 │ 历史 │  ← 4 标签（动态流的家在主区）    │
 │  └──────┴──────┴──────┴──────┘                                │
 │  顶栏：仅任务徽章（极简）                                       │
-│  对话输入底行：●状态点 · 供应商 · 模型 · [清空] [发送]            │
+│  对话输入底行：●状态点 · 模型 ──── [新建会话] [发送]              │
 │  （状态只留圆点无文字；点击=测速/设置；底部不再放记一下/整理）    │
 ├──────────────────────────────────────────────────────────────┤
 │  入口 3: 记一下弹窗                                            │
@@ -507,6 +507,8 @@ System prompt 跟随 UI locale：
 1. `:root` token 保底；
 2. 读 `manifest.dir/styles.css` 全文；
 3. **leaf-scoped + `!important` 终层**（`.workspace-leaf-content .tm-*`）——原生 `mod-cta`/`clickable-icon` 已证明宿主变量可用，终层用 `--background-primary` / `--background-modifier-border` / `--interactive-accent` 等原生变量绘制纸面/描边/hover。`styles.css` 本体禁止 `!important`；仅 `main.ts` 终层允许（测试已豁免）。
+
+**工作区底色（2026-09-28 冷调渐变）**：动态页与我的情况页使用上冷下暖的极轻渐变——顶部 `color-mix(--color-blue 6%, --background-secondary)`，中部 `color-mix(--color-cyan 4%, --background-primary-alt)`，底部 `--background-primary` 纸白。`background-attachment: fixed` 保证滚动稳定。取色走主题 `--color-blue/--color-cyan`，明暗主题自动适配；`color-mix` 不可用时回退纯 `--background-secondary`。**不用死色值**。
 
 **Quiet Knowledge UI（UI/UX 2.0 吸收，2026-09-28）**：在既有 token / 按钮角色之上追加收敛规则——
 

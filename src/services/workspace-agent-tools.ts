@@ -59,6 +59,16 @@ import {
 } from "#kernel/text-note.mjs";
 export { TEXT_NOTE_EXTS, isTextNotePath };
 
+/**
+ * GitHub URL semantics (engine single source `lib/github-md.mjs`).
+ * fetch_url rewrites markdown blob/raw to raw.githubusercontent + image links.
+ */
+import {
+  parseGithubFileUrl,
+  githubRawUrl,
+  rewriteGithubMarkdownImages,
+} from "#kernel/github-md.mjs";
+
 function absOf(workspaceRoot: string, rel: string): string {
   return path.join(workspaceRoot, rel);
 }
@@ -859,17 +869,28 @@ export async function fetchUrl(
   if (typeof ctx.fetchPage !== "function") {
     return { ok: false, tool, error: "fetchPage not provided by host" };
   }
+  // GitHub markdown → raw.githubusercontent (clean MD + relative image rewrite).
+  // README targets still fall through to HTML (host has no multi-ref probe).
+  let fetchTarget = url;
+  const githubRef = parseGithubFileUrl(url);
+  if (githubRef) {
+    fetchTarget = githubRawUrl(githubRef);
+  }
   try {
-    const r = await ctx.fetchPage(url);
-    const text = String(r.text || "").slice(0, 12000);
+    const r = await ctx.fetchPage(fetchTarget);
+    let text = String(r.text || "");
+    if (r.ok && githubRef) {
+      text = rewriteGithubMarkdownImages(text, githubRef);
+    }
+    const clipped = text.slice(0, 12000);
     return {
       ok: Boolean(r.ok),
       tool,
-      summary: url,
+      summary: githubRef ? `${url} → raw` : url,
       url,
       status: r.status,
-      content: text,
-      truncated: String(r.text || "").length > 12000,
+      content: clipped,
+      truncated: text.length > 12000,
       error: r.error,
     };
   } catch (err) {

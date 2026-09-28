@@ -136,6 +136,7 @@ export const zhCN = {
   chat_reasoning: "思考过程",
   chat_reasoning_show: "展开思考过程",
   chat_reasoning_chars: "{{count}} 字",
+  chat_new_chat: "新建会话",
   chat_clear: "清空对话",
   chat_error: "对话出错，请重试",
   chat_you: "你",

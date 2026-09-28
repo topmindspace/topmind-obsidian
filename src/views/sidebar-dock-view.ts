@@ -161,6 +161,7 @@ export class SidebarDockView extends ItemView {
       if (this.activeTab === "history") {
         void this.renderActiveTab();
       }
+      // badge only for other tabs — never re-render / reset tab selection
       // Update header task badge
       this.updateHeaderTaskBadge(progress);
     });
@@ -405,6 +406,7 @@ export class SidebarDockView extends ItemView {
       const isActive = this.activeTab === tab.id;
       const btn = tabBar.createEl("button", {
         cls: `tm-tab-btn ${isActive ? "tm-tab-active" : ""}`,
+        attr: { "data-tab-id": tab.id },
       });
       btn.setAttribute("role", "tab");
       btn.setAttribute("aria-selected", String(isActive));
@@ -703,12 +705,11 @@ export class SidebarDockView extends ItemView {
 
     if (this.suggestionsInFlight) {
       const progressEl = container.createDiv({ cls: "tm-task-progress-inline" });
-      progressEl.createDiv({ cls: "tm-loading-spinner tm-loading-spinner-sm" });
       progressEl.createSpan({ text: t("suggestions_loading") });
       return;
     }
 
-    const loadingEl = container.createDiv({ cls: "tm-loading tm-loading-spinner" });
+    const loadingEl = container.createDiv({ cls: "tm-task-progress-inline" });
     loadingEl.createSpan({ text: t("suggestions_loading") });
 
     this.suggestionsInFlight = true;
@@ -987,32 +988,29 @@ export class SidebarDockView extends ItemView {
 
     const inputFoot = inputArea.createDiv({ cls: "tm-chat-input-foot" });
 
-    // Left cluster: AI status dot (no words) + provider/model
-    this.renderFooterStatus(inputFoot);
-    this.renderHeaderModelChip(inputFoot);
+    // Left: status dot (no words) + provider/model
+    const footLeft = inputFoot.createDiv({ cls: "tm-footer-left" });
+    this.renderFooterStatus(footLeft);
+    this.renderHeaderModelChip(footLeft);
 
-    // Clear (quiet, only with history)
-    if (this.chatHistory.length > 0) {
-      const clearBtn = inputFoot.createEl("button", {
-        cls: "tm-chat-clear-btn clickable-icon",
-      });
-      setIcon(clearBtn, "x");
-      clearBtn.setAttribute("aria-label", t("chat_clear"));
-      clearBtn.setAttribute("title", t("chat_clear"));
-      clearBtn.addEventListener("click", () => {
-        this.chatHistory = [];
-        this.saveChatHistory();
-        void this.renderActiveTab();
-      });
-    }
+    // Right: new chat · send
+    const footRight = inputFoot.createDiv({ cls: "tm-footer-right" });
+    const newChatBtn = footRight.createEl("button", {
+      cls: "tm-chat-clear-btn clickable-icon",
+      attr: { "aria-label": t("chat_new_chat"), title: t("chat_new_chat") },
+    });
+    setIcon(newChatBtn, "message-square-plus");
+    newChatBtn.addEventListener("click", () => {
+      this.chatHistory = [];
+      this.saveChatHistory();
+      void this.renderActiveTab();
+    });
 
-    // Send — far right
-    const sendBtn = inputFoot.createEl("button", {
+    const sendBtn = footRight.createEl("button", {
       cls: "tm-btn-primary tm-btn-icon mod-cta",
+      attr: { "aria-label": t("chat_send"), title: t("chat_send") },
     });
     setIcon(sendBtn, "send");
-    sendBtn.setAttribute("aria-label", t("chat_send"));
-    sendBtn.setAttribute("title", t("chat_send"));
 
     // Auto-grow textarea
     input.addEventListener("input", () => {
@@ -1116,7 +1114,7 @@ export class SidebarDockView extends ItemView {
     statusDiv.setAttribute("role", "button");
     statusDiv.setAttribute("tabindex", "0");
     statusDiv.setAttribute("aria-label", aiReady ? t("sidebar_ai_ready") : t("sidebar_ai_off"));
-    statusDiv.setAttribute("title", aiReady ? t("settings_ai_quick_test") : t("chat_configure_ai"));
+    statusDiv.setAttribute("title", (aiReady ? t("settings_ai_quick_test") : t("chat_configure_ai")) + " · build 2026-09-28b");
     const dot = statusDiv.createSpan({ cls: `tm-status-dot ${aiReady ? "tm-dot-ok" : "tm-dot-off"}` });
     dot.setAttribute("aria-hidden", "true");
     statusDiv.addEventListener("click", () => {
@@ -1139,30 +1137,12 @@ export class SidebarDockView extends ItemView {
     const wrap = container.createDiv({ cls: "tm-header-model" });
     wrap.setAttribute("title", t("chat_model_select"));
 
+    const preset = AI_PROVIDER_PRESETS[activeProvider];
+    // Model only — provider is implied by the model list (less chrome).
     const modelSelect = wrap.createEl("select", {
-      cls: "tm-header-model-select",
+      cls: "tm-header-model-select tm-header-model-model",
       attr: { "aria-label": t("chat_model_select") },
     });
-    const preset = AI_PROVIDER_PRESETS[activeProvider];
-    if (providers.length > 1) {
-      const providerSelect = wrap.createEl("select", {
-        cls: "tm-header-model-select",
-        attr: { "aria-label": t("chat_provider_select") },
-      });
-      for (const p of providers) providerSelect.createEl("option", { value: p.id, text: p.label });
-      providerSelect.value = activeProvider;
-      providerSelect.addEventListener("change", () => { void (async () => {
-        this.chatProviderOverride = providerSelect.value;
-        this.chatModelOverride = "";
-        this.plugin.settings.ai.sourcePreference = providerSelect.value;
-        await this.plugin.saveSettings();
-        void this.render();
-      })(); });
-      wrap.createSpan({ cls: "tm-header-model-sep", text: "·", attr: { "aria-hidden": "true" } });
-    } else if (providers[0]) {
-      wrap.createSpan({ cls: "tm-header-model-static", text: providers[0].label });
-      wrap.createSpan({ cls: "tm-header-model-sep", text: "·", attr: { "aria-hidden": "true" } });
-    }
 
     modelSelect.createEl("option", { value: "", text: t("settings_ai_model_default") });
     if (preset?.model) {
@@ -1957,9 +1937,15 @@ export class SidebarDockView extends ItemView {
     });
   }
 
-  /** Public refresh — called from main.ts after operations */
+  /** Public refresh — called from main.ts after operations.
+   *  Only repaint the active tab + badge; a full render() would wipe the
+   *  tab bar and reset the user's selected tab (flicker bug). */
   async refresh(): Promise<void> {
-    await this.render();
+    if (!this.contentContainer) {
+      await this.render();
+      return;
+    }
+    await this.renderActiveTab();
   }
 
   /** Jump to a tab (e.g. stream view count chip → suggestions). */
