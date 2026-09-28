@@ -1328,17 +1328,18 @@ select.tm-tag-input:hover {
   gap: var(--tm-gap-lg);
 }
 
-/* Top chrome is the first row — flush against the window tab strip. */
+/* Top chrome is the first row — keep a small top breath so it reads
+   aligned with the left/right sidebars (was flush against the tab strip). */
 .workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-page > .tm-toolbar:first-child,
 .workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-wb-shell > .tm-toolbar:first-child,
 .workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page > .tm-section-header:first-child {
-  margin-top: calc(var(--tm-gap-xs) * -1);
+  margin-top: 0;
 }
 
-.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-page:has(> .tm-toolbar:first-child),
-.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-wb-shell:has(> .tm-toolbar:first-child),
-.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page:has(> .tm-section-header:first-child) {
-  padding-top: 0;
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-page.tm-chrome-first,
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-wb-shell.tm-chrome-first,
+.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page.tm-chrome-first {
+  padding-top: var(--tm-gap-md);
 }
 
 /* Column flex stretches children — keep controls intrinsic width. */
@@ -1554,8 +1555,9 @@ select.tm-tag-input:hover {
   box-shadow: var(--tm-shadow-card);
 }
 
-/* Workbench card grid: time gutter + content */
-.tm-wb-card { position: relative; display: grid; grid-template-columns: 52px 1fr; grid-template-areas: "time head" "time body"; gap: 4px 8px; padding: 10px 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-card); background: var(--tm-bg-card); margin-bottom: var(--tm-gap-xs); }
+/* Workbench card: meta row (time left · actions right) + full-width body.
+   Body is a sibling row — never squeezed into a side column. */
+.tm-wb-card { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-card); background: var(--tm-bg-card); margin-bottom: var(--tm-gap-xs); }
 
 .tm-wb-card:hover {
   background: var(--tm-bg-raise);
@@ -1571,36 +1573,54 @@ select.tm-tag-input:hover {
   opacity: 1;
 }
 
-
-
 .tm-wb-card .tm-card-header {
-  grid-area: head;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tm-gap-sm);
+  min-height: 20px;
   margin: 0;
 }
 
 .tm-wb-card .tm-card-time {
-  grid-area: time;
-  align-self: start;
-  padding-top: 6px;
+  flex-shrink: 0;
+  font-size: var(--tm-type-meta);
+  font-weight: 550;
+  color: var(--tm-ink-soft);
+  font-variant-numeric: tabular-nums;
 }
 
 .tm-wb-card .tm-card-dot {
-  display: none;
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--tm-accent);
+  opacity: 0.7;
+  vertical-align: middle;
 }
 
 .tm-wb-card .tm-card-body {
-  grid-area: body;
   padding: 0 0 2px;
+  width: 100%;
 }
 
 .tm-wb-card .tm-card-actions {
-  grid-area: head;
-  justify-self: end;
+  margin-left: auto;
 }
 
-/* List mode flattens the grid */
+/* List mode: same meta-row + full-width body, tighter padding. */
 .tm-wb-timeline[data-layout="list"] .tm-wb-card,
-.tm-stream-container[data-layout="list"] .tm-wb-card { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--tm-line); border-radius: var(--tm-radius-card); background: var(--tm-bg-card); margin-bottom: var(--tm-gap-xs); }
+.tm-stream-container[data-layout="list"] .tm-wb-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--tm-line);
+  border-radius: var(--tm-radius-card);
+  background: var(--tm-bg-card);
+  margin-bottom: var(--tm-gap-xs);
+}
 
 .tm-wb-timeline[data-layout="list"] .tm-wb-card:hover,
 .tm-stream-container[data-layout="list"] .tm-wb-card:hover { background: var(--tm-state-hover); border-color: var(--tm-line-strong); box-shadow: none; }
@@ -1614,10 +1634,6 @@ select.tm-tag-input:hover {
 .tm-stream-container[data-layout="list"] .tm-card-body p:empty {
   display: none;
   margin: 0;
-}
-
-.tm-wb-timeline[data-layout="list"] .tm-wb-card .tm-card-time {
-  padding-top: 0;
 }
 
 /* Suggest entry strip */
@@ -2448,6 +2464,28 @@ button.tm-suggestion-path:focus-visible {
   min-height: 0;
 }
 
+/* Chat tab owns the full pane height: messages scroll, input pinned bottom.
+   (Same element carries .tm-tab-content + .tm-chat-container.) */
+.tm-tab-content.tm-chat-container {
+  overflow: hidden;
+  padding-bottom: var(--tm-gap-sm);
+}
+
+.tm-tab-content.tm-chat-container > .tm-chat-context-bar {
+  flex-shrink: 0;
+}
+
+.tm-tab-content.tm-chat-container > .tm-chat-messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.tm-tab-content.tm-chat-container > .tm-chat-input-area {
+  flex-shrink: 0;
+  margin-top: auto;
+}
+
 .tm-chat-model-switcher {
   display: flex;
   align-items: center;
@@ -2999,6 +3037,35 @@ button.tm-suggestion-path:focus-visible {
   margin-top: var(--tm-gap-md);
 }
 
+/* Quiet bridge under the feed → previous period (new-week continuity) */
+.tm-period-bridge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tm-gap-sm);
+  margin-top: var(--tm-gap-md);
+  padding-top: var(--tm-gap-md);
+  border-top: 1px solid var(--tm-line);
+}
+.tm-period-bridge-label {
+  font-size: var(--tm-type-meta);
+  color: var(--tm-ink-faint);
+}
+.tm-period-bridge-link {
+  font-size: var(--tm-type-meta);
+  font-weight: 550;
+  color: var(--tm-text-accent);
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  border-radius: var(--tm-radius-sm);
+  cursor: pointer;
+}
+.tm-period-bridge-link:hover {
+  background: var(--tm-bg-hover);
+  color: var(--tm-text-accent-hover);
+}
+
 .tm-loading {
   display: flex;
   justify-content: center;
@@ -3426,15 +3493,10 @@ button.tm-suggestion-path:focus-visible {
     gap: var(--tm-gap-md);
   }
   .tm-wb-card {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "head"
-      "body";
+    padding: 8px 10px;
   }
   .tm-wb-card .tm-card-time {
-    grid-area: head;
     padding-top: 0;
-    justify-self: start;
   }
 }
 
@@ -4575,7 +4637,7 @@ button.tm-feed-layout-btn:hover {
 }
 .tm-card-meta .tm-card-time {
   font-size: var(--tm-type-meta);
-  color: var(--tm-ink-faint);
+  color: var(--tm-ink-soft);
 }
 .tm-card-meta .tm-card-actions {
   margin-left: auto;
@@ -4852,7 +4914,10 @@ button.tm-feed-layout-btn:hover {
    This section is the last word: every selector is leaf-scoped under
    .workspace-leaf-content and uses !important on purpose so the product
    skin is guaranteed visible. styles.css is the only CSS channel
-   (community review forbids createElement("style")). */
+   (community review forbids createElement("style")).
+   stylelint-disable declaration-no-important -- force-win layer by design;
+   specificity cannot beat theme !important without this. */
+/* stylelint-disable declaration-no-important */
 .workspace-leaf-content .tm-page,.workspace-leaf-content .tm-wb-shell{box-sizing:border-box;width:100%;max-width:48rem;margin:0 auto;padding:0 clamp(18px,3vw,36px) 32px;display:flex;flex-direction:column;gap:10px}
 .workspace-leaf-content .tm-wb-hero,.workspace-leaf-content .tm-wb-section{gap:8px;margin:0}
 .workspace-leaf-content .tm-wb-hero-title{display:flex;align-items:baseline;gap:8px!important;flex-wrap:wrap;font-size:var(--font-ui-medium)!important;font-weight:600!important}
@@ -4873,10 +4938,13 @@ button.tm-feed-layout-btn:hover {
 .workspace-leaf-content .tm-tab-btn:hover{background:var(--background-modifier-hover)!important;color:var(--text-normal)!important}
 .workspace-leaf-content .tm-tab-btn.tm-tab-active,.workspace-leaf-content .tm-tab-btn[aria-selected=true]{background:transparent!important;color:var(--text-normal)!important;font-weight:600!important}
 .workspace-leaf-content .tm-tab-btn.tm-tab-active::after{content:'';position:absolute;left:50%;bottom:0;translate:-50% 0;width:calc(100% - 16px);height:2px;border-radius:1px;background:var(--interactive-accent)}
-.workspace-leaf-content .tm-wb-card,.workspace-leaf-content .tm-card,.workspace-leaf-content .tm-memory-card{background:var(--background-primary)!important;border:1px solid var(--background-modifier-border)!important;border-radius:10px!important;padding:12px 14px!important;margin:0 0 8px!important;box-shadow:var(--shadow-xs,none)!important;display:block!important;transition:background-color .12s ease,border-color .12s ease,box-shadow .12s ease}
+.workspace-leaf-content .tm-wb-card{background:var(--background-primary)!important;border:1px solid var(--background-modifier-border)!important;border-radius:10px!important;padding:12px 14px!important;margin:0 0 8px!important;box-shadow:var(--shadow-xs,none)!important;display:flex!important;flex-direction:column!important;gap:2px!important;transition:background-color .12s ease,border-color .12s ease,box-shadow .12s ease}
+.workspace-leaf-content .tm-wb-card .tm-card-header{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;min-height:20px!important;margin:0!important}
+.workspace-leaf-content .tm-wb-card .tm-card-body{width:100%!important}
+.workspace-leaf-content .tm-card,.workspace-leaf-content .tm-memory-card{background:var(--background-primary)!important;border:1px solid var(--background-modifier-border)!important;border-radius:10px!important;padding:12px 14px!important;margin:0 0 8px!important;box-shadow:var(--shadow-xs,none)!important;display:block!important;transition:background-color .12s ease,border-color .12s ease,box-shadow .12s ease}
 .workspace-leaf-content .tm-wb-card:hover,.workspace-leaf-content .tm-card:hover,.workspace-leaf-content .tm-memory-card:hover{background:var(--background-primary)!important;border-color:var(--background-modifier-border-hover,var(--background-modifier-border))!important;box-shadow:var(--shadow-s,none)!important}
 .workspace-leaf-content .tm-card-header.tm-card-meta{display:flex;align-items:center;justify-content:space-between;gap:8px!important;min-height:22px!important;margin:0 0 4px!important;padding:0!important}
-.workspace-leaf-content .tm-card-time,.workspace-leaf-content .tm-day-count{font-size:var(--font-ui-smaller)!important;color:var(--text-faint);flex-shrink:0}
+.workspace-leaf-content .tm-card-time,.workspace-leaf-content .tm-day-count{font-size:var(--font-ui-smaller)!important;color:var(--text-muted);flex-shrink:0}
 .workspace-leaf-content .tm-card-actions{margin-left:auto!important;opacity:0;transition:opacity .12s ease;display:flex;gap:2px}
 .workspace-leaf-content .tm-card:hover .tm-card-actions{opacity:1}
 .workspace-leaf-content .tm-card-body{font-size:var(--font-ui-small)!important;line-height:var(--line-height-normal,1.5)!important;color:var(--text-normal)}
@@ -4973,3 +5041,5 @@ button.tm-feed-layout-btn:hover {
 .mod-right-split .workspace-leaf.mod-topmind-flush {
   padding-top: 0;
 }
+
+/* stylelint-enable declaration-no-important */

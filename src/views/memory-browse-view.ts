@@ -148,7 +148,7 @@ export class MemoryBrowseView extends ItemView {
     // contentEl === Obsidian .view-content — surface only.
     // Page width/gutters live on .tm-page (see styles.css §7).
     contentEl.addClass("tm-memory-browse");
-    const page = contentEl.createDiv({ cls: "tm-page tm-memory-page" });
+    const page = contentEl.createDiv({ cls: "tm-page tm-memory-page tm-chrome-first" });
     const layout = this.plugin.settings.feedLayout === "card" ? "card" : "list";
     page.setAttr("data-layout", layout);
     page.setAttr("data-memory-feed", "true");

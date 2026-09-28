@@ -42,6 +42,7 @@ export const enUS: typeof zhCN = {
   stream_day_yesterday: "Yesterday",
   stream_period_label: "Period",
   stream_unreconciled: "Needs tidy",
+  stream_prev_period: "Previous period",
 
   // ── Suggestions ──
   suggestions_title: "AI Suggestions",
@@ -357,6 +358,8 @@ export const enUS: typeof zhCN = {
 
   // ── Locale ──
   locale_auto: "Auto (follow Obsidian)",
+  locale_zh: "简体中文",
+  locale_en: "English",
 
   // ── AI providers ──
   provider_none: "No AI",

@@ -22,6 +22,10 @@
 |---|---|
 | ![Stream timeline](docs/images/stream-timeline-en.png) | ![My Profile](docs/images/profile-memory-en.png) |
 
+| AI Suggestions | Todos |
+|---|---|
+| ![AI Suggestions](docs/images/suggestions-zh.png) | ![Todos](docs/images/todos-zh.png) |
+
 | AI settings | Chinese UI |
 |---|---|
 | ![AI Co-pilot settings](docs/images/settings-ai-copilot.png) | ![Stream timeline (Chinese)](docs/images/stream-timeline-zh.png) |

@@ -18,6 +18,10 @@
 |---|---|
 | ![动态时间轴](docs/images/stream-timeline-zh.png) | ![我的情况](docs/images/profile-memory-zh.png) |
 
+| AI 建议 | 清单 |
+|---|---|
+| ![AI 建议](docs/images/suggestions-zh.png) | ![清单](docs/images/todos-zh.png) |
+
 | AI 副驾设置 | English UI |
 |---|---|
 | ![AI 副驾设置](docs/images/settings-ai-copilot.png) | ![Stream timeline (English)](docs/images/stream-timeline-en.png) |

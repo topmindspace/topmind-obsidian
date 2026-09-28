@@ -553,7 +553,7 @@ interface TopmindSettings {
 
 ## 8. i18n
 
-轻量 `t()` 双语表，同 UTR 模式（`zh-CN` 默认，`en-US` 回退）。locale 从 Obsidian `app.locale` 解析。测试覆盖键集对齐验证。
+轻量 `t()` 双语表，同 UTR 模式（`zh-CN` 默认，`en-US` 回退）。locale 从 Obsidian 公开 API `getLanguage()`（≥1.8.7）解析，失败时回退 `navigator.language`；`app.locale` 是未公开属性，在现行宿主上取不到值。`settings.localeOverride` 可覆盖，切换后 `refreshViews()` 立即重渲染已打开视图。测试覆盖键集对齐验证。
 
 ---
 

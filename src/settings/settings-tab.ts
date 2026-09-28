@@ -406,11 +406,12 @@ export class TopmindSettingTab extends PluginSettingTab {
     void this.save();
     if (key === "localeOverride") {
       void (async () => {
-        const { setLocale } = await import("../i18n");
-        const obsLocale = (this.app as unknown as { locale?: string }).locale || "zh-CN";
+        const { setLocale, detectObsidianLocale } = await import("../i18n");
         const override = typeof value === "string" ? value : "";
-        setLocale(override || (obsLocale.startsWith("en") ? "en-US" : "zh-CN"));
+        setLocale(override || detectObsidianLocale());
         this.update();
+        // Re-render open views so chrome text switches immediately.
+        this.refreshViews();
       })();
     }
     if (key === "feedLayout" || key === "timelineOrder") {
@@ -551,16 +552,16 @@ export class TopmindSettingTab extends PluginSettingTab {
     setting.addDropdown((dd) =>
       dd
         .addOption("", t("locale_auto"))
-        .addOption("zh-CN", "简体中文")
-        .addOption("en-US", "English")
+        .addOption("zh-CN", t("locale_zh"))
+        .addOption("en-US", t("locale_en"))
         .setValue(s.localeOverride)
         .onChange(async (v) => {
           s.localeOverride = v;
           await this.save();
-          const { setLocale } = await import("../i18n");
-          const obsLocale = (this.app as unknown as { locale?: string }).locale || "zh-CN";
-          setLocale(v || (obsLocale.startsWith("en") ? "en-US" : "zh-CN"));
+          const { setLocale, detectObsidianLocale } = await import("../i18n");
+          setLocale(v || detectObsidianLocale());
           this.update();
+          this.refreshViews();
         }),
     );
   }

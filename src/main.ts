@@ -34,7 +34,7 @@ import { StreamWorkbenchView } from "./views/stream-workbench-view";
 import { SidebarDockView } from "./views/sidebar-dock-view";
 import { MemoryBrowseView } from "./views/memory-browse-view";
 import { QuickCaptureModal } from "./views/quick-capture-modal";
-import { setLocale, t, type LocaleKey } from "./i18n";
+import { setLocale, t, detectObsidianLocale, type LocaleKey } from "./i18n";
 import { HOST_OVERRIDE_CSS } from "./styles/host-override";
 
 // ── AI Key Backup / Restore ───────────────────────────────────────────────
@@ -198,9 +198,9 @@ export default class TopmindPlugin extends Plugin {
     await this.loadSettings();
 
     // ── i18n ──
-    const appWithLocale: unknown = this.app;
-    const obsLocale = (isRecord(appWithLocale) && typeof appWithLocale.locale === "string" && appWithLocale.locale) || "zh-CN";
-    const locale = this.settings.localeOverride || (obsLocale.startsWith("en") ? "en-US" : "zh-CN");
+    // Public API: getLanguage() (Obsidian ≥1.8.7). app.locale is undocumented
+    // and silently missing on current hosts — that left the plugin stuck on zh.
+    const locale = this.settings.localeOverride || detectObsidianLocale();
     setLocale(locale);
 
     // ── Kernel Service ──

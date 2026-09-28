@@ -138,7 +138,7 @@ export class StreamWorkbenchView extends ItemView {
 
   /** Personal workbench homepage — hero compose + timeline feed. */
   private renderLayout(contentEl: HTMLElement): void {
-    const shell = contentEl.createDiv({ cls: "tm-wb-shell" });
+    const shell = contentEl.createDiv({ cls: "tm-wb-shell tm-chrome-first" });
     shell.setAttr("data-stream-column", "true");
 
     // ── Top bar (identity + utilities) ──
@@ -569,7 +569,7 @@ export class StreamWorkbenchView extends ItemView {
     await this.refreshAll();
   }
 
-  async refreshStream(): Promise<void> {
+  async refreshStream(opts?: { preferPath?: string; autoFollowCurrent?: boolean }): Promise<void> {
     const { streamContainer } = this;
     const scrollParent = (this.contentEl.closest(".view-content") as HTMLElement) || this.contentEl;
     const savedScroll = scrollParent.scrollTop;
@@ -606,7 +606,17 @@ export class StreamWorkbenchView extends ItemView {
         });
       }
 
-      if (prevSelected && ctx.periods.some((p) => p.relPath === prevSelected)) {
+      // Period selection contract:
+      // 1. explicit preferPath (capture wrote here) wins if listed
+      // 2. autoFollowCurrent (first entry of a new period) jumps to newest
+      // 3. otherwise sticky user selection
+      // 4. fall back to ctx.current (newest by filename)
+      const prefer = opts?.preferPath;
+      if (prefer && ctx.periods.some((p) => p.relPath === prefer)) {
+        this.periodSelect.value = prefer;
+      } else if (opts?.autoFollowCurrent && ctx.current?.relPath) {
+        this.periodSelect.value = ctx.current.relPath;
+      } else if (prevSelected && ctx.periods.some((p) => p.relPath === prevSelected)) {
         this.periodSelect.value = prevSelected;
       } else if (ctx.current?.relPath) {
         this.periodSelect.value = ctx.current.relPath;
@@ -630,6 +640,7 @@ export class StreamWorkbenchView extends ItemView {
       if (this.currentEntries.length === 0) {
         this.renderEmptyStream(streamContainer);
         this.updateEntryCount(0);
+        this.renderPeriodBridge(streamContainer, selectedPath, ctx.periods);
         return;
       }
 
@@ -637,6 +648,7 @@ export class StreamWorkbenchView extends ItemView {
 
       // Render entries with day grouping (parse from period note content)
       this.renderStreamEntries(streamContainer, this.currentEntries, selectedPath);
+      this.renderPeriodBridge(streamContainer, selectedPath, ctx.periods);
 
       // Restore scroll position after rendering to eliminate jumping
       if (savedScroll > 0) {
@@ -702,6 +714,30 @@ export class StreamWorkbenchView extends ItemView {
     }
   }
 
+  /**
+   * Quiet bridge under the feed: link to the previous period so a
+   * freshly-created week (first capture) still reads as continuous.
+   */
+  private renderPeriodBridge(
+    container: HTMLElement,
+    selectedPath: string,
+    periods: Array<{ relPath: string; title: string }>,
+  ): void {
+    const idx = periods.findIndex((p) => p.relPath === selectedPath);
+    if (idx < 0 || idx + 1 >= periods.length) return;
+    const prev = periods[idx + 1];
+    const bridge = container.createDiv({ cls: "tm-period-bridge" });
+    bridge.createSpan({ text: t("stream_prev_period"), cls: "tm-period-bridge-label" });
+    const link = bridge.createEl("button", {
+      cls: "tm-period-bridge-link",
+      text: prev.title || prev.relPath,
+    });
+    link.addEventListener("click", () => {
+      this.periodSelect.value = prev.relPath;
+      void this.refreshStream({ preferPath: prev.relPath });
+    });
+  }
+
   private renderStreamEntries(container: HTMLElement, entries: StreamEntry[], periodPath: string): void {
     this.clearCardComponents();
     const order = this.plugin.settings.timelineOrder === "asc" ? "asc" : "desc";
@@ -730,16 +766,17 @@ export class StreamWorkbenchView extends ItemView {
 
     const card = container.createDiv({ cls: "tm-card tm-wb-card" });
 
-    // Meta row: time left · actions right (saves a vertical line)
+    // Meta row: time left · actions right (one line). Body is a full-width
+    // row below — never squeezed into a side column.
     const header = card.createDiv({ cls: "tm-card-header tm-card-meta" });
+    const timeEl = header.createSpan({
+      cls: entry.time ? "tm-card-time" : "tm-card-time tm-card-time-soft",
+    });
     if (entry.time) {
-      header.createSpan({ cls: "tm-card-time", text: entry.time });
+      timeEl.setText(entry.time);
     } else {
-      const timeCell = header.createDiv({ cls: "tm-card-time tm-card-time-soft" });
-      timeCell.createSpan({ cls: "tm-card-dot" });
+      timeEl.createSpan({ cls: "tm-card-dot" });
     }
-
-    // Card actions (hover-revealed, sit on the same row as time)
     const actionsEl = header.createDiv({ cls: "tm-card-actions" });
 
     // Copy button
@@ -1007,12 +1044,21 @@ export class StreamWorkbenchView extends ItemView {
     this.submitBtn.disabled = true;
     this.submitBtn.empty();
     this.submitBtn.createSpan({ cls: "tm-btn-spinner" });
+    const selectedBefore = this.periodSelect.value;
     const result = this.plugin.kernelService.capture(text, { target, tags });
 
     if (result.ok) {
       this.inputEl.value = "";
       this.inputEl.setCssStyles({ height: "auto" });
-      void this.refreshStream();
+      // Capture may have created a brand-new period (first entry of a new
+      // week/month). Prefer the path we just wrote so the feed follows the
+      // new period note instead of staying on the previous one.
+      const wrotePath = result.path;
+      const isNewPeriod = Boolean(wrotePath) && wrotePath !== selectedBefore;
+      void this.refreshStream({
+        preferPath: wrotePath,
+        autoFollowCurrent: isNewPeriod,
+      });
       // Scroll to top (newest entry in desc order)
       this.streamContainer.scrollTop = 0;
       // Result notices (written → path / pending / failed) come from

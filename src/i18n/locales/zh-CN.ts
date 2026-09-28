@@ -40,6 +40,7 @@ export const zhCN = {
   stream_day_yesterday: "昨天",
   stream_period_label: "周期",
   stream_unreconciled: "未整理",
+  stream_prev_period: "上一期",
 
   // ── Suggestions ──
   suggestions_title: "AI 建议",
@@ -355,6 +356,8 @@ export const zhCN = {
 
   // ── Locale ──
   locale_auto: "自动（跟随 Obsidian）",
+  locale_zh: "简体中文",
+  locale_en: "English",
 
   // ── AI providers ──
   provider_none: "不使用 AI",

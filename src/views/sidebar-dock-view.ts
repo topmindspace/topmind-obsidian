@@ -18,7 +18,7 @@
 
 import { ItemView, WorkspaceLeaf, Notice, MarkdownRenderer, setIcon, Menu, Component } from "obsidian";
 import type TopmindPlugin from "../main";
-import { t } from "../i18n";
+import { t, getLocale } from "../i18n";
 import { VIEW_TYPE_SIDEBAR_DOCK, VIEW_TYPE_STREAM_WORKBENCH } from "../constants";
 import { AI_PROVIDER_PRESETS, PROVIDER_DEFAULT_MODELS } from "../constants";
 import type { SuggestionCard } from "../types";
@@ -1484,18 +1484,27 @@ export class SidebarDockView extends ItemView {
     this.chatPaused = false;
     const goal = this.loadChatGoal();
     const extra = String(redirect || input?.value || "").trim();
+    const zh = !String(getLocale() || "").startsWith("en");
     const parts = [
-      "[系统] 任务被用户暂停后恢复，可能尚未完成。请继续完成用户原始目标；若已完成则给出简短结论与路径回执。",
+      zh
+        ? "[系统] 任务被用户暂停后恢复，可能尚未完成。请继续完成用户原始目标；若已完成则给出简短结论与路径回执。"
+        : "[System] Task resumed after a user pause and may be incomplete. Continue toward the original goal; if finished, give a short conclusion with path receipts.",
     ];
-    if (goal?.goal) parts.push(`原目标：${goal.goal}`);
+    if (goal?.goal) parts.push(zh ? `原目标：${goal.goal}` : `Original goal: ${goal.goal}`);
     if (goal?.plan?.length) {
-      parts.push(`计划：\n${goal.plan.map((s, i) => `${i + 1}. ${s}`).join("\n")}`);
+      const list = goal.plan.map((s, i) => `${i + 1}. ${s}`).join("\n");
+      parts.push(zh ? `计划：\n${list}` : `Plan:\n${list}`);
     }
     if (goal?.openCriteria?.length) {
-      parts.push(`未完成验收项：\n${goal.openCriteria.map((s) => `- ${s}`).join("\n")}`);
+      const list = goal.openCriteria.map((s) => `- ${s}`).join("\n");
+      parts.push(zh ? `未完成验收项：\n${list}` : `Open acceptance criteria:\n${list}`);
     }
-    if (extra) parts.push(`用户补充指示：${extra}`);
-    parts.push("先更新/执行剩余步骤，再收尾。收尾时输出结论 + 路径回执 + [DONE]；若无法完成则 [INCOMPLETE 原因]。");
+    if (extra) parts.push(zh ? `用户补充指示：${extra}` : `User follow-up: ${extra}`);
+    parts.push(
+      zh
+        ? "先更新/执行剩余步骤，再收尾。收尾时输出结论 + 路径回执 + [DONE]；若无法完成则 [INCOMPLETE 原因]。"
+        : "Continue remaining steps first, then close. Finish with conclusion + path receipts + [DONE]; if blocked use [INCOMPLETE reason].",
+    );
     if (input) {
       input.value = "";
       input.setCssStyles({ height: "auto" });
