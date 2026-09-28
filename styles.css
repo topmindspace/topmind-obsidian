@@ -1296,17 +1296,18 @@ select.tm-tag-input:hover {
    contentEl === .view-content. Never put page layout on it — official
    app.css already owns padding (`--size-4-3` / `--size-4-8`). Resets use
    :where() so they lose to .tm-page / .tm-wb-shell on purpose. */
-:where(.workspace-leaf-content[data-type="topmind-stream-workbench"] .view-content),
-:where(.workspace-leaf-content[data-type="topmind-memory-browse"] .view-content) {
+/* Real specificity (not :where) — must beat Obsidian app.css .view-content
+   padding, which otherwise leaves a tall empty band under the window tab strip. */
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .view-content,
+.workspace-leaf-content[data-type="topmind-memory-browse"] .view-content,
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .view-content {
   display: block;
   padding: 0;
+  margin: 0;
   background: var(--tm-canvas-wash);
   overflow: auto;
-}
-
-:where(.workspace-leaf-content[data-type="topmind-sidebar-dock"] .view-content) {
-  background: var(--tm-canvas-wash);
-  padding: 0;
+  height: 100%;
+  min-height: 0;
 }
 
 /* Page shell — the ONLY width/gutter owner. Works at any pane width. */
@@ -1322,6 +1323,19 @@ select.tm-tag-input:hover {
   display: flex;
   flex-direction: column;
   gap: var(--tm-gap-lg);
+}
+
+/* Top chrome is the first row — flush against the window tab strip. */
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-page > .tm-toolbar:first-child,
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-wb-shell > .tm-toolbar:first-child,
+.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page > .tm-section-header:first-child {
+  margin-top: calc(var(--tm-gap-xs) * -1);
+}
+
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-page:has(> .tm-toolbar:first-child),
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-wb-shell:has(> .tm-toolbar:first-child),
+.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page:has(> .tm-section-header:first-child) {
+  padding-top: 0;
 }
 
 /* Column flex stretches children — keep controls intrinsic width. */
@@ -4490,7 +4504,7 @@ button.tm-feed-layout-btn:hover {
 .tm-wb-shell,
 .tm-page {
   gap: var(--tm-gap-md);
-  padding-block: 20px 40px;
+  padding-block: 12px 40px;
 }
 
 
@@ -4836,7 +4850,7 @@ button.tm-feed-layout-btn:hover {
    .workspace-leaf-content and uses !important on purpose so the product
    skin is guaranteed visible. styles.css is the only CSS channel
    (community review forbids createElement("style")). */
-.workspace-leaf-content .tm-page,.workspace-leaf-content .tm-wb-shell{box-sizing:border-box;width:100%;max-width:48rem;margin:0 auto;padding:16px clamp(18px,3vw,36px) 32px;display:flex;flex-direction:column;gap:10px}
+.workspace-leaf-content .tm-page,.workspace-leaf-content .tm-wb-shell{box-sizing:border-box;width:100%;max-width:48rem;margin:0 auto;padding:0 clamp(18px,3vw,36px) 32px;display:flex;flex-direction:column;gap:10px}
 .workspace-leaf-content .tm-wb-hero,.workspace-leaf-content .tm-wb-section{gap:8px;margin:0}
 .workspace-leaf-content .tm-wb-hero-title{display:flex;align-items:baseline;gap:8px!important;flex-wrap:wrap;font-size:var(--font-ui-medium)!important;font-weight:600!important}
 .workspace-leaf-content .tm-wb-hero-title .tm-section-controls{margin-left:auto;display:flex;align-items:center;gap:6px}
@@ -4940,3 +4954,4 @@ button.tm-feed-layout-btn:hover {
 .workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-page,.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-wb-shell,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page{background:transparent!important}
 .workspace-leaf-content[data-type="topmind-stream-workbench"] .view-header,.workspace-leaf-content[data-type="topmind-memory-browse"] .view-header,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .view-header{display:none!important}
 .workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page>.tm-section-header:first-child,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar{min-height:var(--tm-hit)!important;background:var(--tm-bg-chrome)!important;border-bottom:1px solid var(--tm-line)!important}.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page>.tm-section-header:first-child,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar{position:sticky!important;z-index:2!important}.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page>.tm-section-header:first-child{top:0!important}.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header{top:0!important;z-index:3!important}.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar{top:var(--tm-hit)!important}
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .view-content,.workspace-leaf-content[data-type="topmind-memory-browse"] .view-content,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .view-content{padding:0!important;margin:0!important}.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-page,.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-wb-shell,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page{padding-top:0!important}.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page>.tm-section-header:first-child,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar{margin-top:0!important;padding-top:var(--tm-gap-xs)!important}
