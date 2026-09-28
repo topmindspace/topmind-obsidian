@@ -35,6 +35,7 @@ import { SidebarDockView } from "./views/sidebar-dock-view";
 import { MemoryBrowseView } from "./views/memory-browse-view";
 import { QuickCaptureModal } from "./views/quick-capture-modal";
 import { setLocale, t, type LocaleKey } from "./i18n";
+import { HOST_OVERRIDE_CSS } from "./styles/host-override";
 
 // ── AI Key Backup / Restore ───────────────────────────────────────────────
 //
@@ -157,8 +158,11 @@ export default class TopmindPlugin extends Plugin {
   private _unloaded = false;
 
   async onload(): Promise<void> {
-    // Styles load from styles.css (Obsidian loads it for us — community
-    // plugin review forbids createElement("style") / document.head injection).
+    // styles.css is the primary CSS channel (Obsidian loads it). Community
+    // review forbids createElement("style"), but the host CSS loader can drop
+    // or partially apply the sheet — so we also attach a CSSStyleSheet via
+    // document.adoptedStyleSheets (no <style> element) as the force-win layer.
+    this.ensureHostStyles();
     try {
       await this._onload();
     } catch (err) {
@@ -167,6 +171,25 @@ export default class TopmindPlugin extends Plugin {
       // Show a visible notice so users know what went wrong (esp. on Windows)
       new Notice(`[topmind] ${t("notice_load_failed")}: ${msg.slice(0, 200)}`, 10000);
       throw err; // Re-throw so Obsidian also reports it
+    }
+  }
+
+  /**
+   * Force-win CSS via `document.adoptedStyleSheets` (CSSStyleSheet objects —
+   * NOT `<style>` elements, which community review forbids). Carries the token
+   * bootstrap + leaf-scoped host-override layer so the product skin survives
+   * when Obsidian's plugin CSS loader drops or partially applies styles.css.
+   */
+  private ensureHostStyles(): void {
+    try {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(HOST_OVERRIDE_CSS);
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+      this.register(() => {
+        document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
+      });
+    } catch {
+      // adoptedStyleSheets unavailable — styles.css alone must carry the skin.
     }
   }
 

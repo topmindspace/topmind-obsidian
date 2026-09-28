@@ -138,8 +138,12 @@ test("styles.css: no hardcoded colors", async (t) => {
   });
 });
 
-test("styles.css: host surface steps, no !important, no multicolumn gap", () => {
-  const code = css
+test("styles.css: host surface steps, no !important outside HOST OVERRIDE, no multicolumn gap", () => {
+  // The HOST OVERRIDE section is the force-win layer against host/theme CSS
+  // and uses !important on purpose. The design-system body must stay clean.
+  const marker = "HOST OVERRIDE — leaf-scoped force-win layer";
+  const body = css.includes(marker) ? css.slice(0, css.indexOf(marker)) : css;
+  const code = body
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
   assert.doesNotMatch(code, /!important/);
@@ -195,10 +199,12 @@ test("DESIGN.md token values match styles.css", async (t) => {
   }
 });
 
-test("src/: no runtime style injection (styles.css is the only CSS channel)", () => {
+test("src/: no <style> element injection; adoptedStyleSheets is the fallback channel", () => {
   // Community plugin review ERROR: creating/attaching <style> elements is not
-  // allowed. Obsidian loads styles.css for us — that is the only CSS channel.
-  // Also ban ad-hoc `!important` / surface-lock in src (styles.css owns CSS).
+  // allowed. Obsidian loads styles.css; when that drops we attach a
+  // CSSStyleSheet via document.adoptedStyleSheets (NOT a <style> element).
+  // Ad-hoc `!important` / surface-lock stay banned in src except the
+  // host-override CSS constant (mirrors styles.css HOST OVERRIDE section).
   const srcDir = path.join(pluginRoot, "src");
   const offenders = [];
   const walk = (dir) => {
@@ -207,9 +213,10 @@ test("src/: no runtime style injection (styles.css is the only CSS channel)", ()
       if (ent.isDirectory()) walk(p);
       else if (/\.(ts|tsx|js|mjs)$/.test(ent.name)) {
         const text = fs.readFileSync(p, "utf8");
+        const isHostOverride = path.basename(p) === "host-override.ts";
         text.split("\n").forEach((line, i) => {
           if (/^\s*(\/\*|\*|\/\/)/.test(line)) return;
-          if (/!important/.test(line)) {
+          if (/!important/.test(line) && !isHostOverride) {
             offenders.push(`${path.relative(pluginRoot, p)}:${i + 1}: !important → ${line.trim().slice(0, 100)}`);
           }
           if (/surface-lock/.test(line)) {
@@ -218,15 +225,39 @@ test("src/: no runtime style injection (styles.css is the only CSS channel)", ()
           if (/createElement\(\s*["']style["']\s*\)/.test(line)) {
             offenders.push(`${path.relative(pluginRoot, p)}:${i + 1}: createElement("style")`);
           }
-          if (/document\.(head|body)\.appendChild/.test(line) && /style/i.test(line)) {
-            offenders.push(`${path.relative(pluginRoot, p)}:${i + 1}: document.*.appendChild(style)`);
+          if (/document\.(head|body)\.appendChild/.test(line)) {
+            offenders.push(`${path.relative(pluginRoot, p)}:${i + 1}: document.*.appendChild`);
           }
         });
       }
     }
   };
   walk(srcDir);
-  assert.deepEqual(offenders, [], `runtime style injection found:\n${offenders.join("\n")}`);
+  assert.deepEqual(offenders, [], `forbidden style injection found:\n${offenders.join("\n")}`);
+  // The fallback must go through adoptedStyleSheets, not DOM <style>.
+  const main = fs.readFileSync(path.join(srcDir, "main.ts"), "utf8");
+  assert.match(main, /adoptedStyleSheets/);
+  assert.match(main, /HOST_OVERRIDE_CSS/);
+});
+
+test("src/styles/host-override.ts mirrors styles.css HOST OVERRIDE section", () => {
+  const ts = fs.readFileSync(path.join(pluginRoot, "src", "styles", "host-override.ts"), "utf8");
+  const marker = "HOST OVERRIDE — leaf-scoped force-win layer";
+  assert.ok(css.includes(marker), "styles.css must contain the HOST OVERRIDE section");
+  const m = ts.match(/export const HOST_OVERRIDE_CSS = `([\s\S]*)`;\s*$/);
+  assert.ok(m, "host-override.ts must export HOST_OVERRIDE_CSS as a template literal");
+  const tsCss = m[1];
+  // Every leaf-scoped force-win rule in the TS constant must appear in styles.css
+  // (either the HOST OVERRIDE section or the design-system body).
+  let checked = 0;
+  for (const line of tsCss.split("\n")) {
+    const s = line.trim();
+    if (!s || s.startsWith("/*") || s.startsWith("*") || s.startsWith("//")) continue;
+    if (!s.includes(".workspace-leaf-content")) continue; // token bootstrap lives at styles.css :root
+    assert.ok(css.includes(s), `host-override.ts rule not in styles.css: ${s.slice(0, 80)}`);
+    checked += 1;
+  }
+  assert.ok(checked >= 40, `expected ≥40 leaf-scoped rules in host-override.ts, got ${checked}`);
 });
 
 test("styles.css: pill radius only on tag/status/filter/tool-chip", () => {
