@@ -620,36 +620,39 @@
    One visual language across the window: same height, same divider, same
    tonal step. Plugin chrome is the top band of every topmind surface —
    no more native white view-header in the middle of the product UI. */
+/* Main pane top band = toolbar / section header. Sidebar top band = tab bar.
+   .tm-sidebar-header-min is a hidden badge strip — never give it band height. */
 .workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,
 .workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page > .tm-section-header:first-child,
-.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header,
 .workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar {
   min-height: var(--tm-hit);
   background: var(--tm-bg-chrome);
   border-bottom: 1px solid var(--tm-line);
+  margin-top: 0;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,
 .workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page > .tm-section-header:first-child {
-  padding-top: var(--tm-gap-xs);
-  padding-bottom: var(--tm-gap-xs);
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
-
-.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header {
-  padding: var(--tm-gap-xs) var(--tm-gap-sm);
-  position: sticky;
-  top: 0;
-  z-index: 3;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar {
   padding: 0 var(--tm-gap-sm);
-  position: sticky;
-  top: var(--tm-hit);
-  z-index: 2;
+}
+
+/* Badge strip collapses to nothing so the tab bar starts flush at the top. */
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header-min {
+  min-height: 0;
+  height: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  overflow: hidden;
+  display: none;
 }
 
 /* Title weight matches across main toolbar and sidebar labels. */
@@ -4953,5 +4956,20 @@ button.tm-feed-layout-btn:hover {
 .workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-stream-workbench,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-memory-browse,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-dock{background:var(--background-secondary)!important;background-image:linear-gradient(180deg,color-mix(in srgb,var(--color-blue,var(--interactive-accent)) 6%,var(--background-secondary)) 0%,color-mix(in srgb,var(--color-cyan,var(--color-blue,var(--interactive-accent))) 4%,var(--background-primary-alt)) 48%,var(--background-primary) 100%)!important;background-attachment:fixed!important}
 .workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-page,.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-wb-shell,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page{background:transparent!important}
 .workspace-leaf-content[data-type="topmind-stream-workbench"] .view-header,.workspace-leaf-content[data-type="topmind-memory-browse"] .view-header,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .view-header{display:none!important}
-.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page>.tm-section-header:first-child,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar{min-height:var(--tm-hit)!important;background:var(--tm-bg-chrome)!important;border-bottom:1px solid var(--tm-line)!important}.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page>.tm-section-header:first-child,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar{position:sticky!important;z-index:2!important}.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page>.tm-section-header:first-child{top:0!important}.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header{top:0!important;z-index:3!important}.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar{top:var(--tm-hit)!important}
-.workspace-leaf-content[data-type="topmind-stream-workbench"] .view-content,.workspace-leaf-content[data-type="topmind-memory-browse"] .view-content,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .view-content{padding:0!important;margin:0!important}.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-page,.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-wb-shell,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page{padding-top:0!important}.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page>.tm-section-header:first-child,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar{margin-top:0!important;padding-top:var(--tm-gap-xs)!important}
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page>.tm-section-header:first-child{top:0!important}.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar{top:0!important}
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .view-content,.workspace-leaf-content[data-type="topmind-memory-browse"] .view-content,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .view-content{padding:0!important;margin:0!important}.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-page,.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-wb-shell,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page{padding-top:0!important}
+.workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-toolbar,.workspace-leaf-content[data-type="topmind-memory-browse"] .tm-page>.tm-section-header:first-child,.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-bar{min-height:var(--tm-hit)!important;background:var(--tm-bg-chrome)!important;border-bottom:1px solid var(--tm-line)!important;position:sticky!important;top:0!important;z-index:2!important;margin-top:0!important}.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-header-min{display:none!important;min-height:0!important;height:0!important;padding:0!important;margin:0!important;border:0!important}
+
+/* Sidebar split chrome — drop the tall header gap above the plugin tab bar
+   so right-pane top aligns with the main toolbar. */
+.mod-right-split .workspace-tab-header-container,
+.mod-right-split .workspace-tabs-header,
+.mod-left-split .workspace-tab-header-container {
+  padding-top: 0;
+  margin-top: 0;
+  min-height: 0;
+}
+
+.mod-right-split .workspace-leaf.mod-topmind-flush {
+  padding-top: 0;
+}
