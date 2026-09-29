@@ -120,6 +120,12 @@ export interface TopmindSettings {
   // ── Security & Archive ──
   backupKeep: number;
   receiptKeep: number;
+  /**
+   * Explicit opt-in: write a plaintext AI-keys backup into the vault
+   * (`.topmind/ai-keys-backup.json`). Default OFF — community review and
+   * basic hygiene say secrets must not land in synced vault files.
+   */
+  backupAiKeysToVault: boolean;
 }
 
 /** Empty multi-provider key store. */
@@ -177,6 +183,7 @@ export const DEFAULT_SETTINGS: TopmindSettings = {
   // Security
   backupKeep: 3,
   receiptKeep: 50,
+  backupAiKeysToVault: false,
 };
 
 /**
@@ -296,6 +303,7 @@ export function migrateSettings(raw: Record<string, unknown>): TopmindSettings {
     const n = Math.round(Number(v));
     return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
   };
+  merged.backupAiKeysToVault = merged.backupAiKeysToVault === true;
   merged.backupKeep = clampInt(merged.backupKeep, 0, 10, 3);
   merged.receiptKeep = clampInt(merged.receiptKeep, 10, 200, 50);
   merged.maxAgentSteps = clampInt(merged.maxAgentSteps, 3, 80, 32);

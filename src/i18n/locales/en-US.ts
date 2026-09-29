@@ -140,7 +140,6 @@ export const enUS: typeof zhCN = {
   chat_reasoning_show: "Show reasoning",
   chat_reasoning_chars: "{{count}} chars",
   chat_new_chat: "New chat",
-  chat_clear: "Clear chat",
   chat_error: "Chat error, please try again",
   chat_you: "You",
   chat_ai: "AI",
@@ -273,6 +272,8 @@ export const enUS: typeof zhCN = {
   settings_backup_keep_desc: "Number of backups to keep for AI writes (0 = disabled)",
   settings_receipt_keep: "Receipt Keep Count",
   settings_receipt_keep_desc: "Number of write receipts to keep (old ones pruned automatically)",
+  settings_backup_ai_keys: "Backup AI keys to vault",
+  settings_backup_ai_keys_desc: "Off by default. When on, API keys are written in plaintext to .topmind/ai-keys-backup.json (may be copied by sync/backup). Enable only if you accept that risk.",
 
   // ── Writeback notices ──
   notice_write_pending: "Write pending — accept or reject it in the sidebar Suggest tab",
@@ -315,7 +316,15 @@ export const enUS: typeof zhCN = {
 
   // ── URL detection ──
   notice_url_to_inbox: "URL detected — routed to Inbox",
-  compose_url_hint: "URL detected — use Note it to fetch content to Inbox",
+  compose_url_hint: "Note it = stream link · Fetch = Inbox article",
+  compose_url_fetch: "Fetch",
+  compose_url_fetching: "Fetching…",
+  compose_url_fetch_ok: "Fetched into Inbox",
+  compose_url_fetch_fail: "Fetch failed",
+  capture_meta_source: "Source",
+  capture_meta_author: "Author",
+  capture_meta_site: "Site",
+  capture_meta_no_body: "(No body extracted — paste manually)",
 
   // ── General ──
   error: "Error",
@@ -327,6 +336,16 @@ export const enUS: typeof zhCN = {
   init_workspace_confirm: "This creates the topmind directory layout (stream / inbox / memory, etc.) and the topmind.yaml contract in this vault. Existing content is not deleted. Continue?",
   dialog_cancel: "Cancel",
   dialog_confirm: "Confirm",
+  confirm_new_chat_title: "New chat",
+  confirm_new_chat_body: "This clears the current chat history and cannot be undone. Continue?",
+  confirm_clear_history_title: "Clear history",
+  confirm_clear_history_body: "This deletes all AI task history and cannot be undone. Continue?",
+  confirm_clear_todos_title: "Clear completed",
+  confirm_clear_todos_body: "This deletes all completed todos and cannot be undone. Continue?",
+  template_stream: "Stream",
+  template_balanced: "Balanced",
+  template_research: "Research",
+  template_periodic: "Periodic",
 
   // ── Workspace status ──
   workspace_status: "Workspace Status",
@@ -384,13 +403,14 @@ export const enUS: typeof zhCN = {
 
   // ── AI connection test ──
   settings_ai_test: "Test Connection",
+  settings_ai_test_desc: "Send a tiny request with the current provider / model to verify credentials and network.",
   settings_ai_testing: "Testing...",
   settings_ai_test_success: "Connection successful ✓",
   settings_ai_test_failed: "Connection failed",
   settings_ai_test_no_key: "Please configure at least one AI provider first",
 
   // ── Security note ──
-  settings_security_note: "API Key is stored in Obsidian plugin data.json and .topmind/ai-keys-backup.json (plaintext). Do not use in shared vaults.",
+  settings_security_note: "API keys are stored in the plugin data.json. A vault backup is only written if you opt in (plaintext). Do not use shared vaults with keys enabled.",
 
   // ── Chat model switching ──
   chat_model: "Model",

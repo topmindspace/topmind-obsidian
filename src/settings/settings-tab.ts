@@ -19,12 +19,11 @@ import {
   PluginSettingTab,
   Setting,
   Notice,
-  Modal,
   type App as ObsidianApp,
   type SettingDefinitionItem,
 } from "obsidian";
 import type TopmindPlugin from "../main";
-import { t } from "../i18n";
+import { t, detectObsidianLocale } from "../i18n";
 import type { WritebackMode, AiManualKeys } from "../types";
 import { hasConfiguredProvider, getProviderKey } from "../types";
 import {
@@ -48,13 +47,14 @@ import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
 import { openExternalUrl } from "../utils";
+import { ConfirmModal } from "../views/confirm-modal";
 
-/** Workspace template options */
+/** Workspace template options (labels resolved via i18n at render time). */
 const TEMPLATE_OPTIONS = [
-  { value: "stream", label: "Stream" },
-  { value: "balanced", label: "Balanced" },
-  { value: "research", label: "Research" },
-  { value: "periodic", label: "Periodic" },
+  { value: "stream", labelKey: "template_stream" },
+  { value: "balanced", labelKey: "template_balanced" },
+  { value: "research", labelKey: "template_research" },
+  { value: "periodic", labelKey: "template_periodic" },
 ] as const;
 
 type DesktopExportAi = {
@@ -171,11 +171,16 @@ function tryImportDesktopSettings(): {
       };
 
       let encrypted = false;
+      // Skip ciphertext (safeStorage v10: blobs) — importing them would install
+      // garbage "keys" that silently fail at request time.
       const takeEncrypted = (key: keyof AiManualKeys, srcKey: string) => {
         const val = asString(m[srcKey]);
         if (!val) return;
+        if (looksEncrypted(val)) {
+          encrypted = true;
+          return;
+        }
         (imported as Record<string, string>)[key] = val;
-        if (looksEncrypted(val)) encrypted = true;
       };
       const keyFields: Array<keyof AiManualKeys> = [
         "openAiKey", "anthropicKey", "googleKey", "deepseekKey", "moonshotKey", "zhipuKey",
@@ -316,6 +321,7 @@ export class TopmindSettingTab extends PluginSettingTab {
           },
           {
             name: t("settings_ai_model"),
+            desc: t("settings_ai_model_desc"),
             render: (setting) => this.renderModelPicker(setting),
           },
           {
@@ -330,7 +336,7 @@ export class TopmindSettingTab extends PluginSettingTab {
           },
           {
             name: t("settings_ai_test"),
-            desc: t("settings_security_note"),
+            desc: t("settings_ai_test_desc"),
             render: (setting) => this.renderConnectionTestRow(setting),
           },
           {
@@ -381,6 +387,11 @@ export class TopmindSettingTab extends PluginSettingTab {
             desc: t("settings_receipt_keep_desc"),
             control: { type: "slider", key: "receiptKeep", defaultValue: s.receiptKeep, min: 10, max: 200, step: 10 },
           },
+          {
+            name: t("settings_backup_ai_keys"),
+            desc: t("settings_backup_ai_keys_desc"),
+            control: { type: "toggle", key: "backupAiKeysToVault", defaultValue: s.backupAiKeysToVault },
+          },
         ],
       },
     ];
@@ -406,9 +417,9 @@ export class TopmindSettingTab extends PluginSettingTab {
     void this.save();
     if (key === "localeOverride") {
       void (async () => {
-        const { setLocale, detectObsidianLocale } = await import("../i18n");
+        const { detectObsidianLocale } = await import("../i18n");
         const override = typeof value === "string" ? value : "";
-        setLocale(override || detectObsidianLocale());
+        this.plugin.applyLocale(override || detectObsidianLocale());
         this.update();
         // Re-render open views so chrome text switches immediately.
         this.refreshViews();
@@ -429,7 +440,9 @@ export class TopmindSettingTab extends PluginSettingTab {
   }
 
   private obsLocale(): string {
-    return (this.app as unknown as { locale?: string }).locale || "zh-CN";
+    // Public API: getLanguage() via detectObsidianLocale (app.locale is
+    // undocumented and missing on current hosts).
+    return detectObsidianLocale();
   }
 
   // ── Row painters (one native Setting row each) ─────────────────────────
@@ -526,7 +539,7 @@ export class TopmindSettingTab extends PluginSettingTab {
   /** Template picker + initialize action. */
   private renderInitWorkspaceRow(setting: Setting): void {
     setting.addDropdown((dd) => {
-      for (const opt of TEMPLATE_OPTIONS) dd.addOption(opt.value, opt.label);
+      for (const opt of TEMPLATE_OPTIONS) dd.addOption(opt.value, t(opt.labelKey));
       dd.setValue("stream");
       this.templateSelect = dd.selectEl;
     });
@@ -558,8 +571,8 @@ export class TopmindSettingTab extends PluginSettingTab {
         .onChange(async (v) => {
           s.localeOverride = v;
           await this.save();
-          const { setLocale, detectObsidianLocale } = await import("../i18n");
-          setLocale(v || detectObsidianLocale());
+          const { detectObsidianLocale } = await import("../i18n");
+          this.plugin.applyLocale(v || detectObsidianLocale());
           this.update();
           this.refreshViews();
         }),
@@ -960,37 +973,5 @@ export class TopmindSettingTab extends PluginSettingTab {
       defaultLabel: t("settings_ai_model_default"),
     });
     return result;
-  }
-}
-
-/** Minimal confirm gate for irreversible/dangerous settings actions. */
-class ConfirmModal extends Modal {
-  constructor(
-    app: ObsidianApp,
-    private title: string,
-    private body: string,
-    private onConfirm: () => void,
-  ) {
-    super(app);
-  }
-
-  override onOpen(): void {
-    this.contentEl.createEl("h3", { text: this.title });
-    this.contentEl.createEl("p", { text: this.body });
-    const buttons = this.contentEl.createDiv({ cls: "modal-button-container" });
-    const cancelBtn = buttons.createEl("button", { text: t("dialog_cancel") });
-    cancelBtn.addEventListener("click", () => this.close());
-    const confirmBtn = buttons.createEl("button", {
-      text: t("dialog_confirm"),
-      cls: "mod-warning",
-    });
-    confirmBtn.addEventListener("click", () => {
-      this.close();
-      this.onConfirm();
-    });
-  }
-
-  override onClose(): void {
-    this.contentEl.empty();
   }
 }

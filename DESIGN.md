@@ -58,16 +58,6 @@
 > 写回经 Kernel writeback / `precise-edit`（`edit_file`）。**无 Pi**（不依赖 `pi-agent-core`）。
 > Host HTTP 可能不 token-stream；折叠 + 可见正文仍成立。**不发**记账 mini-app。
 
-### 1.3 信息架构降噪（2026-09-23）
-
-| 噪音源 | 规则 |
-|--------|------|
-| AI 状态 | **单点语义、多点呈现**：状态栏任务态 · 侧栏状态点（可点测速）· 设置页完整态。工具栏**不再**复读状态/模型。 |
-| 模型选择 | **唯一切换面**：对话 tab 紧凑切换器 + 设置页。工具栏/侧栏头**不展示**模型徽章。 |
-| 流头部操作 | 图标优先：`[刷新] [整理] [布局] [我的情况]`；文字标签仅宽容器 + 容器查询。 |
-| 侧栏底部 | **3 格**：记一下 · 整理 · AI 菜单。不再平铺 6 按钮。 |
-| 布局开关 | 紧挨周期区（不是远侧工具栏），`list/card` 同源 `settings.feedLayout`。 |
-
 ### 1.2 面板可恢复性
 
 | 场景 | 恢复方式 |
@@ -76,6 +66,16 @@
 | 关闭侧边栏 | ⌘P → "Topmind: 打开侧边栏" 或 动态工具栏 🔮 按钮 |
 | 两者都关了 | Ribbon 图标 → 记一下 → ⌘P 恢复 |
 | 启动时 | `autoOpenWorkbench` 设置 → 自动打开动态 + 侧边栏 |
+
+### 1.3 信息架构降噪
+
+| 噪音源 | 规则 |
+|--------|------|
+| AI 状态 | **单点语义、多点呈现**：状态栏任务态 · 侧栏状态点（可点测速）· 设置页完整态。工具栏**不再**复读状态/模型。 |
+| 模型选择 | **唯一切换面**：对话 tab 紧凑切换器 + 设置页。工具栏/侧栏头**不展示**模型徽章。 |
+| 流头部操作 | 图标优先：`[刷新] [整理] [布局] [我的情况]`；文字标签仅宽容器 + 容器查询。 |
+| 侧栏底部 | **3 格**：记一下 · 整理 · AI 菜单。不再平铺 6 按钮。 |
+| 布局开关 | 紧挨周期区（不是远侧工具栏），`list/card` 同源 `settings.feedLayout`。 |
 
 ---
 
@@ -283,7 +283,7 @@ AI 操作按钮仅在 AI 已配置时显示（未配置点击跳设置）。底�
 - `Enter` 提交 → `KernelService.capture(text, { target, tags })` → writeback-engine → 关闭
 - `Esc` 关闭弹窗（不保存）
 - `Shift+Enter` 换行
-- 自动检测单独 URL 输入，自动切换目标为 Inbox
+- URL 提示行提供「抓取」：X 状态/文章（fxtwitter 结构化，标题=文章标题或首行）、GitHub 仓库（README H1）、普通网页（og/twitter 元标题）→ 来源头 + 正文 → Inbox 独立文章；记下仍是动态链接
 - 目标选择：本周动态（默认）/ Inbox
 - 标签解析：`#标签` 自动提取为 frontmatter tags
 - 提交后：Notice 提示写入路径；若动态页签打开则刷新
@@ -411,7 +411,7 @@ AI 对话自动注入以下上下文（无需用户手动选择）：
 | 用户画像 | 前 3000 字符 | `memory/profile.md` |
 | 对话历史 | 最近 10 轮 | 保持对话连贯性 |
 
-对话可经 Kernel 多步工具环（`workspace_overview` / `search` / `list_*` / `get_topic` / `list_files` / `stat_path` / `glob_files` / `workspace_health` / `fetch_url` / `list_skills` / `load_skill` / `read_file` / `save_file` / `save_note` / `edit_file` / `capture` / `add_todo` / `toggle_todo` / `delete_path` / `rename_path` / `create_topic` / `move_to_topic` / `publish_to_outputs`）持续工作直到目标完成（默认 32 步；**目标协议** `[PLAN]`/`done-when`/`[DONE]`/`[NEEDS-USER]`；步数用尽走目标感知 auto-continue：基座 2 次、验收未达最多 4 次，续跑带任务台账与路径回执；未完成时文案明确「任务未完成」而非 Finished；结构化 goal chip 禁止 `[DONE]` 正则假成功）；**结果说明页脚**（终态消息下 **Verified / Assumed / Could not** 三段 + `N done · M writes` 摘要；空段写「无」；Verified 只列真实路径回执芯片，不编造检查证据）；路径回执可点击打开；tool chip 命中高 `--tm-hit-sm`（28px）；聊天气泡圆角 `--tm-radius-bubble`、用户泡最大宽 `--tm-bubble-user-max`。**文本类可写**（engine `lib/text-note.mjs` 单源白名单，.md/.txt/.json/.yaml/.csv/代码/配置，二进制除外）；与 Desktop 同一匹配与写闸契约：匹配阶梯 + postEditWindow + **soft expectedHash**（hash 过期但 unique-span 仍匹配则放行）。写回跟随 `topmind.yaml`（**分级 confirm**：内容新建/更新/编辑直接落盘且工具层 `confirmed:true`，仅删除/归档待确认；locked 可编辑，任务级首写快照；契约未读到时**不**用默认值覆盖 yaml）。Agent 写成功后 `notifyFilesChanged` 主动 `vault.trigger("modify")`，视图即时刷新。指令语言：`en*` → 英文，否则中文。
+对话可经 Kernel 多步工具环（`workspace_overview` / `search` / `list_*` / `get_topic` / `list_files` / `stat_path` / `glob_files` / `workspace_health` / `fetch_url` / `list_skills` / `load_skill` / `read_file` / `save_file` / `save_note` / `edit_file` / `capture` / `add_todo` / `toggle_todo` / `delete_path` / `rename_path` / `create_topic` / `move_to_topic` / `publish_to_outputs`）持续工作直到目标完成（默认 32 步；**目标协议** `[PLAN]`/`done-when`/`[DONE]`/`[NEEDS-USER]`；步数用尽走目标感知 auto-continue：基座 2 次、验收未达最多 4 次，续跑带任务台账与路径回执；未完成时文案明确「任务未完成」而非 Finished；结构化 goal chip 禁止 `[DONE]` 正则假成功）；**结果说明页脚**（终态消息下 **Verified / Assumed / Could not** 三段 + `N done · M writes` 摘要；空段写「无」；Verified 只列真实路径回执芯片，不编造检查证据）；路径回执可点击打开；tool chip 命中高 `--tm-hit-sm`（32px）；聊天气泡圆角 `--tm-radius-bubble`、用户泡最大宽 `--tm-bubble-user-max`。**文本类可写**（engine `lib/text-note.mjs` 单源白名单，.md/.txt/.json/.yaml/.csv/代码/配置，二进制除外）；与 Desktop 同一匹配与写闸契约：匹配阶梯 + postEditWindow + **soft expectedHash**（hash 过期但 unique-span 仍匹配则放行）。写回跟随 `topmind.yaml`（**分级 confirm**：内容新建/更新/编辑直接落盘且工具层 `confirmed:true`，仅删除/归档待确认；locked 可编辑，任务级首写快照；契约未读到时**不**用默认值覆盖 yaml）。Agent 写成功后 `notifyFilesChanged` 主动 `vault.trigger("modify")`，视图即时刷新。指令语言：`en*` → 英文，否则中文。
 
 ### 8.2 对话交互
 
@@ -485,20 +485,24 @@ System prompt 跟随 UI locale：
 - 使用 Obsidian CSS 变量（`--text-normal`, `--font-interface`, `--font-ui-*`, `--background-primary`, `--background-secondary`, `--interactive-accent`）
 - **三层表面**：页面 `--background-secondary`（和侧栏、设置页同一层灰底），卡片 `--background-primary`，顶栏/页签 `--background-secondary-alt`。侧栏叶子本身已是灰轨，卡片仍用 primary 浮起。不要整页同一张白底。正文字体是 `--font-interface`，字号走 `--font-ui-*`，行高走 `--line-height-normal`
 - **单一 Design Token 面**：`styles.css` 顶部 token 块作用于全部 `tm-*` 表面（workbench · sidebar · memory · capture）
-- 卡片样式：圆角 `--tm-radius-card`（12px）+ 发丝描边 + 微阴影 + hover 高亮（控件 4/8 · 胶囊 999）
+- 卡片样式：圆角 `--tm-radius-card`（16px · Desktop 4.3 软语言）+ 发丝描边 + 微阴影 + hover 高亮（控件 4/10 · 胶囊 999）
 - 输入栏：单行高度起，自适应增长
 - AI 建议卡片：左侧带彩色边条（蓝=create_topic/inbox_organize/ai_summary/stream_digest，橙=stale_topic/catch_all，绿=promote_memory/open_profile）。**不用 purple**（Desktop 禁止紫作产品 AI 身份）。`promote_memory` 的 `payload.action` 为 `append_profile` / `update_profile` / `retire_profile` / `compact_history`（不是只追加）；**近重复事实融合为 update（保留最新），历史区可 compact 合并同类项**。聊天注入画像走 Kernel `readProfileActiveBody`（历史段折叠为计数，不 dump 全文）。Inbox 超期走 `inbox_organize` 归位（移入/新建专题），不再发 `inbox_review` 归档卡。模糊命中 update/retire 成功提示「相似命中」。
 - AI 对话：用户消息右对齐（强调色背景），AI 消息左对齐（卡片背景）
 - 全中文 UI（可切英文）
-- **与 Desktop 的有意差异**：主 CTA 用宿主 `--interactive-accent`（非 ink）；图标库 Lucide（非 Remix，语义映射见 Desktop DESIGN §0.0.2）；圆角 4/8/12/999（`--tm-radius-*`）；信息流默认宽 `56rem`（对齐 Desktop feed）
+- **Hero 标题（2026-09-30）**：`tm-wb-hero-title` 升到 UI medium × 1.45（ViewHero 大标题档）。
+- **建议卡**：kind 左边框**保留**（产品合同：suggestion kind borders stay）；圆角 16 + 软阴影。
+- **控件档（2026-09-30 对齐 Desktop）**：hit 36 / sm 32 / lg 42；input 默认 36px。禁止用 CSS 把 `size` 档按钮压到 24px。
+- **建议忽略合同（2026-09-30 对齐 Desktop）**：忽略 = 常显文字按钮（`tm-btn-dismiss`，禁止 hover-only X）；待写确认不提供一键拒绝，进确认面。卡片 hover 动作触屏/焦点可达。
+- **与 Desktop 的有意差异**：主 CTA 用宿主 `--interactive-accent`（非 ink）；图标库 Lucide（非 Remix，语义映射见 Desktop DESIGN §0.0.2）；圆角 4/10/16/999（`--tm-radius-*`，2026-09-30 对齐 Desktop 软语言）；信息流默认宽 `56rem`（对齐 Desktop feed）
 
 ### 11.0 Design Token 与几何（唯一真源 `styles.css`）
 
 | 令牌 | 值 | 用途 |
 |------|----|------|
-| `--tm-hit` / `--tm-hit-sm` / `--tm-hit-lg` / `--tm-hit-xs` | 32 / 28 / 36 / 24 px | 标准控件 / 区块栏 / 主 CTA / chip·mini |
+| `--tm-hit` / `--tm-hit-sm` / `--tm-hit-lg` / `--tm-hit-xs` | 36 / 32 / 42 / 24 px | 标准控件 / 区块栏 / 主 CTA / chip·mini（2026-09-30 对齐 Desktop） |
 | `--tm-icon` / `--tm-icon-lg` / `--tm-icon-xs` | 16 / 18 / 14 px | 控件图标 / 底部主操作 / 内联 |
-| `--tm-radius-sm` / `--tm-radius-ctl` / `--tm-radius-card` / `--tm-radius-pill` | 4 / 8 / 12 / 999 px | mini / 控件 / 卡片 / 胶囊 |
+| `--tm-radius-sm` / `--tm-radius-ctl` / `--tm-radius-card` / `--tm-radius-pill` | 4 / 10 / 16 / 999 px | mini / 控件 / 卡片 / 胶囊 |
 | `--tm-type-display/title/body/label/meta` | `--font-ui-large/medium/small/smaller` | 字号阶梯（禁止硬编码 px；Title=medium/600，Body=small，Meta=smaller） |
 | `--tm-gap-xs/sm/md/lg` | 4 / 6 / 10 / 14 px | 间距节奏 |
 
@@ -588,8 +592,8 @@ System prompt 跟随 UI locale：
 
 | 变量 | 用途 |
 |------|------|
-| `--tm-type-display` ← `--font-ui-medium * 1.85` | Hero 标题 |
-| `--tm-type-title` ← `--font-ui-medium * 1.05` | 区块标题、空状态标题 |
+| `--tm-type-display` ← `--font-ui-large` | Hero 标题 |
+| `--tm-type-title` ← `--font-ui-medium` | 区块标题、空状态标题 |
 | `--tm-type-body` ← `--font-ui-small` | 卡片正文、列表正文 |
 | `--tm-type-label` ← `--font-ui-small` | 按钮、标签、控件文字 |
 | `--tm-type-meta` ← `--font-ui-smaller` | 时间戳、徽章、辅助 |

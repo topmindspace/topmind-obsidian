@@ -48,6 +48,7 @@ import {
   type ChatProgressEvent,
 } from "./kernel-workspace-ops.ts";
 import { setPendingWritesWorkspace } from "./pending-writes.ts";
+import { fetchUrlForCapture, buildFetchMarkdown, type FetchCaptureResult } from "./capture-fetch.ts";
 import { sanitizeAiContent } from "#kernel/ai-content-sanitize.mjs";
 import { t, getLocale } from "../i18n";
 import { hasConfiguredProvider, getProviderKey } from "../types.ts";
@@ -120,6 +121,10 @@ export class KernelService {
     this.opSuggestionSession = [];
     this.suggestionDropped.clear();
     this.lastSuggestKernelAt = 0;
+    setPendingWritesWorkspace(null);
+    // Do not leave keep-count overrides in the shared renderer process.
+    delete process.env.BACKUP_KEEP;
+    delete process.env.RECEIPT_KEEP;
   }
 
   /** Drop a suggestion from the session (apply success or user dismiss). */
@@ -541,6 +546,35 @@ export class KernelService {
       new Notice(`${t("notice_write_failed")}: ${result.error || "unknown"}`);
     }
     return result;
+  }
+
+  /**
+   * URL 抓取（记一下「抓取」按钮）— Desktop fetchUrl parity。
+   * GitHub markdown → raw；普通网页 → HTML 启发式提取。
+   */
+  async fetchUrlForCapture(url: string): Promise<FetchCaptureResult> {
+    return fetchUrlForCapture(async (u: string) => {
+      try {
+        const r = await requestUrl({ url: u, method: "GET" });
+        return {
+          ok: r.status >= 200 && r.status < 400,
+          status: r.status,
+          text: String(r.text || ""),
+        };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }, url);
+  }
+
+  /** Compact source header + body for a fetch result (Desktop buildFetchMarkdown parity). */
+  buildFetchMarkdown(result: FetchCaptureResult): string {
+    return buildFetchMarkdown(result, {
+      source: t("capture_meta_source"),
+      author: t("capture_meta_author"),
+      site: t("capture_meta_site"),
+      noBody: t("capture_meta_no_body"),
+    });
   }
 
   /** Quick AI polish for composer text (does not write to disk) */

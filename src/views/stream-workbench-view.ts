@@ -33,6 +33,7 @@ import {
   splitStreamPreviewParts,
 } from "../utils";
 import { hasConfiguredProvider } from "../types";
+import { openSidebarDock, openPluginSettings } from "../services/view-openers";
 import { aiTaskManager, type TaskProgress } from "../services/ai-task-manager";
 
 /** Format entry count for display (uses i18n, kept in view layer). */
@@ -178,6 +179,14 @@ export class StreamWorkbenchView extends ItemView {
     const urlHintIcon = this.urlHintEl.createSpan({ cls: "tm-url-hint-icon" });
     setIcon(urlHintIcon, "link");
     this.urlHintEl.createSpan({ text: t("compose_url_hint") });
+    // Desktop parity: 记下 = stream link · 抓取 = fetch article into Inbox.
+    const fetchBtn = this.urlHintEl.createEl("button", {
+      cls: "tm-url-fetch-btn",
+      text: t("compose_url_fetch"),
+    });
+    fetchBtn.addEventListener("click", () => {
+      void this.fetchComposeUrlToInbox(fetchBtn);
+    });
 
     const composeFoot = compose.createDiv({ cls: "tm-wb-compose-foot" });
     composeFoot.createSpan({
@@ -381,9 +390,7 @@ export class StreamWorkbenchView extends ItemView {
 
   /** Open plugin settings tab */
   private openSettings(): void {
-    const setting = (this.app as unknown as { setting: { open: () => void; openTabById: (id: string) => void } }).setting;
-    setting?.open();
-    setting?.openTabById("topmind-stream");
+    openPluginSettings(this.app, this.plugin.manifest.id);
   }
 
   /** Update AI task progress badge in toolbar */
@@ -473,14 +480,7 @@ export class StreamWorkbenchView extends ItemView {
   }
 
   private async openSidebar(): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_SIDEBAR_DOCK);
-    if (existing.length > 0) {
-      void this.app.workspace.revealLeaf(existing[0]);
-      return;
-    }
-    const leaf = this.app.workspace.getRightLeaf(false);
-    if (!leaf) return;
-    await leaf.setViewState({ type: VIEW_TYPE_SIDEBAR_DOCK, active: true });
+    await openSidebarDock(this.app);
   }
 
   /** Create a new untitled inbox note via Kernel writeback, then open it. */
@@ -852,7 +852,8 @@ export class StreamWorkbenchView extends ItemView {
         const text = appendField.value.trim();
         if (!text) return;
         submitAppendBtn.disabled = true;
-        submitAppendBtn.textContent = "...";
+        submitAppendBtn.empty();
+        submitAppendBtn.createSpan({ cls: "tm-btn-spinner" });
         try {
           const res = this.plugin.kernelService.appendStreamEntry({
             relativePath: periodPath,
@@ -867,9 +868,11 @@ export class StreamWorkbenchView extends ItemView {
             appendBox = null;
             await this.refreshStream();
           }
+          // appendStreamEntry already toasts written / pending / failed.
         } finally {
           if (submitAppendBtn) {
             submitAppendBtn.disabled = false;
+            submitAppendBtn.empty();
             submitAppendBtn.textContent = t("stream_append_submit");
           }
         }
@@ -1029,15 +1032,49 @@ export class StreamWorkbenchView extends ItemView {
 
   // ── Actions ────────────────────────────────────────────────────────────
 
+  /**
+   * 抓取 → Inbox 独立文章（Desktop handleFetchToInbox parity）。
+   * 记下仍是动态链接；只有点「抓取」才拉正文进 Inbox。
+   */
+  private async fetchComposeUrlToInbox(btn: HTMLButtonElement): Promise<void> {
+    const text = this.inputEl.value.trim();
+    if (!text || !isLoneUrlCapture(text)) return;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = t("compose_url_fetching");
+    try {
+      const result = await this.plugin.kernelService.fetchUrlForCapture(text);
+      if (!result.ok) {
+        new Notice(`${t("compose_url_fetch_fail")}: ${result.error || ""}`);
+        return;
+      }
+      const body = this.plugin.kernelService.buildFetchMarkdown(result);
+      const res = this.plugin.kernelService.capture(body, {
+        target: "inbox",
+        tags: [],
+      });
+      if (res.ok) {
+        this.inputEl.value = "";
+        this.inputEl.setCssStyles({ height: "auto" });
+        this.updateUrlHint();
+        new Notice(t("compose_url_fetch_ok"));
+      }
+    } catch (err) {
+      console.error("[topmind] fetchComposeUrlToInbox failed:", err);
+      new Notice(t("compose_url_fetch_fail"));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  }
+
   private submitInput(): void {
     const text = this.inputEl.value.trim();
     if (!text) return;
 
-    const isUrl = isLoneUrlCapture(text);
-    const target = isUrl ? "inbox" : "stream";
-    if (isUrl) {
-      new Notice(t("notice_url_to_inbox"));
-    }
+    // Desktop parity: 记下 = stream link (even bare URLs) · 抓取 = Inbox article.
+    // A lone URL is still a stream moment; only the 抓取 button fetches body.
+    const target = "stream";
 
     const tags = this.plugin.settings.autoTag ? extractTags(text) : [];
     this.inputEl.disabled = true;

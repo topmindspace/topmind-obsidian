@@ -72,6 +72,8 @@ function nextId(): string {
 class AiTaskManager {
   private queue: InternalTask[] = [];
   private active: InternalTask | null = null;
+  /** True while a provider call is in flight (survives abort — keeps the lane serial). */
+  private inFlight = false;
   private history: AiTask[] = [];
   private listeners: Set<TaskListener> = new Set();
 
@@ -125,6 +127,8 @@ class AiTaskManager {
       this.history = this.history.slice(-MAX_HISTORY);
     }
     this.active = null;
+    // Do NOT clear inFlight — the provider call is still running. The next
+    // queued task starts only after that call settles (strictly serial lane).
     this.notify();
   }
 
@@ -142,6 +146,18 @@ class AiTaskManager {
     this.notify();
   }
 
+  /**
+   * Drop all queue/history state and listeners. Called from plugin onunload so
+   * a hot-reload does not keep stale executors or a half-dead lane.
+   */
+  reset(): void {
+    this.queue = [];
+    this.active = null;
+    this.inFlight = false;
+    this.history = [];
+    this.listeners.clear();
+  }
+
   // ── Internal ──────────────────────────────────────────────────────────────
 
   private toPublicTask(t: InternalTask): AiTask {
@@ -151,11 +167,12 @@ class AiTaskManager {
   }
 
   private async runNext(): Promise<void> {
-    if (this.active) return; // Already running
+    if (this.inFlight) return; // A provider call is still running (even after abort)
 
     const task = this.queue.shift();
     if (!task) return;
 
+    this.inFlight = true;
     this.active = task;
     task.status = "running";
     task.startedAt = Date.now();
@@ -181,6 +198,8 @@ class AiTaskManager {
         task.error = err instanceof Error ? err.message : String(err);
         task.finishedAt = Date.now();
       }
+    } finally {
+      this.inFlight = false;
     }
 
     if (!abortedMidFlight) {
@@ -193,7 +212,7 @@ class AiTaskManager {
     }
     this.notify();
 
-    // Run next queued task — also drains after an aborted call settles,
+    // Run next queued task — only after the previous call has settled,
     // keeping the lane strictly serial (one provider call at a time).
     if (this.queue.length > 0) {
       void this.runNext();

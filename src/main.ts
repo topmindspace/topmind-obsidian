@@ -3,13 +3,14 @@
 // This is the single entry point loaded by Obsidian (manifest.json → main.js).
 // It registers views, commands, settings, and ribbon icon.
 //
-// AI Key Persistence: In addition to Obsidian's data.json, AI keys are backed
-// up to {vault}/.topmind/ai-keys-backup.json on every save. On load, if the
-// main data has no AI keys but a backup exists, keys are restored from backup.
-// This protects against data.json being wiped during plugin updates (BRAT,
-// manual install, Obsidian sync conflicts, etc.).
+// AI Key Persistence: primary store is Obsidian's plugin data.json.
+// An optional vault backup at {vault}/.topmind/ai-keys-backup.json is written
+// ONLY when the user enables `backupAiKeysToVault` (default OFF — community
+// hygiene: secrets must not land in synced vault files). On load, if a backup
+// already exists it can still restore missing keys (last-known-good).
 
 import { Plugin, WorkspaceLeaf, Notice, setIcon } from "obsidian";
+import { chmodSync } from "node:fs";
 import { DEFAULT_SETTINGS, migrateSettings, hasConfiguredProvider, isAiProviderType, type TopmindSettings } from "./types.ts";
 import { isRecord, parseJsonUnknown } from "./utils.ts";
 import {
@@ -28,6 +29,7 @@ import {
   CMD_OPEN_INBOX,
 } from "./constants.ts";
 import { KernelService } from "./services/kernel-service.ts";
+import { openStreamWorkbench, openSidebarDock, openPluginSettings } from "./services/view-openers.ts";
 import { aiTaskManager, type TaskProgress } from "./services/ai-task-manager.ts";
 import { TopmindSettingTab } from "./settings/settings-tab";
 import { StreamWorkbenchView } from "./views/stream-workbench-view";
@@ -35,7 +37,6 @@ import { SidebarDockView } from "./views/sidebar-dock-view";
 import { MemoryBrowseView } from "./views/memory-browse-view";
 import { QuickCaptureModal } from "./views/quick-capture-modal";
 import { setLocale, t, detectObsidianLocale, type LocaleKey } from "./i18n";
-import { HOST_OVERRIDE_CSS } from "./styles/host-override";
 
 // ── AI Key Backup / Restore ───────────────────────────────────────────────
 //
@@ -158,11 +159,8 @@ export default class TopmindPlugin extends Plugin {
   private _unloaded = false;
 
   async onload(): Promise<void> {
-    // styles.css is the primary CSS channel (Obsidian loads it). Community
-    // review forbids createElement("style"), but the host CSS loader can drop
-    // or partially apply the sheet — so we also attach a CSSStyleSheet via
-    // document.adoptedStyleSheets (no <style> element) as the force-win layer.
-    this.ensureHostStyles();
+    // styles.css is the ONLY CSS channel (community review: no JS style
+    // injection of any kind). Obsidian loads styles.css for the plugin.
     try {
       await this._onload();
     } catch (err) {
@@ -171,25 +169,6 @@ export default class TopmindPlugin extends Plugin {
       // Show a visible notice so users know what went wrong (esp. on Windows)
       new Notice(`[topmind] ${t("notice_load_failed")}: ${msg.slice(0, 200)}`, 10000);
       throw err; // Re-throw so Obsidian also reports it
-    }
-  }
-
-  /**
-   * Force-win CSS via `document.adoptedStyleSheets` (CSSStyleSheet objects —
-   * NOT `<style>` elements, which community review forbids). Carries the token
-   * bootstrap + leaf-scoped host-override layer so the product skin survives
-   * when Obsidian's plugin CSS loader drops or partially applies styles.css.
-   */
-  private ensureHostStyles(): void {
-    try {
-      const sheet = new CSSStyleSheet();
-      sheet.replaceSync(HOST_OVERRIDE_CSS);
-      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
-      this.register(() => {
-        document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
-      });
-    } catch {
-      // adoptedStyleSheets unavailable — styles.css alone must carry the skin.
     }
   }
 
@@ -233,65 +212,7 @@ export default class TopmindPlugin extends Plugin {
     });
 
     // ── Commands ──
-    this.addCommand({
-      id: CMD_QUICK_CAPTURE,
-      name: t("cmd_quick_capture"),
-      callback: () => this.openQuickCapture(),
-    });
-
-    this.addCommand({
-      id: CMD_OPEN_WORKBENCH,
-      name: t("cmd_open_workbench"),
-      callback: () => { void this.openWorkbench(); },
-    });
-
-    this.addCommand({
-      id: CMD_OPEN_SIDEBAR,
-      name: t("cmd_open_sidebar"),
-      callback: () => { void this.openSidebar(); },
-    });
-
-    this.addCommand({
-      id: CMD_ORGANIZE_PERIOD,
-      name: t("cmd_organize_period"),
-      callback: () => { void this.organizePeriod(); },
-    });
-
-    this.addCommand({
-      id: CMD_REFRESH_SUGGESTIONS,
-      name: t("cmd_refresh_suggestions"),
-      callback: () => { void this.refreshSuggestions(); },
-    });
-
-    this.addCommand({
-      id: CMD_MAINTAIN_TODOS,
-      name: t("cmd_maintain_todos"),
-      callback: () => this.maintainTodos(),
-    });
-
-    this.addCommand({
-      id: CMD_TOPIC_CLASSIFY,
-      name: t("cmd_topic_classify"),
-      callback: () => this.classifyTopics(),
-    });
-
-    this.addCommand({
-      id: CMD_MEMORY_ORGANIZE,
-      name: t("cmd_memory_organize"),
-      callback: () => this.organizeMemory(),
-    });
-
-    this.addCommand({
-      id: CMD_OPEN_PROFILE,
-      name: t("cmd_open_profile"),
-      callback: () => { void this.openMemoryBrowse(); },
-    });
-
-    this.addCommand({
-      id: CMD_OPEN_INBOX,
-      name: t("cmd_open_inbox"),
-      callback: () => { void this.openInbox(); },
-    });
+    this.registerCommands();
 
     // ── Settings tab ──
     this.settingTab = new TopmindSettingTab(this.app, this);
@@ -321,6 +242,65 @@ export default class TopmindPlugin extends Plugin {
     }
   }
 
+  /**
+   * Register (or re-register) palette commands with the current locale names.
+   * Called from _onload and again after a language switch so command names
+   * do not stay frozen in the boot locale.
+   */
+  private registerCommands(): void {
+    const defs: Array<{ id: string; name: string; run: () => void }> = [
+      { id: CMD_QUICK_CAPTURE, name: t("cmd_quick_capture"), run: () => this.openQuickCapture() },
+      { id: CMD_OPEN_WORKBENCH, name: t("cmd_open_workbench"), run: () => { void this.openWorkbench(); } },
+      { id: CMD_OPEN_SIDEBAR, name: t("cmd_open_sidebar"), run: () => { void this.openSidebar(); } },
+      { id: CMD_ORGANIZE_PERIOD, name: t("cmd_organize_period"), run: () => { void this.organizePeriod(); } },
+      { id: CMD_REFRESH_SUGGESTIONS, name: t("cmd_refresh_suggestions"), run: () => { void this.refreshSuggestions(); } },
+      { id: CMD_MAINTAIN_TODOS, name: t("cmd_maintain_todos"), run: () => this.maintainTodos() },
+      { id: CMD_TOPIC_CLASSIFY, name: t("cmd_topic_classify"), run: () => this.classifyTopics() },
+      { id: CMD_MEMORY_ORGANIZE, name: t("cmd_memory_organize"), run: () => this.organizeMemory() },
+      { id: CMD_OPEN_PROFILE, name: t("cmd_open_profile"), run: () => { void this.openMemoryBrowse(); } },
+      { id: CMD_OPEN_INBOX, name: t("cmd_open_inbox"), run: () => { void this.openInbox(); } },
+    ];
+    for (const def of defs) {
+      this.addCommand({
+        id: def.id,
+        name: def.name,
+        callback: def.run,
+      });
+    }
+  }
+
+  /**
+   * Switch UI locale and refresh locale-bound chrome (command names).
+   * Views re-render through the settings tab's own refresh.
+   */
+  applyLocale(locale: string): void {
+    setLocale(locale);
+    // Obsidian commands are registered once with a static name — drop and
+    // re-add so the palette shows the new language immediately.
+    const commands = (this.app as unknown as {
+      commands?: { removeCommand?: (id: string) => void };
+    }).commands;
+    for (const id of [
+      CMD_QUICK_CAPTURE,
+      CMD_OPEN_WORKBENCH,
+      CMD_OPEN_SIDEBAR,
+      CMD_ORGANIZE_PERIOD,
+      CMD_REFRESH_SUGGESTIONS,
+      CMD_MAINTAIN_TODOS,
+      CMD_TOPIC_CLASSIFY,
+      CMD_MEMORY_ORGANIZE,
+      CMD_OPEN_PROFILE,
+      CMD_OPEN_INBOX,
+    ]) {
+      try {
+        commands?.removeCommand?.(`${this.manifest.id}:${id}`);
+      } catch {
+        // Older hosts may not expose removeCommand — names stay at boot locale.
+      }
+    }
+    this.registerCommands();
+  }
+
   onunload(): void {
     this._unloaded = true;
     // Flush any debounced settings keystrokes before tearing down.
@@ -328,6 +308,7 @@ export default class TopmindPlugin extends Plugin {
     this.settingTab = null;
     this.aiTaskUnsub?.();
     this.aiTaskUnsub = null;
+    aiTaskManager.reset();
     this.kernelService?.dispose();
   }
 
@@ -387,6 +368,9 @@ export default class TopmindPlugin extends Plugin {
    * disappearing". The backup is last-known-good, not a mirror of current.
    */
   private async saveAiKeysBackup(): Promise<void> {
+    // Community hygiene: never write secrets into the vault unless the user
+    // explicitly opted in. Default is OFF.
+    if (!this.settings?.backupAiKeysToVault) return;
     const adapter = this.app.vault.adapter;
     const backupData = extractAiBackup(this.settings);
     if (!backupHasAiKeys(backupData)) {
@@ -409,6 +393,13 @@ export default class TopmindPlugin extends Plugin {
       // Directory may already exist — ignore
     }
     await adapter.write(AI_KEYS_BACKUP_PATH, json);
+    // Best-effort owner-only mode (desktop). The file is still plaintext by
+    // design (last-known-good key restore) — README discloses the risk.
+    try {
+      chmodSync(AI_KEYS_BACKUP_PATH, 0o600);
+    } catch {
+      // Windows / adapter path mismatch — ignore.
+    }
   }
 
   /**
@@ -434,31 +425,16 @@ export default class TopmindPlugin extends Plugin {
   }
 
   async openWorkbench(): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_STREAM_WORKBENCH);
-    if (existing.length > 0) {
-      void this.app.workspace.revealLeaf(existing[0]);
-      return;
-    }
-    // New leaf — never replace the tab the user is currently reading.
-    const leaf = this.app.workspace.getLeaf(true);
-    await leaf.setViewState({
-      type: VIEW_TYPE_STREAM_WORKBENCH,
-      active: true,
-    });
+    await openStreamWorkbench(this.app);
   }
 
   async openSidebar(): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_SIDEBAR_DOCK);
-    if (existing.length > 0) {
-      void this.app.workspace.revealLeaf(existing[0]);
-      return;
-    }
-    const leaf = this.app.workspace.getRightLeaf(false);
-    if (!leaf) return;
-    await leaf.setViewState({
-      type: VIEW_TYPE_SIDEBAR_DOCK,
-      active: true,
-    });
+    await openSidebarDock(this.app);
+  }
+
+  /** Open the plugin settings tab (command / toolbar). */
+  openSettings(): void {
+    openPluginSettings(this.app, this.manifest.id);
   }
 
   /** Open the dock's 建议 tab (status-bar chip / stream strip). */
@@ -633,6 +609,9 @@ export default class TopmindPlugin extends Plugin {
       }
     }
     // Global "work waiting" signal (Desktop showSuggestCountChip parity).
+    // Plain listener (not registerDomEvent): el.empty() drops the chip each
+    // repaint, so the handler dies with it — Plugin-scoped registrations
+    // would accumulate across every status-bar update.
     if (this.suggestCount > 0) {
       const chip = el.createEl("button", {
         cls: "tm-status-badge",
@@ -643,7 +622,7 @@ export default class TopmindPlugin extends Plugin {
           title: t("suggestions_open_confirm"),
         },
       });
-      this.registerDomEvent(chip, "click", (e: MouseEvent) => {
+      chip.addEventListener("click", (e: MouseEvent) => {
         e.stopPropagation();
         void this.openSidebarSuggestions();
       });

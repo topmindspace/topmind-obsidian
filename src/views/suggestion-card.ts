@@ -83,7 +83,8 @@ export function renderSuggestionCard(
       text: pathLabel,
       attr: { type: "button", title: openTarget },
     });
-    pathBtn.setAttribute("aria-label", t("suggestions_open"));
+    // Accessible name must contain the visible path text (WCAG 2.5.3).
+    pathBtn.setAttribute("aria-label", pathLabel);
     pathBtn.addEventListener("click", () => {
       void cb.openVaultPath(openTarget);
     });
@@ -110,6 +111,7 @@ export function renderSuggestionCard(
       }
       await cb.refresh();
     } else {
+      // applySuggestion already toasts the failure — just restore the button.
       confirmBtn.disabled = false;
       confirmBtn.empty();
       confirmBtn.textContent = primaryLabel;

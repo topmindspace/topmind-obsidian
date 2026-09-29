@@ -12,6 +12,8 @@
 
 ---
 
+版本说明：[CHANGELOG.md](CHANGELOG.md)。
+
 ## 界面预览
 
 | 动态时间轴 | 我的情况 |
@@ -100,7 +102,7 @@ topmind Stream 通过 5 个通俗直观的概念降低认知负担：
 |------|------|
 | 社区市场 / BRAT | 从插件列表更新 / BRAT「检查更新」 |
 | 手动 zip | 下载新版 `topmind-obsidian-<ver>.zip`，替换 `plugins/topmind-stream/` 下的文件，重新加载 Obsidian |
-| 从源码构建 | `npm run obsidian:pack` → 按上述方式安装 |
+| 从源码构建 | `npm run pack` → 按上述方式安装 |
 
 你的 Vault 文件（`topmind.yaml`、`10-动态/`、`memory/`）**不会**被插件升级替换。版本真源：[`manifest.json`](./manifest.json)。
 
@@ -168,7 +170,7 @@ Obsidian 表面 (TypeScript + esbuild)
   └── Vault 桥接与 AI Provider 层
         │
         ▼
-Kernel 八引擎 (打包 lib/*.mjs)
+Kernel 引擎 (打包 lib/*.mjs)
   contract · workspace-model · stream · memory
   writeback · lifecycle · derived · ingest
   + todo / ai-operation / suggest / activity-window
@@ -185,7 +187,7 @@ Obsidian Vault (纯文件系统 = 唯一内容真源)
 | **主要定位** | 独立富桌面应用 | Obsidian 内嵌原生视图 |
 | **编辑器类型** | Tiptap 富文本 & 所见即所得 | Obsidian 原生 Markdown 编辑器 |
 | **AI 运行时** | Vercel AI SDK v7 | Obsidian `requestUrl`（OpenAI / Anthropic / Gemini 兼容） |
-| **共享引擎** | Kernel `lib/` 八引擎 | Kernel `lib/` 八引擎（打包内联） |
+| **共享引擎** | Kernel `lib/`（同一套引擎） | Kernel `lib/`（构建时打包内联） |
 | **数据格式** | 标准 Markdown | 标准 Markdown（同一 Vault） |
 
 *你可以在 Topmind Desktop 和 Obsidian 中同时打开同一个 Vault，互不冲突。*
@@ -196,8 +198,21 @@ Obsidian Vault (纯文件系统 = 唯一内容真源)
 
 - **本地优先存储**：所有笔记和元数据均以标准 Markdown 文件存储在你的磁盘上。
 - **零遥测**：topmind 不追踪、不收集、不向外部服务器发送你的使用数据。
-- **API Key 安全**：API 密钥存储在 Vault 的 `.obsidian` 目录下插件的 `data.json`，并备份到 `.topmind/ai-keys-backup.json`（均为明文，请勿用于共享 Vault）。
+- **API Key 安全**：密钥存放在插件本地 `data.json`。只有在设置 → 安全中**显式开启**后，才会把明文备份写入 `.topmind/ai-keys-backup.json`。请勿在共享 Vault 中配置密钥。
 - **写回保护**：所有 AI 驱动的文件变更通过 `writeback-engine`（`open`/`locked`）。备份/回执仅高影响（锁定覆盖、锁定/核心笔记删除归档），普通开放更新不造归档副本。
+
+### 社区评分卡披露（有意为之的能力）
+
+以下能力为产品所必需，范围已尽量收紧：
+
+| 能力 | 原因 | 范围 |
+|---|---|---|
+| **Node `fs`（非 vault API）** | 桌面端插件：Kernel 工作区 I/O、备份/回执、Desktop 密钥导入 | 所有写路径经 `resolveInsideVault()`（检测 `../` 逃逸即抛错）；范围 = vault 工作区根；`isDesktopOnly: true` |
+| **剪贴板写入** | 对话回答 / 动态卡片的复制按钮 | 仅 `writeText`，仅在用户显式点击时；不读剪贴板、无后台访问 |
+| **网络（AI 提供商）** | 对话 / 建议 / 模型列表 | 仅 `requestUrl`（CSP 安全）；端点由你自行配置；无分析上报 |
+| **Base64 编解码** | Kernel 载荷管道 | 仅本地运行时 |
+
+`main.js` / `styles.css` 发行资产附带 GitHub artifact attestation 与可复现构建。
 
 ---
 

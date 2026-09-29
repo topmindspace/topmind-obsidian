@@ -138,7 +138,6 @@ export const zhCN = {
   chat_reasoning_show: "展开思考过程",
   chat_reasoning_chars: "{{count}} 字",
   chat_new_chat: "新建会话",
-  chat_clear: "清空对话",
   chat_error: "对话出错，请重试",
   chat_you: "你",
   chat_ai: "AI",
@@ -271,6 +270,8 @@ export const zhCN = {
   settings_backup_keep_desc: "AI 写入时创建备份的保留份数（0 = 禁用）",
   settings_receipt_keep: "回执保留份数",
   settings_receipt_keep_desc: "写操作回执的保留份数（超出自动清理旧版）",
+  settings_backup_ai_keys: "备份 AI 密钥到 Vault",
+  settings_backup_ai_keys_desc: "默认关闭。开启后会把 API Key 明文写入 .topmind/ai-keys-backup.json（可能被同步/备份复制）。仅在你接受该风险时开启。",
 
   // ── Writeback notices ──
   notice_write_pending: "写入待确认 — 请在侧栏「建议」中接受或拒绝",
@@ -313,7 +314,15 @@ export const zhCN = {
 
   // ── URL detection ──
   notice_url_to_inbox: "检测到链接，已路由到 Inbox",
-  compose_url_hint: "检测到链接，建议使用「记一下」抓取正文到 Inbox",
+  compose_url_hint: "记下=记入动态链接 · 抓取=进 Inbox 成独立文章",
+  compose_url_fetch: "抓取",
+  compose_url_fetching: "抓取中…",
+  compose_url_fetch_ok: "已抓取进 Inbox",
+  compose_url_fetch_fail: "抓取失败",
+  capture_meta_source: "来源",
+  capture_meta_author: "作者",
+  capture_meta_site: "站点",
+  capture_meta_no_body: "(无法提取正文内容 — 可手动粘贴)",
 
   // ── General ──
   error: "出错了",
@@ -325,6 +334,16 @@ export const zhCN = {
   init_workspace_confirm: "将在当前库中创建 topmind 目录结构（动态 / Inbox / memory 等）和 topmind.yaml 契约文件。已存在的内容不会被删除。继续？",
   dialog_cancel: "取消",
   dialog_confirm: "确认",
+  confirm_new_chat_title: "新建会话",
+  confirm_new_chat_body: "将清空当前对话记录，且不可撤销。继续？",
+  confirm_clear_history_title: "清空历史",
+  confirm_clear_history_body: "将删除全部 AI 任务历史记录，且不可撤销。继续？",
+  confirm_clear_todos_title: "清除已完成",
+  confirm_clear_todos_body: "将删除全部已完成待办，且不可撤销。继续？",
+  template_stream: "动态流",
+  template_balanced: "均衡",
+  template_research: "研究",
+  template_periodic: "周期",
 
   // ── Workspace status ──
   workspace_status: "工作区状态",
@@ -382,13 +401,14 @@ export const zhCN = {
 
   // ── AI connection test ──
   settings_ai_test: "测试连接",
+  settings_ai_test_desc: "用当前服务商 / 模型发一次极小请求，校验密钥与网络是否可用。",
   settings_ai_testing: "测试中...",
   settings_ai_test_success: "连接成功 ✓",
   settings_ai_test_failed: "连接失败",
   settings_ai_test_no_key: "请先配置至少一个 AI 服务商",
 
   // ── Security note ──
-  settings_security_note: "API Key 存储在 Obsidian 插件 data.json 与 .topmind/ai-keys-backup.json（明文）。请勿在共享 Vault 中使用。",
+  settings_security_note: "API Key 存储在插件 data.json。仅在你显式开启后才会把明文备份写入 Vault。请勿在共享 Vault 中启用密钥。",
 
   // ── Chat model switching ──
   chat_model: "模型",

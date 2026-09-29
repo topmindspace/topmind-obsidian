@@ -11,6 +11,7 @@ import type { KernelApi } from "../bridge/kernel-loader.ts";
 import { stripFrontmatter, sanitizeFileName, isRecord, isUnknownArray } from "../utils.ts";
 import { stashPendingWrite } from "./pending-writes.ts";
 import { sanitizeAiWriteBody } from "#kernel/ai-content-sanitize.mjs";
+import { resolveInsideVault } from "../bridge/vault-bridge.ts";
 
 export type AgentWriteMode = "auto" | "confirm";
 
@@ -479,7 +480,20 @@ export function saveFile(
   content = sanitized.text;
   if (!content.trim()) return { ok: false, tool, error: "content cannot be empty", relativePath: rel };
 
-  const targetPath = absOf(ctx.workspaceRoot, rel);
+  // Containment BEFORE any fs side effect — mkdir must never run on an
+  // escaping path (e.g. `../../evil/x.md`) even if executeWrite later rejects.
+  let targetPath: string;
+  try {
+    targetPath = resolveInsideVault(ctx.workspaceRoot, rel);
+  } catch {
+    return {
+      ok: false,
+      tool,
+      relativePath: rel,
+      error: "path-escapes-workspace",
+      note: "Write blocked: path resolves outside the workspace.",
+    };
+  }
   const isUpdate = fs.existsSync(targetPath);
   try {
     const contract = ctx.kernel.loadContract(ctx.workspaceRoot);

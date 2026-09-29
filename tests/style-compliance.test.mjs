@@ -199,12 +199,11 @@ test("DESIGN.md token values match styles.css", async (t) => {
   }
 });
 
-test("src/: no <style> element injection; adoptedStyleSheets is the fallback channel", () => {
-  // Community plugin review ERROR: creating/attaching <style> elements is not
-  // allowed. Obsidian loads styles.css; when that drops we attach a
-  // CSSStyleSheet via document.adoptedStyleSheets (NOT a <style> element).
-  // Ad-hoc `!important` / surface-lock stay banned in src except the
-  // host-override CSS constant (mirrors styles.css HOST OVERRIDE section).
+test("src/: no JS CSS injection — styles.css is the only channel", () => {
+  // Community plugin review ERROR: creating/attaching <style> elements OR
+  // injecting CSSStyleSheet via document.adoptedStyleSheets is not allowed.
+  // Obsidian loads styles.css — that file is the only styling channel.
+  // Ad-hoc `!important` / surface-lock stay banned in src.
   const srcDir = path.join(pluginRoot, "src");
   const offenders = [];
   const walk = (dir) => {
@@ -213,10 +212,9 @@ test("src/: no <style> element injection; adoptedStyleSheets is the fallback cha
       if (ent.isDirectory()) walk(p);
       else if (/\.(ts|tsx|js|mjs)$/.test(ent.name)) {
         const text = fs.readFileSync(p, "utf8");
-        const isHostOverride = path.basename(p) === "host-override.ts";
         text.split("\n").forEach((line, i) => {
           if (/^\s*(\/\*|\*|\/\/)/.test(line)) return;
-          if (/!important/.test(line) && !isHostOverride) {
+          if (/!important/.test(line)) {
             offenders.push(`${path.relative(pluginRoot, p)}:${i + 1}: !important → ${line.trim().slice(0, 100)}`);
           }
           if (/surface-lock/.test(line)) {
@@ -228,36 +226,30 @@ test("src/: no <style> element injection; adoptedStyleSheets is the fallback cha
           if (/document\.(head|body)\.appendChild/.test(line)) {
             offenders.push(`${path.relative(pluginRoot, p)}:${i + 1}: document.*.appendChild`);
           }
+          if (/adoptedStyleSheets/.test(line)) {
+            offenders.push(`${path.relative(pluginRoot, p)}:${i + 1}: adoptedStyleSheets injection`);
+          }
+          if (/replaceSync\s*\(/.test(line) && /CSSStyleSheet|sheet/i.test(line)) {
+            offenders.push(`${path.relative(pluginRoot, p)}:${i + 1}: CSSStyleSheet.replaceSync injection`);
+          }
         });
       }
     }
   };
   walk(srcDir);
   assert.deepEqual(offenders, [], `forbidden style injection found:\n${offenders.join("\n")}`);
-  // The fallback must go through adoptedStyleSheets, not DOM <style>.
   const main = fs.readFileSync(path.join(srcDir, "main.ts"), "utf8");
-  assert.match(main, /adoptedStyleSheets/);
-  assert.match(main, /HOST_OVERRIDE_CSS/);
+  assert.doesNotMatch(main, /HOST_OVERRIDE_CSS|adoptedStyleSheets|ensureHostStyles/);
 });
 
-test("src/styles/host-override.ts mirrors styles.css HOST OVERRIDE section", () => {
-  const ts = fs.readFileSync(path.join(pluginRoot, "src", "styles", "host-override.ts"), "utf8");
+test("styles.css HOST OVERRIDE stays leaf-scoped (no core chrome hiding)", () => {
+  // Community review: do not hide/override Obsidian core chrome. Native
+  // .view-header must stay visible (back/forward + title). Product chrome
+  // lives in tm-* classes.
+  const hideHeader = /\.view-header\s*\{[^}]*display:\s*none/;
+  assert.ok(!hideHeader.test(css), "styles.css must not hide .view-header");
   const marker = "HOST OVERRIDE — leaf-scoped force-win layer";
   assert.ok(css.includes(marker), "styles.css must contain the HOST OVERRIDE section");
-  const m = ts.match(/export const HOST_OVERRIDE_CSS = `([\s\S]*)`;\s*$/);
-  assert.ok(m, "host-override.ts must export HOST_OVERRIDE_CSS as a template literal");
-  const tsCss = m[1];
-  // Every leaf-scoped force-win rule in the TS constant must appear in styles.css
-  // (either the HOST OVERRIDE section or the design-system body).
-  let checked = 0;
-  for (const line of tsCss.split("\n")) {
-    const s = line.trim();
-    if (!s || s.startsWith("/*") || s.startsWith("*") || s.startsWith("//")) continue;
-    if (!s.includes(".workspace-leaf-content")) continue; // token bootstrap lives at styles.css :root
-    assert.ok(css.includes(s), `host-override.ts rule not in styles.css: ${s.slice(0, 80)}`);
-    checked += 1;
-  }
-  assert.ok(checked >= 40, `expected ≥40 leaf-scoped rules in host-override.ts, got ${checked}`);
 });
 
 test("styles.css: pill radius only on tag/status/filter/tool-chip", () => {
@@ -296,4 +288,10 @@ test("styles.css parses: no broken escapes or literal \\n artifacts", () => {
   assert.deepEqual(problems, [], `styles.css syntax artifacts:\n${problems.join("\n")}`);
   // brace balance
   assert.equal(css.split("{").length, css.split("}").length, "styles.css braces unbalanced");
+});
+
+test("composer clears the native status bar; tab content has side inset", () => {
+  assert.match(css, /--tm-status-bar-clearance:\s*28px/);
+  assert.match(css, /\.tm-chat-input-area\s*\{[^}]*padding-bottom:\s*var\(--tm-status-bar-clearance\)/s);
+  assert.match(css, /\.tm-tab-content\s*\{[^}]*padding:\s*var\(--tm-gap-md\)/s);
 });

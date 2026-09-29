@@ -16,6 +16,8 @@ English (default) | [简体中文](README.zh-CN.md)
 
 ---
 
+Release notes: [CHANGELOG.md](CHANGELOG.md).
+
 ## Screenshots
 
 | Stream timeline | My Profile |
@@ -105,7 +107,7 @@ Topmind Stream reduces mental overhead by focusing on 5 plain-language concepts:
 |--------|-----|
 | Community / BRAT | Update from the plugin list / BRAT "Check for updates" |
 | Manual zip | Download the newer `topmind-obsidian-<ver>.zip`, replace files under `plugins/topmind-stream/`, reload Obsidian |
-| From source | `npm run obsidian:pack` -> install zip as above |
+| From source | `npm run pack` -> install zip as above |
 
 Your vault files (`topmind.yaml`, `10-动态/`, `memory/`) are **not** replaced by the plugin upgrade. Version truth: [`manifest.json`](./manifest.json) .
 
@@ -173,7 +175,7 @@ Obsidian Surface (TypeScript + esbuild)
   └── Vault Bridge & AI Provider Layer
         │
         ▼
-Kernel 八引擎 (Bundled lib/*.mjs)
+Kernel engine (bundled lib/*.mjs)
   contract · workspace-model · stream · memory
   writeback · lifecycle · derived · ingest
   + todo / ai-operation / suggest / activity-window
@@ -190,7 +192,7 @@ Obsidian Vault (Plain Filesystem = Single Source of Truth)
 | **Primary Focus** | Standalone rich desktop app | Native embedded view inside Obsidian |
 | **Editor Type** | Tiptap rich text & WYSIWYG | Obsidian native Markdown editor |
 | **AI Runtime** | Vercel AI SDK v7 | Obsidian `requestUrl` (OpenAI / Anthropic / Gemini compat) |
-| **Shared Engine** | Kernel `lib/` 8-Engine | Kernel `lib/` 8-Engine (bundled) |
+| **Shared Engine** | Kernel `lib/` (shared engines) | Kernel `lib/` (bundled at build) |
 | **Data Format** | Standard Markdown | Standard Markdown (Same Vault) |
 
 *You can open the exact same Vault in both Topmind Desktop and Obsidian simultaneously without conflicts.*
@@ -201,7 +203,7 @@ Obsidian Vault (Plain Filesystem = Single Source of Truth)
 
 - **Local-First Storage**: All notes and metadata reside in standard Markdown files on your disk.
 - **Zero Telemetry**: Topmind does not track, collect, or send your usage data to external servers.
-- **API Key Security**: API Keys are stored locally in the plugin's `data.json` and backed up to `.topmind/ai-keys-backup.json` (both plaintext — avoid shared vaults).
+- **API Key Security**: Keys live in the plugin's local `data.json`. A vault backup (`.topmind/ai-keys-backup.json`, plaintext) is written **only if you opt in** under Settings → Security. Avoid shared vaults when keys are configured.
 - **Writeback Protection**: All AI-driven file changes pass through `writeback-engine` (`open`/`locked`). Backups/receipts only for locked overwrite and locked/core delete-archive — not every write.
 
 ### Community scorecard disclosures (intentional)
@@ -210,8 +212,8 @@ These capabilities are required by the product and scoped as tightly as we can:
 
 | Capability | Why | Scope |
 |---|---|---|
-| **Node `fs` outside the vault API** | Desktop-only plugin: Kernel workspace I/O, backups/receipts, Desktop key import | Vault workspace root + documented Desktop paths only; `isDesktopOnly: true` |
-| **Clipboard write** | Copy button on chat answers / stream cards | User-initiated copy only — never reads the clipboard in the background |
+| **Node `fs` outside the vault API** | Desktop-only plugin: Kernel workspace I/O, backups/receipts, Desktop key import | Every write path resolves through `resolveInsideVault()` (throws on `../` escape); scope = vault workspace root only; `isDesktopOnly: true` |
+| **Clipboard write** | Copy button on chat answers / stream cards | `writeText` only, on explicit user click — no clipboard read, no background access |
 | **Network (AI providers)** | Chat / suggestions / model list | `requestUrl` only (CSP-safe); provider endpoints you configure; no analytics |
 | **Base64 encode/decode** | Kernel payload plumbing | Local runtime only |
 

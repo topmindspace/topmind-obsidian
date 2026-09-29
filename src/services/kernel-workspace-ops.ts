@@ -5,6 +5,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { resolveInsideVault } from "../bridge/vault-bridge.ts";
 import { createHash } from "node:crypto";
 import type { KernelApi } from "../bridge/kernel-loader.ts";
 import {
@@ -142,7 +143,7 @@ export function captureToWorkspace(
       }
       inboxDir = inboxDir || "00-Inbox";
       relPath = `${inboxDir}/${Date.now()}-${sanitizeFileName(safeText.slice(0, 30))}.md`;
-      targetPath = path.join(workspaceRoot, relPath);
+      targetPath = resolveInsideVault(workspaceRoot, relPath);
       content = `---\nsource_type: external-capture\ncreated: ${new Date().toISOString()}\ntags: [${(opts.tags || []).join(", ")}]\n---\n\n# ${safeText.slice(0, 80)}\n\n${captureContent}\n`;
     }
 
@@ -211,7 +212,8 @@ export function createInboxNoteInWorkspace(
   try {
     const contract = kernel.loadContract(workspaceRoot);
     const inboxDir = resolveInboxDirectory(kernel, workspaceRoot, engineRoot);
-    const absDir = path.join(workspaceRoot, inboxDir);
+    // Containment before mkdir — never create dirs outside the workspace.
+    const absDir = resolveInsideVault(workspaceRoot, inboxDir);
     fs.mkdirSync(absDir, { recursive: true });
     const now = opts.now instanceof Date ? opts.now : new Date();
     const ts = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
@@ -226,7 +228,7 @@ export function createInboxNoteInWorkspace(
     const title = fileName.replace(/\.md$/iu, "");
     const content = `---\ncreated: ${now.toISOString()}\n---\n\n# ${title}\n\n`;
     const result = kernel.executeWrite({
-      targetPath: path.join(workspaceRoot, relPath),
+      targetPath: resolveInsideVault(workspaceRoot, relPath),
       content,
       workspaceRoot,
       contract,
@@ -255,7 +257,7 @@ export function acceptPendingWrite(
   try {
     const contract = kernel.loadContract(workspaceRoot);
     const result = kernel.executeWrite({
-      targetPath: path.join(workspaceRoot, entry.relativePath),
+      targetPath: resolveInsideVault(workspaceRoot, entry.relativePath),
       content: entry.content,
       workspaceRoot,
       contract,

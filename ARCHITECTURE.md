@@ -1,6 +1,6 @@
 # topmind Obsidian Plugin — 架构
 
-> **用户文档**：[简体中文](README.zh-CN.md) · [English](README.en.md) · **边界**：[PRODUCT-BOUNDARIES.md](https://github.com/topmindspace/topmind/blob/main/PRODUCT-BOUNDARIES.md) · **内容约定**：[PROJECT-MODEL.md](https://github.com/topmindspace/topmind/blob/main/PROJECT-MODEL.md)  
+> **用户文档**：[简体中文](README.zh-CN.md) · [English](README.md) · **边界**：[PRODUCT-BOUNDARIES.md](https://github.com/topmindspace/topmind/blob/main/PRODUCT-BOUNDARIES.md) · **内容约定**：[PROJECT-MODEL.md](https://github.com/topmindspace/topmind/blob/main/PROJECT-MODEL.md)  
 > **版本真源**：本仓根 [`manifest.json`](./manifest.json)  
 > **Desktop-only**：工具与日志面板（⌘⇧L）、ops journal、workspace stats 仅 Desktop；Obsidian 无 ops journal 对等物（非缺口）。恢复仍用 Kernel 高影响 receipts。
 
@@ -119,7 +119,7 @@ npm run pack:verify
 npm run pack
 
 # 或从 repo root
-npm run obsidian:pack
+npm run pack
 ```
 
 输出：`release/topmind-obsidian-<version>.zip`，用户手动安装或通过 BRAT / Obsidian 社区插件市场。
@@ -170,7 +170,13 @@ topmind-obsidian/              # 本仓根（社区插件仓）
 │   ├── pack-plugin.mjs        # 打包 release zip
 │   └── verify-pack.mjs        # 打包完整性验证
 └── tests/
-    ├── plugin.test.mjs              # 单元测试（i18n / 解析 / 设置迁移 / 构建产物 / 写路径契约）
+    ├── helpers.mjs                  # 测试共享工具（importShipped / 路径）
+    ├── i18n-locale.test.mjs         # i18n 键对齐
+    ├── ui-chrome.test.mjs           # 工具栏 / 侧栏 chrome 契约
+    ├── stream-utils.test.mjs        # stream 解析 / 标签 / 建议映射
+    ├── settings-model.test.mjs      # 设置默认值 / 迁移 / 密钥 opt-in
+    ├── ai-chat-hygiene.test.mjs     # 任务队列 / chat 写闸
+    ├── build-writepath.test.mjs     # 构建产物 / 写路径 / 命令重注册
     └── kernel-integration.test.mjs   # Kernel 集成测试（真实 Kernel + temp workspace）
 ```
 
@@ -363,6 +369,8 @@ export function getEngineRoot(plugin: { manifest: { dir?: string } }): string {
 **关键**：writeback-engine 使用 Node.js `fs` 写入文件。Obsidian 的 `Vault.adapter` 会通过 FSEvents / fs.watch 感知变更并自动刷新 `metadataCache` 和文件树。无需手动通知 Obsidian。
 
 **capture 链路**：`KernelService.capture()` → `kernel.resolveStreamTarget()` 定位周期本 → `kernel.appendToPeriodBody()` 构造追加块（处理 day heading、seed 等）→ `kernel.executeWrite()` 经写闸写入。
+
+**URL 抓取链路**（「抓取」按钮 → Inbox 独立文章）：`KernelService.fetchUrlForCapture()` → `capture-fetch.ts` 三路分派——① X/Twitter 状态 → `api.fxtwitter.com` JSON（文章取 `article.title`，动态取首行文案作标题；x.com 是 SPA 壳，**禁止**走 HTML 抓取）；② GitHub 仓库/树 → `api.github.com/.../readme` 解析 README → raw 直取，标题取 README H1；GitHub markdown 文件 → `raw.githubusercontent` + 相对图片改写；③ 其余网页 → `og:`/`twitter:` 元信息 + 启发式 HTML→Markdown。标题统一过 `cleanCaptureTitle`（剥品牌后缀/零宽字符），来源头 `buildFetchMarkdown`。HTTP 一律宿主 `requestUrl`。
 
 **reconcile 链路**：`KernelService.reconcilePeriod()` → `kernel.reconcilePeriodBody()` 合并散落条目、修复 day heading → `kernel.executeWrite()` 经写闸写回。
 
@@ -573,15 +581,30 @@ npm run build
 npm run pack:verify
 ```
 
-测试覆盖两个文件：
-- `tests/plugin.test.mjs` — 纯逻辑单元测试（i18n 键对齐 / stream 解析 / 标签提取 / 设置迁移 / AI 预设 / 瞬态错误 / 构建产物 / 写路径结构契约）
-- `tests/kernel-integration.test.mjs` — Kernel 集成测试（真实 Kernel API + temp workspace：init / resolveStreamTarget / capture / listPeriods / reconcile / mergeCaptureTags / mapApplySuggestionResult）
+测试入口：`npm test`（`node --test tests/*.test.mjs`，按关注点拆分）：
 
-集成到 root `npm run validate` 和 `npm test` 中：
+| 套件 | 覆盖 |
+|------|------|
+| `i18n-locale.test.mjs` | zh-CN / en-US 键对齐与文案 |
+| `ui-chrome.test.mjs` | 工具栏/侧栏 icon-only、标签隐藏、容器查询 |
+| `stream-utils.test.mjs` | stream 解析 / 标签 / sanitize / frontmatter / todo / suggestion / capture / 路径过滤 |
+| `settings-model.test.mjs` | DEFAULT_SETTINGS / 迁移 / 多服务商 / 密钥备份 opt-in |
+| `ai-chat-hygiene.test.mjs` | 任务队列串行、chat 写闸、思考折叠、会话压缩 |
+| `build-writepath.test.mjs` | 构建产物 / 写路径结构契约 / 语言切换重注册命令 |
+| `kernel-integration.test.mjs` | 真实 Kernel API + temp workspace |
+| `obsidian-guideline-compliance.test.mjs` | 社区插件规范硬门 |
+| `style-compliance.test.mjs` | token / 无硬编码色 / HOST OVERRIDE / `!important` 边界 |
+| `agent-loop.test.mjs` | 多步 agent 工具环 / auto-continue |
+| `precise-edit.test.mjs` | 精确编辑与写回围栏 |
+| `policy-parity.test.mjs` | Desktop / Obsidian 策略面一致 |
+| `model-catalog.test.mjs` | 模型目录与 provider 预设 |
+
+共享工具：`tests/helpers.mjs`（`importShipped` / 路径）。
+
+本仓独立验证（无 monorepo root）：
 
 ```bash
-npm run obsidian:validate  # typecheck + test + build + pack:verify
-npm run obsidian:test      # 仅测试
+npm run typecheck && npm test && npm run build && npm run pack:verify
 ```
 
 ---
@@ -590,10 +613,10 @@ npm run obsidian:test      # 仅测试
 
 版本真源：本仓根 `manifest.json` 的 `version` 字段。
 
-独立版本策略（遵循 `AGENTS.md` §版本层）：
-- 大版本对齐（与其他表面共享 3.x）
-- 小版本独立（仅插件有改动时 bump）
-- Tag 命名：日常产品 tag `v*`（Latest 快照含当前插件 zip）；热修逃生口 `obsidian-v*`
+独立版本策略：
+- 版本号以本仓 `manifest.json` 为准；`package.json` / `versions.json` 必须与其一致
+- 仅插件有改动时 bump patch / minor
+- **Tag 命名（社区插件硬规则）**：`X.Y.Z`，与 `manifest.version` 完全一致，**禁止 `v` 前缀**（社区目录按 tag 解析 release 资产；见 `release.yml`）
 
 ---
 
@@ -642,12 +665,4 @@ npm run obsidian:test      # 仅测试
 1. **类型面优先** — `KernelApi` interface 是插件与 Kernel 之间的契约。变更先反映在类型面，编译时即可发现不兼容。
 2. **不平行实现** — 任何新的 Kernel 能力都应通过 `KernelService` 封装后暴露给 View，不在 View 中直接调 Kernel。
 3. **esbuild shim 随引擎演进** — 若 Kernel 新增 `createRequire` 模式，需在 `esbuild.config.mjs` 添加对应 shim。
-4. **测试覆盖** — 每次适配变更需更新 `tests/plugin.test.mjs` 中的对应测试。
-
-## 信息架构降噪（2026-09-23）
-
-- 工具栏：标题 + 任务徽章 + 3 图标（侧栏/设置/新笔记）；**不**复读 AI 状态/模型。
-- 流头部：周期选择 + 4 图标（刷新/整理/布局/我的情况）。
-- 侧栏：状态点 + 任务徽章 + 2 图标；底部 3 格（记一下/整理/AI 菜单）。
-- 模型切换唯一面：对话 tab + 设置。
-- Agent 循环：generate 失败可重试续跑（修「AI 总断」）。
+4. **测试覆盖** — 每次适配变更需更新 `tests/` 中的对应测试（优先 `kernel-integration.test.mjs` / `build-writepath.test.mjs`）。

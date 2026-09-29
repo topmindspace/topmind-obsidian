@@ -19,7 +19,7 @@
 import { ItemView, WorkspaceLeaf, Notice, MarkdownRenderer, setIcon, Menu, Component } from "obsidian";
 import type TopmindPlugin from "../main";
 import { t, getLocale } from "../i18n";
-import { VIEW_TYPE_SIDEBAR_DOCK, VIEW_TYPE_STREAM_WORKBENCH } from "../constants";
+import { VIEW_TYPE_SIDEBAR_DOCK } from "../constants";
 import { AI_PROVIDER_PRESETS, PROVIDER_DEFAULT_MODELS } from "../constants";
 import type { SuggestionCard } from "../types";
 import { renderSuggestionCard } from "./suggestion-card";
@@ -27,6 +27,8 @@ import { hasConfiguredProvider } from "../types";
 import { aiTaskManager, type TaskProgress, type AiTask } from "../services/ai-task-manager";
 import { resolveProviderCatalog, applyModelOptions, credentialsForProvider } from "../services/models-dev";
 import { bindImeEnterGuard, compactChatMessages, isImeEnter, resolveChatCompactBudget } from "../utils";
+import { confirmAction } from "./confirm-modal";
+import { openStreamWorkbench, openPluginSettings } from "../services/view-openers";
 import { buildResultFooter } from "#kernel/agent-goal-protocol.mjs";
 
 // ── Node.js built-ins (esbuild platform:'node' converts to require) ──
@@ -325,9 +327,7 @@ export class SidebarDockView extends ItemView {
 
   /** Open plugin settings tab */
   private openSettings(): void {
-    const setting = (this.app as unknown as { setting: { open: () => void; openTabById: (id: string) => void } }).setting;
-    setting?.open();
-    setting?.openTabById("topmind-stream");
+    openPluginSettings(this.app, this.plugin.manifest.id);
   }
 
   /** Run AI quick test and update the status indicator */
@@ -402,31 +402,46 @@ export class SidebarDockView extends ItemView {
       { id: "history", label: t("sidebar_tab_history"), icon: "activity" },
     ];
 
+    const tabBtns: HTMLButtonElement[] = [];
     for (const tab of tabs) {
       const isActive = this.activeTab === tab.id;
       const btn = tabBar.createEl("button", {
         cls: `tm-tab-btn ${isActive ? "tm-tab-active" : ""}`,
-        attr: { "data-tab-id": tab.id },
+        attr: { "data-tab-id": tab.id, type: "button" },
       });
       btn.setAttribute("role", "tab");
       btn.setAttribute("aria-selected", String(isActive));
+      // Roving tabindex: only the active tab is in the tab order.
+      btn.tabIndex = isActive ? 0 : -1;
       const iconSpan = btn.createSpan({ cls: "tm-tab-icon" });
       setIcon(iconSpan, tab.icon);
       btn.createSpan({ text: tab.label, cls: "tm-tab-label" });
       btn.setAttribute("aria-label", tab.label);
-      btn.addEventListener("click", () => {
-        // Update tab active states without full re-render
+      tabBtns.push(btn);
+      const activate = () => {
         this.activeTab = tab.id;
         if (tab.id === "chat") this.chatFocusOnRender = true;
-        const allBtns = tabBar.querySelectorAll(".tm-tab-btn");
-        allBtns.forEach((b) => {
-          b.classList.remove("tm-tab-active");
-          b.setAttribute("aria-selected", "false");
+        tabBtns.forEach((b, i) => {
+          const on = tabs[i].id === tab.id;
+          b.classList.toggle("tm-tab-active", on);
+          b.setAttribute("aria-selected", String(on));
+          b.tabIndex = on ? 0 : -1;
         });
-        btn.classList.add("tm-tab-active");
-        btn.setAttribute("aria-selected", "true");
-        // Only re-render tab content, not the full view
         void this.renderActiveTab();
+      };
+      btn.addEventListener("click", activate);
+      // WAI-ARIA tabs: Left/Right move focus+select, Home/End jump.
+      btn.addEventListener("keydown", (e: KeyboardEvent) => {
+        const idx = tabBtns.indexOf(btn);
+        let next = -1;
+        if (e.key === "ArrowRight") next = (idx + 1) % tabBtns.length;
+        else if (e.key === "ArrowLeft") next = (idx - 1 + tabBtns.length) % tabBtns.length;
+        else if (e.key === "Home") next = 0;
+        else if (e.key === "End") next = tabBtns.length - 1;
+        else return;
+        e.preventDefault();
+        tabBtns[next].focus();
+        tabBtns[next].click();
       });
     }
   }
@@ -461,6 +476,8 @@ export class SidebarDockView extends ItemView {
     this.renderComp = new Component();
     this.renderComp.load();
     this.contentContainer.empty();
+    // Chat layout class must not leak onto todos/suggestions/history tabs.
+    this.contentContainer.removeClass("tm-chat-container");
 
     switch (this.activeTab) {
       case "todos":
@@ -591,10 +608,12 @@ export class SidebarDockView extends ItemView {
         clearDoneBtn.setAttribute("aria-label", t("todo_clear_completed"));
         clearDoneBtn.setAttribute("title", t("todo_clear_completed"));
         clearDoneBtn.addEventListener("click", () => {
-          for (const done of doneTodos) {
-            this.plugin.kernelService.deleteTodo(done.id);
-          }
-          void this.refreshActiveTab();
+          confirmAction(this.app, t("confirm_clear_todos_title"), t("confirm_clear_todos_body"), () => {
+            for (const done of doneTodos) {
+              this.plugin.kernelService.deleteTodo(done.id);
+            }
+            void this.refreshActiveTab();
+          });
         });
       }
 
@@ -1001,9 +1020,12 @@ export class SidebarDockView extends ItemView {
     });
     setIcon(newChatBtn, "message-square-plus");
     newChatBtn.addEventListener("click", () => {
-      this.chatHistory = [];
-      this.saveChatHistory();
-      void this.renderActiveTab();
+      if (this.chatHistory.length === 0) return;
+      confirmAction(this.app, t("confirm_new_chat_title"), t("confirm_new_chat_body"), () => {
+        this.chatHistory = [];
+        this.saveChatHistory();
+        void this.renderActiveTab();
+      });
     });
 
     const sendBtn = footRight.createEl("button", {
@@ -1755,7 +1777,9 @@ export class SidebarDockView extends ItemView {
       clearBtn.setAttribute("aria-label", t("task_clear_history"));
       clearBtn.setAttribute("title", t("task_clear_history"));
       clearBtn.addEventListener("click", () => {
-        aiTaskManager.clearHistory();
+        confirmAction(this.app, t("confirm_clear_history_title"), t("confirm_clear_history_body"), () => {
+          aiTaskManager.clearHistory();
+        });
       });
 
       for (const task of recent) {
@@ -1969,13 +1993,6 @@ export class SidebarDockView extends ItemView {
   }
 
   private async openWorkbench(): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_STREAM_WORKBENCH);
-    if (existing.length > 0) {
-      void this.app.workspace.revealLeaf(existing[0]);
-      return;
-    }
-    // New leaf — never replace the tab the user is currently reading.
-    const leaf = this.app.workspace.getLeaf(true);
-    await leaf.setViewState({ type: VIEW_TYPE_STREAM_WORKBENCH, active: true });
+    await openStreamWorkbench(this.app);
   }
 }

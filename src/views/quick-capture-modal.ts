@@ -5,7 +5,7 @@
 // Auto-resize textarea. Visual feedback on submit.
 // Enhanced: better visual polish, keyboard hints, URL detection indicator.
 
-import { Modal, setIcon } from "obsidian";
+import { Modal, Notice, setIcon } from "obsidian";
 import type TopmindPlugin from "../main";
 import { t } from "../i18n";
 import type { CaptureTarget } from "../types";
@@ -49,7 +49,14 @@ export class QuickCaptureModal extends Modal {
     this.urlHintEl = metaBar.createSpan({ cls: "tm-url-hint tm-url-hint-hidden" });
     const urlIcon = this.urlHintEl.createSpan({ cls: "tm-url-hint-icon" });
     setIcon(urlIcon, "link");
-    this.urlHintEl.createSpan({ text: t("notice_url_to_inbox") });
+    this.urlHintEl.createSpan({ text: t("compose_url_hint") });
+    const fetchBtn = this.urlHintEl.createEl("button", {
+      cls: "tm-url-fetch-btn",
+      text: t("compose_url_fetch"),
+    });
+    fetchBtn.addEventListener("click", () => {
+      void this.fetchUrlToInbox(fetchBtn);
+    });
 
     this.charCountEl = metaBar.createSpan({ cls: "tm-char-count" });
     this.charCountEl.textContent = "0";
@@ -62,17 +69,21 @@ export class QuickCaptureModal extends Modal {
     const leftDiv = footer.createDiv({ cls: "tm-footer-left" });
 
     const targetDiv = leftDiv.createDiv({ cls: "tm-quick-capture-target" });
-    targetDiv.createSpan({ text: t("quick_capture_target"), cls: "tm-footer-label" });
+    const targetLabel = targetDiv.createSpan({ text: t("quick_capture_target"), cls: "tm-footer-label" });
     this.targetSelect = targetDiv.createEl("select");
+    this.targetSelect.id = "tm-quick-capture-target";
+    targetLabel.setAttribute("for", this.targetSelect.id);
     this.targetSelect.createEl("option", { value: "stream", text: t("quick_capture_target_stream") });
     this.targetSelect.createEl("option", { value: "inbox", text: t("quick_capture_target_inbox") });
 
     const tagDiv = leftDiv.createDiv({ cls: "tm-quick-capture-tags" });
-    tagDiv.createSpan({ text: t("quick_capture_tags"), cls: "tm-footer-label" });
+    const tagLabel = tagDiv.createSpan({ text: t("quick_capture_tags"), cls: "tm-footer-label" });
     this.tagInput = tagDiv.createEl("input", {
       cls: "tm-tag-input",
       attr: { type: "text", placeholder: t("quick_capture_tags_placeholder") },
     });
+    this.tagInput.id = "tm-quick-capture-tags";
+    tagLabel.setAttribute("for", this.tagInput.id);
 
     // Right: hints + submit
     const rightDiv = footer.createDiv({ cls: "tm-footer-right" });
@@ -149,6 +160,35 @@ export class QuickCaptureModal extends Modal {
     } else if (this.targetSelect.value === "inbox") {
       // Only hide if target is inbox but text is not URL and was auto-set
       this.urlHintEl.addClass("tm-url-hint-hidden");
+    }
+  }
+
+  /** 抓取 → Inbox 独立文章（Desktop handleFetchToInbox parity）。 */
+  private async fetchUrlToInbox(btn: HTMLButtonElement): Promise<void> {
+    const text = this.textarea.value.trim();
+    if (!text || !isLoneUrlCapture(text)) return;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = t("compose_url_fetching");
+    try {
+      const result = await this.plugin.kernelService.fetchUrlForCapture(text);
+      if (!result.ok) {
+        new Notice(`${t("compose_url_fetch_fail")}: ${result.error || ""}`);
+        return;
+      }
+      const body = this.plugin.kernelService.buildFetchMarkdown(result);
+      const res = this.plugin.kernelService.capture(body, { target: "inbox", tags: [] });
+      // capture() already toasts written / pending / failed with path.
+      if (res.ok) {
+        this.modalEl.addClass("tm-modal-submitted");
+        window.setTimeout(() => this.close(), 120);
+      }
+    } catch (err) {
+      console.error("[topmind] quick-capture fetch failed:", err);
+      new Notice(t("compose_url_fetch_fail"));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
     }
   }
 

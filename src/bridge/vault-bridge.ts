@@ -6,6 +6,7 @@
 // Electron renderer with Node.js integration.
 // esbuild platform:'node' keeps these as external require() calls.
 
+import { resolve as pathResolve } from "node:path";
 import type { App } from "obsidian";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -38,4 +39,22 @@ export function getVaultBasePath(app: App): string {
 export function getEngineRoot(plugin: { manifest: { dir?: string } }): string {
   // plugin.manifest.dir is set by Obsidian to the plugin's absolute path
   return plugin.manifest.dir || "";
+}
+
+/**
+ * Resolve a vault-relative path and assert it stays inside the vault root.
+ * Community review scope guard: Node fs is allowed only under the workspace
+ * root (plus the plugin's own dir via getEngineRoot). Throws on escape attempts
+ * like `../` traversal or absolute-path substitution.
+ */
+export function resolveInsideVault(vaultRoot: string, rel: string): string {
+  const root = pathResolve(vaultRoot);
+  const abs = pathResolve(root, String(rel || ""));
+  // Both sides are path.resolve-normalized (POSIX on macOS/Linux, \ on Windows).
+  const sep = root.includes("\\") ? "\\" : "/";
+  const prefix = root.endsWith(sep) ? root : root + sep;
+  if (abs !== root && !abs.startsWith(prefix)) {
+    throw new Error(`path escapes vault root: ${String(rel)}`);
+  }
+  return abs;
 }

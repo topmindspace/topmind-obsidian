@@ -9,6 +9,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { resolveInsideVault } from "../bridge/vault-bridge.ts";
 
 export interface PendingWrite {
   id: string;
@@ -30,7 +31,7 @@ export function setPendingWritesWorkspace(root: string | null): void {
 
 function pendingWritesPath(): string | null {
   if (!workspaceRoot) return null;
-  return path.join(workspaceRoot, ".topmind", "pending-writes.json");
+  return resolveInsideVault(workspaceRoot, ".topmind/pending-writes.json");
 }
 
 const memory = new Map<string, PendingWrite>();

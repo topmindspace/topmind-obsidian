@@ -40,6 +40,9 @@ jobs:
           TOPMIND_SRC: ${{ github.workspace }}/.topmind-src
         run: npm run typecheck
 
+      - name: Lint
+        run: npm run lint
+
       - name: Build
         env:
           TOPMIND_SRC: ${{ github.workspace }}/.topmind-src

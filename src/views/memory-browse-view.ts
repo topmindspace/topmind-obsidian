@@ -44,13 +44,24 @@ export class MemoryBrowseView extends ItemView {
 
   async onClose(): Promise<void> {
     this.renderComp.unload();
+    this.cache.clear();
   }
 
   async refresh(): Promise<void> {
     await this.render();
   }
 
+  /** mtime-keyed content cache; capped so long sessions cannot grow unbounded. */
   private cache = new Map<string, { mtime: number; content: string }>();
+  private static readonly CACHE_MAX = 80;
+
+  private cacheSet(path: string, entry: { mtime: number; content: string }): void {
+    if (this.cache.size >= MemoryBrowseView.CACHE_MAX) {
+      const oldest = this.cache.keys().next().value;
+      if (oldest !== undefined) this.cache.delete(oldest);
+    }
+    this.cache.set(path, entry);
+  }
 
   private memoryDirRel(): string {
     const profile = this.plugin.kernelService.profileRelPath();
@@ -117,7 +128,7 @@ export class MemoryBrowseView extends ItemView {
       }
       try {
         const content = await this.app.vault.cachedRead(file);
-        this.cache.set(path, { mtime, content });
+        this.cacheSet(path, { mtime, content });
         return content;
       } catch {
         return "";
@@ -208,6 +219,7 @@ export class MemoryBrowseView extends ItemView {
       cls: "tm-input-field",
       type: "search",
       placeholder: t("memory_browse_search"),
+      attr: { "aria-label": t("memory_browse_search") },
     });
     search.setAttr("data-memory-search", "true");
     search.value = this.query;
