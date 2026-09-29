@@ -274,6 +274,19 @@ test("styles.css: pill radius only on tag/status/filter/tool-chip", () => {
   assert.deepEqual(offenders, [], `pill radius on non-semantic controls:\n${offenders.join("\n")}`);
 });
 
+test("no black-bar hover artifacts: no fixed bg, no global clickable-icon", () => {
+  // background-attachment:fixed flashes black on hover/scroll in Electron.
+  assert.ok(!/background-attachment\s*:\s*fixed/.test(css), "no background-attachment:fixed");
+  // Never restyle app chrome buttons globally.
+  const bare = [...css.matchAll(/([^{}]+)\{[^}]*\}/g)]
+    .map((m) => m[1].trim())
+    .filter((sel) => /(^|,)\s*button\.clickable-icon\s*(,|$)/.test(sel) && !sel.includes("tm-") && !sel.includes("topmind-"));
+  assert.deepEqual(bare, [], "button.clickable-icon must not be styled globally");
+  // Right-split tab header stays a light chrome band (not min-height:0).
+  assert.match(css, /mod-right-split" \.workspace-tab-header-container|\.mod-right-split \.workspace-tab-header-container/);
+  assert.match(css, /workspace-tab-header-container[\s\S]{0,400}background-color:\s*var\(--tm-bg-chrome\)/);
+});
+
 test("chat input pins to sidebar bottom (flex chain)", () => {
   assert.match(css, /\.tm-tab-content\.tm-chat-container\s*\{[^}]*flex:\s*1 1 auto/s);
   assert.match(css, /\.tm-tab-content\.tm-chat-container\s*\{[^}]*display:\s*flex/s);

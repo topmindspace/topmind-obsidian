@@ -4230,17 +4230,16 @@ button.tm-chat-clear-btn:hover {
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* Ghost tools — native clickable-icon already transparent. */
-button.clickable-icon.tm-toolbar-btn,
-button.clickable-icon.tm-toolbar-nav-btn,
-button.clickable-icon.tm-btn-ghost,
-button.clickable-icon.tm-card-action-btn,
-button.clickable-icon.tm-btn-mini,
-button.clickable-icon.tm-feed-layout-btn,
-button.clickable-icon.tm-tab-btn,
-button.clickable-icon.tm-chat-msg-btn,
-button.clickable-icon.tm-chat-clear-btn,
-button.clickable-icon,
-button.clickable-icon {
+/* Scoped to topmind leaves — never restyle app chrome clickable-icons. */
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-toolbar-btn,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-toolbar-nav-btn,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-btn-ghost,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-card-action-btn,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-btn-mini,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-feed-layout-btn,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-tab-btn,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-chat-msg-btn,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-chat-clear-btn {
   background-color: transparent;
   border: none;
   border-radius: var(--tm-radius-ctl);
@@ -5480,8 +5479,7 @@ button.tm-feed-layout-btn:hover {
 .workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-dock {
   background:var(--background-secondary)!important;
   background-image:none!important;
-  background-attachment:fixed!important;
-}
+  }
 
 .workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-page,
 .workspace-leaf-content[data-type="topmind-stream-workbench"] .tm-wb-shell,
@@ -5527,12 +5525,27 @@ button.tm-feed-layout-btn:hover {
   border:0!important;
 }
 
+/* Compact product-aligned tab header — keep icons on the light chrome band.
+   Never zero-height: collapsed chrome paints as a black strip on hover. */
 .mod-right-split .workspace-tab-header-container,
 .mod-right-split .workspace-tabs-header,
 .mod-left-split .workspace-tab-header-container {
-  padding-top:0;
-  margin-top:0;
-  min-height:0;
+  background-color: var(--tm-bg-chrome);
+  min-height: var(--tm-hit-sm);
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.mod-right-split .workspace-tab-header-container .workspace-tab-header,
+.mod-right-split .workspace-tab-header-container .clickable-icon {
+  background-color: transparent;
+  color: var(--tm-ink-soft);
+}
+
+.mod-right-split .workspace-tab-header-container .workspace-tab-header:hover,
+.mod-right-split .workspace-tab-header-container .clickable-icon:hover {
+  background-color: var(--tm-bg-hover);
+  color: var(--tm-ink);
 }
 
 .mod-right-split .workspace-leaf.mod-topmind-flush {
