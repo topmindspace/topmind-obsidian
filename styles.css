@@ -342,8 +342,7 @@
 
 .tm-btn-ghost:hover,
 .tm-suggestion-actions .tm-btn-dismiss:hover,
-.tm-toolbar-btn:hover,
-:hover {
+.tm-toolbar-btn:hover {
   background: var(--tm-state-hover);
   background-color: var(--tm-bg-hover);
   border: none;
@@ -743,13 +742,14 @@ select.tm-tag-input,
 }
 
 .tm-period-select:hover,
-:hover,
-select.tm-tag-input:hover {
+select.tm-tag-input:hover,
+.tm-tag-input:hover {
   background: var(--tm-control-bg-hover);
 }
 
 .tm-period-select:focus,
-:focus {
+select.tm-tag-input:focus,
+.tm-tag-input:focus {
   border-color: var(--interactive-accent);
   outline: none;
 }
@@ -3406,8 +3406,6 @@ button.tm-toolbar-btn:hover,
 button.tm-btn-ghost:hover,
 button.tm-btn-ghost.tm-btn-icon:hover,
 button.tm-btn-ghost.tm-btn-sm:hover,
-button:hover,
-button:hover,
 button.tm-card-action-btn:hover,
 button.tm-btn-mini:hover,
 button.tm-feed-layout-btn:hover,
@@ -4653,8 +4651,7 @@ button.tm-feed-layout-btn:hover {
   border-radius: 6px;
   padding: 0 4px;
 }
-.tm-header-model-select:hover,
-:hover {
+.tm-header-model-select:hover {
   background: var(--tm-bg-hover);
   color: var(--tm-ink);
 }

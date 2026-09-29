@@ -274,6 +274,20 @@ test("styles.css: pill radius only on tag/status/filter/tool-chip", () => {
   assert.deepEqual(offenders, [], `pill radius on non-semantic controls:\n${offenders.join("\n")}`);
 });
 
+test("no bare :hover/:focus selectors (would tint the whole sidebar)", () => {
+  // A selector-list item that is exactly `:hover` / `:focus` matches EVERY
+  // element. Semi-transparent host hover fills then stack on nested panes
+  // and paint as a black bar when hovering the right sidebar.
+  const offenders = [];
+  for (const [i, line] of css.split("\n").entries()) {
+    const code = line.split("/*")[0];
+    if (/(^|,)\s*:(hover|focus)\s*(,|$|\{)/.test(code)) {
+      offenders.push(`${i + 1}: ${line.trim()}`);
+    }
+  }
+  assert.deepEqual(offenders, [], `bare :hover/:focus found:\n${offenders.join("\n")}`);
+});
+
 test("no black-bar hover artifacts: no fixed bg, no global clickable-icon", () => {
   // background-attachment:fixed flashes black on hover/scroll in Electron.
   assert.ok(!/background-attachment\s*:\s*fixed/.test(css), "no background-attachment:fixed");
