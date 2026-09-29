@@ -243,11 +243,20 @@ test("src/: no JS CSS injection — styles.css is the only channel", () => {
 });
 
 test("styles.css HOST OVERRIDE stays leaf-scoped (no core chrome hiding)", () => {
-  // Community review: do not hide/override Obsidian core chrome. Native
-  // .view-header must stay visible (back/forward + title). Product chrome
-  // lives in tm-* classes.
-  const hideHeader = /\.view-header\s*\{[^}]*display:\s*none/;
-  assert.ok(!hideHeader.test(css), "styles.css must not hide .view-header");
+  // Community review: do not hide app-wide chrome. Hiding .view-header is
+  // allowed ONLY on topmind product leaves (duplicate of tm-toolbar /
+  // tm-tab-bar). A bare `.view-header { display:none }` is forbidden.
+  const hideBlocks = [...css.matchAll(/([^{}]+)\{[^}]*display:\s*none[^}]*\}/g)];
+  const bare = hideBlocks
+    .map((m) => m[1].trim())
+    .filter((sel) => /(^|,)\s*\.view-header\s*$/.test(sel) || sel === ".view-header");
+  assert.deepEqual(bare, [], "styles.css must not hide .view-header globally");
+  // Product-leaf hide must be present (product owns the top band).
+  assert.match(
+    css,
+    /\.workspace-leaf-content\[data-type\^="topmind-"\]\s+\.view-header\s*\{[^}]*display:\s*none/,
+    "topmind leaves must hide the duplicate native view-header",
+  );
   const marker = "HOST OVERRIDE — leaf-scoped force-win layer";
   assert.ok(css.includes(marker), "styles.css must contain the HOST OVERRIDE section");
 });
@@ -263,6 +272,15 @@ test("styles.css: pill radius only on tag/status/filter/tool-chip", () => {
     .filter((b) => /border-radius:\s*var\(--tm-radius-pill\)/.test(b.body) && !allowed.test(b.selector))
     .map((b) => b.selector.slice(0, 100));
   assert.deepEqual(offenders, [], `pill radius on non-semantic controls:\n${offenders.join("\n")}`);
+});
+
+test("chat input pins to sidebar bottom (flex chain)", () => {
+  assert.match(css, /\.tm-tab-content\.tm-chat-container\s*\{[^}]*flex:\s*1 1 auto/s);
+  assert.match(css, /\.tm-tab-content\.tm-chat-container\s*\{[^}]*display:\s*flex/s);
+  assert.match(css, /\.tm-tab-content\.tm-chat-container\s*>\s*\.tm-chat-messages\s*\{[^}]*flex:\s*1 1 auto/s);
+  assert.match(css, /\.tm-tab-content\.tm-chat-container\s*>\s*\.tm-chat-input-area\s*\{[^}]*margin-top:\s*auto/s);
+  assert.match(css, /topmind-sidebar-dock"\]\s+\.tm-sidebar-dock\s*\{[^}]*flex:\s*1 1 auto/s);
+  assert.match(css, /topmind-sidebar-dock"\]\s+\.view-content\s*\{[^}]*display:\s*flex/s);
 });
 
 test("styles.css parses: no broken escapes or literal \\n artifacts", () => {

@@ -560,31 +560,39 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   2b. VIEW CHROME — keep Obsidian's native view-header (community rule)
+   2b. VIEW CHROME — product views own their top band
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* Obsidian ItemView paints a .view-header (back/forward + title + …).
-   Community review forbids hiding core chrome — keep the native header
-   for navigation and orientation. Product actions live in tm-* toolbars
-   below it. */
+   topmind views already ship a top band (.tm-toolbar / .tm-tab-bar) with
+   title + in-view actions — the native header is a duplicate title bar.
+   Hide it ONLY on topmind leaves (never app chrome). Pane nav stays on the
+   window tab strip / tab context menu / back gestures. */
 .workspace-leaf-content[data-type^="topmind-"] .view-header {
-  background: var(--tm-bg-chrome);
-  border-bottom: 1px solid var(--tm-line);
-  height: var(--tm-hit);
-  font-size: var(--tm-type-label);
+  display: none;
 }
 
-.workspace-leaf-content[data-type^="topmind-"] .view-header .view-header-title-container {
-  font-weight: 600;
-  color: var(--tm-ink);
-}
-
-/* Full-bleed content starts at the pane edge — no leftover header gap. */
+/* Full-bleed content: no leftover header gap; height chain for pin layouts. */
 .workspace-leaf-content[data-type="topmind-stream-workbench"] .view-content,
-.workspace-leaf-content[data-type="topmind-memory-browse"] .view-content,
-.workspace-leaf-content[data-type="topmind-sidebar-dock"] .view-content {
+.workspace-leaf-content[data-type="topmind-memory-browse"] .view-content {
   height: 100%;
   min-height: 0;
+}
+
+/* Sidebar leaf: flex column so tab content grows and chat input pins bottom. */
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .view-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-dock {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* ── Shared product chrome band (toolbar / section bar / tab bar) ──
@@ -2402,6 +2410,10 @@ button.tm-suggestion-path:focus-visible {
 /* Chat tab owns the full pane height: messages scroll, input pinned bottom.
    (Same element carries .tm-tab-content + .tm-chat-container.) */
 .tm-tab-content.tm-chat-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
   padding-bottom: var(--tm-gap-sm);
 }
@@ -4715,6 +4727,41 @@ button.tm-feed-layout-btn:hover {
    stylelint-disable declaration-no-important -- force-win layer by design;
    specificity cannot beat theme !important without this. */
 /* stylelint-disable declaration-no-important */
+
+/* Force-win: hide duplicate native header on product leaves + pin chat input. */
+.workspace-leaf-content[data-type^="topmind-"] .view-header {
+  display:none!important;
+}
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .view-content {
+  display:flex!important;
+  flex-direction:column!important;
+  height:100%!important;
+  min-height:0!important;
+  overflow:hidden!important;
+}
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-dock {
+  flex:1 1 auto!important;
+  min-height:0!important;
+  height:100%!important;
+  overflow:hidden!important;
+}
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-content.tm-chat-container {
+  display:flex!important;
+  flex-direction:column!important;
+  flex:1 1 auto!important;
+  min-height:0!important;
+  overflow:hidden!important;
+}
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-content.tm-chat-container > .tm-chat-messages {
+  flex:1 1 auto!important;
+  min-height:0!important;
+  overflow-y:auto!important;
+}
+.workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-tab-content.tm-chat-container > .tm-chat-input-area {
+  flex-shrink:0!important;
+  margin-top:auto!important;
+}
+
 
 .workspace-leaf-content .tm-wb-hero,.workspace-leaf-content .tm-wb-section {
   gap:8px;

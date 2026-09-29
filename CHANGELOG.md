@@ -2,6 +2,11 @@
 
 ## 4.17.0 — Quality, community compliance, and maintainability
 
+### UI regression fixes (post-review)
+- Hide the duplicate native `view-header` on topmind leaves (product toolbar / tab bar own the top band). Scoped to `data-type^="topmind-"` only — app chrome untouched.
+- Pin the chat composer to the sidebar bottom: restore the flex height chain (`view-content` → `tm-sidebar-dock` → `tm-tab-content.tm-chat-container` → messages / input).
+
+
 ### Community / security
 - **AI key vault backup is opt-in** (default off). Secrets no longer land in `.topmind/ai-keys-backup.json` unless you enable it under Settings → Security.
 - **`styles.css` is the only CSS channel.** Removed `adoptedStyleSheets` / `host-override.ts` JS style injection.
