@@ -11,6 +11,11 @@ import type { KernelApi } from "../bridge/kernel-loader.ts";
 import { stripFrontmatter, sanitizeFileName, isRecord, isUnknownArray } from "../utils.ts";
 import { stashPendingWrite } from "./pending-writes.ts";
 import { sanitizeAiWriteBody } from "#kernel/ai-content-sanitize.mjs";
+import {
+  ddgSearchUrl,
+  parseDdgHtmlLite,
+  rankResults,
+} from "#kernel/web-search-core.mjs";
 import { resolveInsideVault } from "../bridge/vault-bridge.ts";
 
 export type AgentWriteMode = "auto" | "confirm";
@@ -870,6 +875,45 @@ export function globFiles(ctx: AgentToolContext, opts: { pattern?: string; limit
 }
 
 
+/**
+ * web_search via host-injected HTTP — DDG HTML + shared ranker (Desktop parity).
+ * Returns scored shortlist so the model can fetch_url the best hits.
+ */
+export async function webSearch(
+  ctx: AgentToolContext,
+  opts: { query?: string; limit?: number } = {},
+): Promise<AgentToolResult> {
+  const tool = "web_search";
+  const query = String(opts.query || "").trim();
+  if (!query) return { ok: false, tool, error: "query is required" };
+  if (typeof ctx.fetchPage !== "function") {
+    return { ok: false, tool, error: "fetchPage not provided by host" };
+  }
+  const limit = Math.max(1, Math.min(Number(opts.limit) || 6, 8));
+  try {
+    const r = await ctx.fetchPage(ddgSearchUrl(query));
+    if (!r.ok) {
+      return {
+        ok: false,
+        tool,
+        error: r.error || `search HTTP ${r.status}`,
+        hint: "搜索服务暂不可用。可稍后重试，或用 fetch_url 打开已知网址。",
+      };
+    }
+    const results = rankResults(parseDdgHtmlLite(r.text || ""), { limit });
+    return {
+      ok: true,
+      tool,
+      summary: `${results.length} hits for "${query}"`,
+      query,
+      count: results.length,
+      results,
+    };
+  } catch (err) {
+    return { ok: false, tool, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /** fetch_url via host-injected HTTP (Obsidian requestUrl). http(s) only. */
 export async function fetchUrl(
   ctx: AgentToolContext,
@@ -1157,6 +1201,11 @@ export async function runAgentTool(
     case "glob_files":
       return globFiles(ctx, {
         pattern: typeof call.pattern === "string" ? call.pattern : undefined,
+        limit: typeof call.limit === "number" ? call.limit : undefined,
+      });
+    case "web_search":
+      return webSearch(ctx, {
+        query: typeof call.query === "string" ? call.query : undefined,
         limit: typeof call.limit === "number" ? call.limit : undefined,
       });
     case "fetch_url":

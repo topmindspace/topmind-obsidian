@@ -59,6 +59,8 @@ export interface CaptureOpts {
   target?: "stream" | "inbox";
   tags?: string[];
   writebackMode?: "auto" | "confirm";
+  /** Standalone file instead of appending the stream period note (Desktop forceAtom parity). */
+  forceAtom?: boolean;
 }
 
 /**
@@ -102,34 +104,44 @@ export function captureToWorkspace(
         return { ok: false, error: "no-stream-category" };
       }
 
-      const streamTarget = kernel.resolveStreamTarget({
-        workspaceRoot,
-        engineRoot,
-        config: contract,
-      });
-      if (!streamTarget.periodRelPath || !streamTarget.periodAbsPath) {
-        return {
-          ok: false,
-          error:
-            streamTarget.packing === "atom"
-              ? "atom-packing"
-              : "no-period-path",
-        };
-      }
-      relPath = streamTarget.periodRelPath;
-      targetPath = streamTarget.periodAbsPath;
-      const packing = streamTarget.packing || "weekly";
-      const appendHeading = streamTarget.appendHeading || "day";
+      // forceAtom: one standalone note under the stream category (Desktop parity).
+      if (opts.forceAtom) {
+        const catDir = streamCat.directory;
+        const stamp = Date.now();
+        const slug = sanitizeFileName(safeText.slice(0, 40)) || "note";
+        relPath = `${catDir}/${stamp}-${slug}.md`;
+        targetPath = resolveInsideVault(workspaceRoot, relPath);
+        content = `---\nsource_type: external-capture\ncreated: ${new Date().toISOString()}\ntags: [${(opts.tags || []).join(", ")}]\n---\n\n# ${safeText.slice(0, 80)}\n\n${captureContent}\n`;
+      } else {
+        const streamTarget = kernel.resolveStreamTarget({
+          workspaceRoot,
+          engineRoot,
+          config: contract,
+        });
+        if (!streamTarget.periodRelPath || !streamTarget.periodAbsPath) {
+          return {
+            ok: false,
+            error:
+              streamTarget.packing === "atom"
+                ? "atom-packing"
+                : "no-period-path",
+          };
+        }
+        relPath = streamTarget.periodRelPath;
+        targetPath = streamTarget.periodAbsPath;
+        const packing = streamTarget.packing || "weekly";
+        const appendHeading = streamTarget.appendHeading || "day";
 
-      const raw = fs.existsSync(targetPath) ? fs.readFileSync(targetPath, "utf-8") : "";
-      const body = stripFrontmatter(raw);
-      const newBody = kernel.appendToPeriodBody(body, {
-        content: captureContent,
-        packing,
-        appendHeading,
-      });
-      const fm = extractFrontmatter(raw) || seedPeriodFrontmatter(relPath);
-      content = `${fm}${newBody}`;
+        const raw = fs.existsSync(targetPath) ? fs.readFileSync(targetPath, "utf-8") : "";
+        const body = stripFrontmatter(raw);
+        const newBody = kernel.appendToPeriodBody(body, {
+          content: captureContent,
+          packing,
+          appendHeading,
+        });
+        const fm = extractFrontmatter(raw) || seedPeriodFrontmatter(relPath);
+        content = `${fm}${newBody}`;
+      }
     } else {
       const buffer = model.categories.find((c) => c.role === "buffer" && c.directory);
       let inboxDir = buffer?.directory;
@@ -930,6 +942,9 @@ const KNOWN_TOOLS = new Set([
   "list_inbox",
   "list_outputs",
   "list_todos",
+  "list_recent_memories",
+  "list_recent_stream",
+  "list_pending_writes",
   "list_files",
   "stat_path",
   "glob_files",
@@ -938,7 +953,9 @@ const KNOWN_TOOLS = new Set([
   "create_topic",
   "list_skills",
   "load_skill",
+  "web_search",
   "fetch_url",
+  "capture_url",
   "workspace_health",
   "delete_path",
   "rename_path",
@@ -951,6 +968,10 @@ const KNOWN_TOOLS = new Set([
   "capture_to_inbox",
   "add_todo",
   "toggle_todo",
+  "update_todo",
+  "set_todo_due",
+  "delete_todo",
+  "append_stream_entry",
 ]);
 
 function stripThinking(raw: string): string {
@@ -1402,10 +1423,19 @@ export async function runWorkspaceChatTurn(
       edits.push({ ...edited, tool: "edit_file", relativePath: call.relativePath });
       toolCalls.push({ tool, ok: Boolean(edited.ok), summary: String(call.relativePath || "") });
       let editNote = toolResultForModel(edited);
-      if (edited.reason === "hash-mismatch" || edited.error === "hash-mismatch") {
-        editNote += `\nHINT: file changed since last read — call read_file around= to refresh contentHash/oldText, then retry edit_file with the new expectedHash.`;
-      } else if (edited.reason === "no-match" || edited.reason === "ambiguous") {
-        editNote += `\nHINT: use nearby/context from the diagnostic, or read_file around= the phrase, then retry with exact oldText + expectedHash.`;
+      try {
+        const { buildRetryHint } = await import("#kernel/tool-retry-hints.mjs");
+        const hint = buildRetryHint("edit_file", JSON.stringify(edited), {
+          relativePath: String(call.relativePath || ""),
+          locale: "en",
+        });
+        if (hint) editNote += `\nHINT: ${hint}`;
+      } catch {
+        if (edited.reason === "hash-mismatch" || edited.error === "hash-mismatch") {
+          editNote += `\nHINT: file changed since last read — call read_file around= to refresh contentHash/oldText, then retry edit_file with the new expectedHash.`;
+        } else if (edited.reason === "no-match" || edited.reason === "ambiguous") {
+          editNote += `\nHINT: use nearby/context from the diagnostic, or read_file around= the phrase, then retry with exact oldText + expectedHash.`;
+        }
       }
       return editNote;
     }
@@ -1416,6 +1446,48 @@ export async function runWorkspaceChatTurn(
       });
       toolCalls.push({ tool: "capture", ok: Boolean(captured.ok), summary: captured.path });
       return toolResultForModel({ ...captured, tool: "capture" });
+    }
+    if (tool === "capture_url") {
+      // Desktop parity: one-shot fetch + ingest with source URL attached.
+      const url = String(call.url || "").trim();
+      if (!/^https?:\/\//iu.test(url)) {
+        return toolResultForModel({ ok: false, tool, error: "only http(s) URLs are allowed" });
+      }
+      if (typeof agentCtx.fetchPage !== "function") {
+        return toolResultForModel({ ok: false, tool, error: "fetchPage not provided by host" });
+      }
+      try {
+        const { fetchUrlForCapture } = await import("./capture-fetch.ts");
+        const fetched = await fetchUrlForCapture(agentCtx.fetchPage, url);
+        if (!fetched.ok || !String(fetched.text || "").trim()) {
+          const { buildRetryHint } = await import("#kernel/tool-retry-hints.mjs");
+          return toolResultForModel({
+            ok: false,
+            tool,
+            error: fetched.error || "page body empty",
+            hint: buildRetryHint("capture_url", fetched.error || "page body empty", { locale: "zh" }) ||
+              "抓取到的正文过短。可先 fetch_url 确认内容，或换来源。",
+          });
+        }
+        const useTitle = String(call.title || fetched.title || "").trim();
+        const note = String(call.note || "").trim();
+        const header = `> 来源：${url}\n${useTitle ? `> 标题：${useTitle}\n` : ""}\n`;
+        const body = `${header}${note ? `${note}\n\n` : ""}${fetched.text}`.trim();
+        const captured = captureToWorkspace(kernel, workspaceRoot, opts.engineRoot || workspaceRoot, body, {
+          target: call.forceInbox === true ? "inbox" : "stream",
+          forceAtom: call.forceAtom === true,
+          writebackMode: contractMode || opts.writebackMode,
+        });
+        toolCalls.push({ tool: "capture_url", ok: Boolean(captured.ok), summary: captured.path || url });
+        return toolResultForModel({ ...captured, tool: "capture_url", url, title: useTitle });
+      } catch (err) {
+        return toolResultForModel({
+          ok: false,
+          tool,
+          error: err instanceof Error ? err.message : String(err),
+          hint: "抓取入库失败。确认 URL 有效且可访问。",
+        });
+      }
     }
     const result = await runAgentTool(agentCtx, call);
     if (!result) {
