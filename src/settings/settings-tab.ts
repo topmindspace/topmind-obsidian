@@ -3,17 +3,18 @@
 // Obsidian Settings → Topmind Stream.
 // Surface order: workspace · stream · **AI (providers / model / keys)** · security.
 //
-// AI section design (visible, not buried):
-//   - Status card + Desktop import
-//   - Full provider board: International / Domestic / Local — every provider
-//     shows its key (or URL) field at once, with configured ✓ and default ★
-//   - Model picker (official list-models → models.dev → curated) + custom ID
+// AI section design (visible on a fresh enable, not buried):
+//   - Status card + user-chosen Desktop export import (no home-directory scan)
+//   - Provider chooser (a concrete provider is selected even when nothing
+//     is saved yet) + model picker + that provider's key or URL
 //   - Connection test + writeback policy
 //
 // Renders through `getSettingDefinitions()` + stock `Setting` rows so
 // Obsidian's own setting-group / setting-item CSS applies (native card +
-// info|control row look). Do NOT nest Settings inside another Setting's
-// `settingEl` — that is a flex row and squeezes CJK labels vertically.
+// info|control row look). Credential controls live ON those definition
+// rows. Do NOT append sibling Settings into the group list — the host
+// drops those extras on first open. Do NOT nest Settings inside another
+// Setting's `settingEl` — that is a flex row and squeezes CJK labels.
 
 import {
   PluginSettingTab,
@@ -25,7 +26,7 @@ import {
 import type TopmindPlugin from "../main";
 import { t, detectObsidianLocale } from "../i18n";
 import type { WritebackMode, AiManualKeys } from "../types";
-import { hasConfiguredProvider, getProviderKey } from "../types";
+import { hasConfiguredProvider, getProviderKey, isAiProviderType } from "../types";
 import {
   AI_PROVIDER_PRESETS,
   PROVIDER_KEY_FIELDS,
@@ -43,9 +44,7 @@ import { getKernel } from "../bridge/kernel-loader";
 import { StreamWorkbenchView } from "../views/stream-workbench-view";
 import { SidebarDockView } from "../views/sidebar-dock-view";
 import { VIEW_TYPE_STREAM_WORKBENCH, VIEW_TYPE_SIDEBAR_DOCK } from "../constants";
-import os from "node:os";
 import fs from "node:fs";
-import path from "node:path";
 import { openExternalUrl } from "../utils";
 import { ConfirmModal } from "../views/confirm-modal";
 
@@ -93,117 +92,76 @@ function readDesktopAi(parsed: unknown): DesktopExportAi | null {
   };
 }
 
-/**
- * Import AI provider keys from Desktop.
- * Source 1: obsidian-key-export.json (plaintext export, preferred).
- * Source 2: app-settings.json (only when keys are plaintext / safeStorage off).
- */
-function tryImportDesktopSettings(): {
+type DesktopImport = {
   imported: Partial<AiManualKeys>;
   preference: string;
   model: string;
   encrypted: boolean;
-} | null {
-  const home = os.homedir();
+};
 
-  const exportCandidates = [
-    path.join(home, "topmind", "topmind-desktop", "state", "obsidian-key-export.json"),
-    path.join(home, "topmind-desktop", "state", "obsidian-key-export.json"),
-  ];
-  for (const exportPath of exportCandidates) {
-    if (!fs.existsSync(exportPath)) continue;
-    try {
-      const raw = fs.readFileSync(exportPath, "utf-8");
-      const parsed: unknown = JSON.parse(raw);
-      const ai = readDesktopAi(parsed);
-      if (!ai) continue;
-      const m = ai.manual || {};
-      const imported: Partial<AiManualKeys> = {};
-      const take = (key: keyof AiManualKeys, srcKey: string) => {
-        const val = asString(m[srcKey]);
-        if (val) (imported as Record<string, string>)[key] = val;
-      };
-      take("openAiKey", "openAiKey");
-      take("anthropicKey", "anthropicKey");
-      take("googleKey", "googleKey");
-      take("deepseekKey", "deepseekKey");
-      take("moonshotKey", "moonshotKey");
-      take("zhipuKey", "zhipuKey");
-      take("minimaxKey", "minimaxKey");
-      take("xaiKey", "xaiKey");
-      take("customBaseUrl", "customBaseUrl");
-      take("customKey", "customKey");
-      take("ollamaBaseUrl", "ollamaBaseUrl");
-      return {
-        imported,
-        preference: ai.sourcePreference || "",
-        model: ai.defaultModel || "",
-        encrypted: false,
-      };
-    } catch {
-      // continue to next source
-    }
+/** File the user picked. `path` is the Electron path when the host provides one. */
+interface ChosenExportFile {
+  text: () => Promise<string>;
+  path?: string;
+}
+
+/**
+ * Parse a Desktop AI export the user already chose.
+ * Plaintext keys are copied. safeStorage ciphertext is reported, not installed.
+ * This function does not look at the filesystem.
+ */
+function parseDesktopExport(raw: string): DesktopImport | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
   }
-
-  const candidates = [
-    path.join(home, "topmind", "topmind-desktop", "state", "app-settings.json"),
-    path.join(home, "topmind-desktop", "state", "app-settings.json"),
-  ];
-
-  for (const settingsPath of candidates) {
-    if (!fs.existsSync(settingsPath)) continue;
-    try {
-      const raw = fs.readFileSync(settingsPath, "utf-8");
-      const parsed: unknown = JSON.parse(raw);
-      const ai = readDesktopAi(parsed);
-      if (!ai) return null;
-
-      const m = ai.manual || {};
-      const imported: Partial<AiManualKeys> = {};
-
-      const looksEncrypted = (val: unknown): boolean => {
-        const s = asString(val);
-        if (!s) return false;
-        return (
-          s.startsWith("v10:") ||
-          (/^[A-Za-z0-9+/=]{40,}$/.test(s) && !s.startsWith("sk-") && !s.startsWith("AI"))
-        );
-      };
-
-      let encrypted = false;
-      // Skip ciphertext (safeStorage v10: blobs) — importing them would install
-      // garbage "keys" that silently fail at request time.
-      const takeEncrypted = (key: keyof AiManualKeys, srcKey: string) => {
-        const val = asString(m[srcKey]);
-        if (!val) return;
-        if (looksEncrypted(val)) {
-          encrypted = true;
-          return;
-        }
-        (imported as Record<string, string>)[key] = val;
-      };
-      const keyFields: Array<keyof AiManualKeys> = [
-        "openAiKey", "anthropicKey", "googleKey", "deepseekKey", "moonshotKey", "zhipuKey",
-        "minimaxKey", "xaiKey", "groqKey", "mistralKey", "openrouterKey", "qwenKey",
-        "doubaoKey", "siliconflowKey", "baiduKey", "hunyuanKey", "customKey",
-      ];
-      for (const key of keyFields) takeEncrypted(key, key);
-      const customBaseUrl = asString(m.customBaseUrl);
-      if (customBaseUrl) imported.customBaseUrl = customBaseUrl;
-      const ollamaBaseUrl = asString(m.ollamaBaseUrl);
-      if (ollamaBaseUrl) imported.ollamaBaseUrl = ollamaBaseUrl;
-
-      return {
-        imported,
-        preference: ai.sourcePreference || "",
-        model: ai.defaultModel || "",
-        encrypted,
-      };
-    } catch {
-      continue;
+  const ai = readDesktopAi(parsed);
+  if (!ai) return null;
+  const m = ai.manual || {};
+  const imported: Partial<AiManualKeys> = {};
+  const looksEncrypted = (val: unknown): boolean => {
+    const s = asString(val);
+    if (!s) return false;
+    return (
+      s.startsWith("v10:") ||
+      (/^[A-Za-z0-9+/=]{40,}$/.test(s) && !s.startsWith("sk-") && !s.startsWith("AI"))
+    );
+  };
+  let encrypted = false;
+  const take = (key: keyof AiManualKeys, srcKey: string) => {
+    const val = asString(m[srcKey]);
+    if (!val) return;
+    if (looksEncrypted(val)) {
+      encrypted = true;
+      return;
     }
-  }
-  return null;
+    (imported as Record<string, string>)[key] = val;
+  };
+  const keyFields: Array<keyof AiManualKeys> = [
+    "openAiKey", "anthropicKey", "googleKey", "deepseekKey", "moonshotKey", "zhipuKey",
+    "minimaxKey", "xaiKey", "groqKey", "mistralKey", "openrouterKey", "qwenKey",
+    "doubaoKey", "siliconflowKey", "baiduKey", "hunyuanKey", "customKey",
+  ];
+  for (const key of keyFields) take(key, key);
+  const customBaseUrl = asString(m.customBaseUrl);
+  if (customBaseUrl && !looksEncrypted(customBaseUrl)) imported.customBaseUrl = customBaseUrl;
+  const ollamaBaseUrl = asString(m.ollamaBaseUrl);
+  if (ollamaBaseUrl && !looksEncrypted(ollamaBaseUrl)) imported.ollamaBaseUrl = ollamaBaseUrl;
+  return {
+    imported,
+    preference: ai.sourcePreference || "",
+    model: ai.defaultModel || "",
+    encrypted,
+  };
+}
+
+/** Read only the file the user chose. No directory walk, no fixed paths. */
+async function readChosenExport(file: ChosenExportFile): Promise<string> {
+  const picked = typeof file.path === "string" ? file.path : "";
+  if (picked) return fs.readFileSync(picked, "utf-8");
+  return file.text();
 }
 
 const KEY_PLACEHOLDERS: Record<string, string> = {
@@ -315,9 +273,14 @@ export class TopmindSettingTab extends PluginSettingTab {
             render: (setting) => this.renderAiImportRow(setting),
           },
           {
-            name: t("settings_ai_preference"),
-            desc: t("settings_ai_preference_desc"),
-            render: (setting) => this.renderProviderPreference(setting),
+            // Real definition rows. A concrete provider is selected even when
+            // sourcePreference is empty, so the key/URL control is on screen
+            // before anything has been saved. Do not gate these on
+            // hasConfiguredProvider, and do not paint extra rows into the
+            // group list — the host drops those on first open.
+            name: t("settings_ai_provider"),
+            desc: t("settings_ai_provider_desc"),
+            render: (setting) => this.renderProviderChooser(setting),
           },
           {
             name: t("settings_ai_model"),
@@ -325,14 +288,9 @@ export class TopmindSettingTab extends PluginSettingTab {
             render: (setting) => this.renderModelPicker(setting),
           },
           {
-            // Provider credential board is multi-row; paint siblings into the
-            // group's list so rows stack as native .setting-item cards.
-            name: t("settings_ai_provider"),
-            desc: t("settings_ai_provider_desc"),
-            searchable: false,
-            render: (_setting, group) => {
-              this.renderProviderBoard(group.listEl);
-            },
+            name: t("settings_ai_key"),
+            desc: t("settings_security_note"),
+            render: (setting) => this.renderCredentialRow(setting),
           },
           {
             name: t("settings_ai_test"),
@@ -593,40 +551,69 @@ export class TopmindSettingTab extends PluginSettingTab {
     }
   }
 
-  /** Desktop key import (user-initiated only). */
+  /** Desktop key import — the user picks one file; only that file is read. */
   private renderAiImportRow(setting: Setting): void {
-    const s = this.plugin.settings;
     setting.addButton((btn) =>
       btn.setButtonText(t("settings_ai_import")).onClick(() => {
-        const result = tryImportDesktopSettings();
-        if (!result) {
-          new Notice(t("settings_ai_import_not_found"));
-          return;
-        }
-        if (result.encrypted) {
-          new Notice(t("settings_ai_import_encrypted"));
-          return;
-        }
-        const m = s.ai.manual as unknown as Record<string, string>;
-        let count = 0;
-        for (const [key, val] of Object.entries(result.imported)) {
-          if (key === "baseUrlOverrides") continue;
-          if (typeof val === "string" && val && !m[key]) {
-            m[key] = val;
-            count++;
-          }
-        }
-        if (result.preference && !s.ai.sourcePreference) s.ai.sourcePreference = result.preference;
-        if (result.model && !s.ai.defaultModel) s.ai.defaultModel = result.model;
-        if (count > 0) {
-          void this.save();
-          new Notice(t("settings_ai_import_success", { count }));
-          this.update();
-        } else {
-          new Notice(t("settings_ai_import_nothing"));
-        }
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".json,application/json";
+        input.addEventListener("change", () => {
+          const file = input.files?.item(0);
+          if (!file) return;
+          const pathValue = "path" in file ? (file as { path?: unknown }).path : undefined;
+          const chosen: ChosenExportFile = {
+            text: () => file.text(),
+            path: typeof pathValue === "string" ? pathValue : undefined,
+          };
+          void this.importChosenExport(chosen);
+        });
+        input.click();
       }),
     );
+  }
+
+  private async importChosenExport(file: ChosenExportFile): Promise<void> {
+    const s = this.plugin.settings;
+    let raw = "";
+    try {
+      raw = await readChosenExport(file);
+    } catch {
+      new Notice(t("settings_ai_import_not_found"));
+      return;
+    }
+    const result = parseDesktopExport(raw);
+    if (!result) {
+      new Notice(t("settings_ai_import_not_found"));
+      return;
+    }
+    if (result.encrypted && Object.keys(result.imported).length === 0) {
+      new Notice(t("settings_ai_import_encrypted"));
+      return;
+    }
+    const m = s.ai.manual as unknown as Record<string, string>;
+    let count = 0;
+    for (const [key, val] of Object.entries(result.imported)) {
+      if (key === "baseUrlOverrides") continue;
+      if (typeof val === "string" && val && !m[key]) {
+        m[key] = val;
+        count++;
+      }
+    }
+    if (result.preference && !s.ai.sourcePreference && isAiProviderType(result.preference)) {
+      s.ai.sourcePreference = result.preference;
+      s.aiProvider = result.preference;
+    }
+    if (result.model && !s.ai.defaultModel) s.ai.defaultModel = result.model;
+    if (count > 0) {
+      await this.save();
+      new Notice(t("settings_ai_import_success", { count }));
+      this.update();
+    } else if (result.encrypted) {
+      new Notice(t("settings_ai_import_encrypted"));
+    } else {
+      new Notice(t("settings_ai_import_nothing"));
+    }
   }
 
   /** Live connection probe. */
@@ -666,19 +653,42 @@ export class TopmindSettingTab extends PluginSettingTab {
     return field ? Boolean(getProviderKey(pid, s.ai.manual)) : false;
   }
 
-  private renderProviderPreference(setting: Setting): void {
+  /**
+   * Provider the chooser and credential row show.
+   * Saved preference wins, then the first configured provider, then the
+   * first preset — so a fresh install still has a key or URL field.
+   */
+  private activeProviderId(): string {
     const s = this.plugin.settings;
-    const allPids = Object.keys(AI_PROVIDER_PRESETS);
+    const all = Object.keys(AI_PROVIDER_PRESETS);
+    const pref = s.ai.sourcePreference;
+    if (pref && AI_PROVIDER_PRESETS[pref]) return pref;
+    const configured = all.find((id) => this.isProviderConfigured(id));
+    if (configured) return configured;
+    return all[0] || "openai";
+  }
+
+  /** Persist the provider the user is actually editing. */
+  private rememberActiveProvider(): void {
+    const pid = this.activeProviderId();
+    const s = this.plugin.settings;
+    if (s.ai.sourcePreference === pid) return;
+    s.ai.sourcePreference = pid;
+    if (isAiProviderType(pid)) s.aiProvider = pid;
+  }
+
+  private renderProviderChooser(setting: Setting): void {
+    const s = this.plugin.settings;
+    const active = this.activeProviderId();
     setting.addDropdown((dd) => {
-      dd.addOption("", t("settings_ai_auto"));
-      for (const gid of allPids) {
-        const p = AI_PROVIDER_PRESETS[gid];
-        const star = s.ai.sourcePreference === gid ? " ★" : this.isProviderConfigured(gid) ? " ✓" : "";
-        dd.addOption(gid, `${p.label}${star}`);
+      for (const pid of Object.keys(AI_PROVIDER_PRESETS)) {
+        const meta = AI_PROVIDER_PRESETS[pid];
+        const mark = this.isProviderConfigured(pid) ? " ✓" : "";
+        dd.addOption(pid, `${meta.label}${mark}`);
       }
-      dd.setValue(s.ai.sourcePreference || "").onChange(async (v) => {
+      dd.setValue(active).onChange(async (v) => {
         s.ai.sourcePreference = v;
-        s.aiProvider = (v || "none") as TopmindPlugin["settings"]["aiProvider"];
+        if (isAiProviderType(v)) s.aiProvider = v;
         await this.save();
         clearModelsDevCache();
         this.update();
@@ -688,10 +698,7 @@ export class TopmindSettingTab extends PluginSettingTab {
 
   private renderModelPicker(setting: Setting): void {
     const s = this.plugin.settings;
-    const activeProvider =
-      s.ai.sourcePreference ||
-      Object.keys(AI_PROVIDER_PRESETS).find((id) => this.isProviderConfigured(id)) ||
-      "openai";
+    const activeProvider = this.activeProviderId();
     const preset = AI_PROVIDER_PRESETS[activeProvider];
     const providerLabel = preset?.label || activeProvider;
     setting.setDesc(`${t("settings_ai_model_desc")} (${providerLabel})`);
@@ -756,159 +763,115 @@ export class TopmindSettingTab extends PluginSettingTab {
   }
 
   /**
-   * Credential surface — ONE provider at a time via dropdown.
-   * The old board expanded every provider at once (huge, noisy). Standard
-   * settings UX: pick provider → only its key / model / endpoint show.
+   * Key / URL for the active provider, painted onto this definition's Setting.
+   * Ollama is a base URL. Custom is base URL plus key. Everyone else is an
+   * API key plus an optional base-URL override.
    */
-  private renderProviderBoard(containerEl: HTMLElement): void {
-    const s = this.plugin.settings;
-    const allPids = Object.keys(AI_PROVIDER_PRESETS);
-
-    // Active provider: explicit sourcePreference → first configured → first.
-    let activePid =
-      s.ai.sourcePreference ||
-      allPids.find((id) => this.isProviderConfigured(id)) ||
-      allPids[0] ||
-      "openai";
-
-    const header = new Setting(containerEl)
-      .setName(t("settings_ai_provider"))
-      .setDesc(t("settings_ai_provider_desc"));
-    header.addDropdown((dd) => {
-      for (const pid of allPids) {
-        const meta = AI_PROVIDER_PRESETS[pid];
-        const mark = this.isProviderConfigured(pid) ? " ✓" : "";
-        dd.addOption(pid, `${meta.label}${mark}`);
-      }
-      dd.setValue(activePid);
-      dd.onChange((v) => {
-        activePid = v;
-        // Persist as the active provider so model picker / calls follow it.
-        s.ai.sourcePreference = v;
-        s.aiProvider = v as TopmindPlugin["settings"]["aiProvider"];
-        void this.save().then(() => {
-          clearModelsDevCache();
-          this.update();
-        });
-      });
-    });
-
-    this.renderActiveProviderFields(containerEl, activePid);
-  }
-
-  /** Key / URL / default-star fields for a single provider. */
-  private renderActiveProviderFields(containerEl: HTMLElement, pid: string): void {
-    const s = this.plugin.settings;
+  private renderCredentialRow(setting: Setting): void {
+    const pid = this.activeProviderId();
     const meta = AI_PROVIDER_PRESETS[pid];
     if (!meta) return;
+    const s = this.plugin.settings;
 
     if (pid === "ollama") {
-      new Setting(containerEl)
-        .setName(t("settings_ai_ollama_url"))
-        .setDesc(meta.baseUrl)
-        .addText((text) => {
-          text.setPlaceholder("http://127.0.0.1:11434/v1").setValue(s.ai.manual.ollamaBaseUrl || "");
-          text.inputEl.type = "url";
-          text.inputEl.addClass("tm-baseurl-input");
-          text.onChange(async (v) => {
-            s.ai.manual.ollamaBaseUrl = v.trim().replace(/\/+$/u, "");
-            await this.save();
-          });
+      setting.setName(t("settings_ai_ollama_url")).setDesc(meta.baseUrl);
+      setting.addText((text) => {
+        text.setPlaceholder("http://127.0.0.1:11434/v1").setValue(s.ai.manual.ollamaBaseUrl || "");
+        text.inputEl.type = "url";
+        text.inputEl.addClass("tm-baseurl-input");
+        text.onChange(async (v) => {
+          s.ai.manual.ollamaBaseUrl = v.trim().replace(/\/+$/u, "");
+          this.rememberActiveProvider();
+          await this.save();
         });
+      });
       return;
     }
 
     if (pid === "custom") {
-      new Setting(containerEl)
-        .setName(t("settings_base_url"))
-        .setDesc(t("settings_ai_provider_desc"))
-        .addText((text) => {
-          text.setPlaceholder("https://api.example.com/v1").setValue(s.ai.manual.customBaseUrl || "");
-          text.inputEl.type = "url";
-          text.inputEl.addClass("tm-baseurl-input");
-          text.onChange(async (v) => {
-            s.ai.manual.customBaseUrl = v.trim().replace(/\/+$/u, "");
-            await this.save();
-          });
-        });
-      new Setting(containerEl)
-        .setName(t("settings_ai_key"))
-        .setDesc(t("settings_security_note"))
-        .addText((text) => {
-          text.inputEl.type = "password";
-          const current = s.ai.manual.customKey || "";
-          text.setPlaceholder(KEY_PLACEHOLDERS.custom).setValue(current);
-          text.onChange(async (v) => {
-            if (v === current) return;
-            if (!v && current) return;
-            s.ai.manual.customKey = v;
-            await this.save();
-          });
-        })
-        .addExtraButton((btn) => {
-          btn.setIcon("x").setTooltip(t("settings_ai_clear_key")).onClick(async () => {
-            s.ai.manual.customKey = "";
-            await this.save();
-            this.update();
-          });
-        });
-      return;
-    }
-
-    // Regular provider: API key + optional base-URL override
-    const keyField = PROVIDER_KEY_FIELDS[pid];
-    if (keyField) {
-      const current = String((s.ai.manual as unknown as Record<string, string>)[keyField] || "");
-      new Setting(containerEl)
-        .setName(t("settings_ai_key"))
-        .setDesc(t("settings_security_note"))
-        .addText((text) => {
-          text.inputEl.type = "password";
-          text.setPlaceholder(KEY_PLACEHOLDERS[pid] || "sk-...").setValue(current);
-          text.onChange(async (v) => {
-            if (v === current) return;
-            if (!v && current) return;
-            const wasConfigured = hasConfiguredProvider(s.ai);
-            (s.ai.manual as unknown as Record<string, string>)[keyField] = v;
-            await this.save();
-            if (!wasConfigured && hasConfiguredProvider(s.ai) && !s.ai.defaultModel) {
-              clearModelsDevCache();
-              new Notice(t("settings_ai_model_select_hint"));
-            }
-          });
-        })
-        .addExtraButton((btn) => {
-          btn.setIcon("x").setTooltip(t("settings_ai_clear_key")).onClick(async () => {
-            (s.ai.manual as unknown as Record<string, string>)[keyField] = "";
-            await this.save();
-            this.update();
-          });
-        })
-        .addExtraButton((btn) => {
-          btn.setIcon("external-link").setTooltip(meta.helpUrl).onClick(() => {
-            openExternalUrl(meta.helpUrl);
-          });
-        });
-    }
-
-    new Setting(containerEl)
-      .setName(t("settings_base_url"))
-      .setDesc(meta.baseUrl)
-      .addText((text) => {
-        text
-          .setPlaceholder(meta.baseUrl || "https://…")
-          .setValue(s.ai.manual.baseUrlOverrides?.[pid] || "");
+      setting.setName(t("settings_base_url")).setDesc(t("settings_security_note"));
+      setting.addText((text) => {
+        text.setPlaceholder("https://api.example.com/v1").setValue(s.ai.manual.customBaseUrl || "");
         text.inputEl.type = "url";
         text.inputEl.addClass("tm-baseurl-input");
         text.onChange(async (v) => {
-          const raw = v.trim().replace(/\/+$/u, "");
-          const bag = { ...(s.ai.manual.baseUrlOverrides || {}) };
-          if (raw) bag[pid] = raw;
-          else delete bag[pid];
-          s.ai.manual.baseUrlOverrides = bag;
+          s.ai.manual.customBaseUrl = v.trim().replace(/\/+$/u, "");
+          this.rememberActiveProvider();
           await this.save();
         });
       });
+      const current = s.ai.manual.customKey || "";
+      setting.addText((text) => {
+        text.inputEl.type = "password";
+        text.setPlaceholder(KEY_PLACEHOLDERS.custom).setValue(current);
+        text.onChange(async (v) => {
+          if (v === current) return;
+          if (!v && current) return;
+          s.ai.manual.customKey = v;
+          this.rememberActiveProvider();
+          await this.save();
+        });
+      });
+      setting.addExtraButton((btn) => {
+        btn.setIcon("x").setTooltip(t("settings_ai_clear_key")).onClick(async () => {
+          s.ai.manual.customKey = "";
+          await this.save();
+          this.update();
+        });
+      });
+      return;
+    }
+
+    const keyField = PROVIDER_KEY_FIELDS[pid];
+    setting.setName(t("settings_ai_key")).setDesc(t("settings_security_note"));
+    if (keyField) {
+      const current = String((s.ai.manual as unknown as Record<string, string>)[keyField] || "");
+      setting.addText((text) => {
+        text.inputEl.type = "password";
+        text.setPlaceholder(KEY_PLACEHOLDERS[pid] || "sk-...").setValue(current);
+        text.onChange(async (v) => {
+          if (v === current) return;
+          if (!v && current) return;
+          const wasConfigured = hasConfiguredProvider(s.ai);
+          (s.ai.manual as unknown as Record<string, string>)[keyField] = v;
+          this.rememberActiveProvider();
+          await this.save();
+          if (!wasConfigured && hasConfiguredProvider(s.ai) && !s.ai.defaultModel) {
+            clearModelsDevCache();
+            new Notice(t("settings_ai_model_select_hint"));
+          }
+        });
+      });
+      setting.addExtraButton((btn) => {
+        btn.setIcon("x").setTooltip(t("settings_ai_clear_key")).onClick(async () => {
+          (s.ai.manual as unknown as Record<string, string>)[keyField] = "";
+          await this.save();
+          this.update();
+        });
+      });
+      setting.addExtraButton((btn) => {
+        btn.setIcon("external-link").setTooltip(meta.helpUrl).onClick(() => {
+          openExternalUrl(meta.helpUrl);
+        });
+      });
+    }
+
+    setting.addText((text) => {
+      text
+        .setPlaceholder(meta.baseUrl || "https://…")
+        .setValue(s.ai.manual.baseUrlOverrides?.[pid] || "");
+      text.inputEl.type = "url";
+      text.inputEl.addClass("tm-baseurl-input");
+      text.onChange(async (v) => {
+        const raw = v.trim().replace(/\/+$/u, "");
+        const bag = { ...(s.ai.manual.baseUrlOverrides || {}) };
+        if (raw) bag[pid] = raw;
+        else delete bag[pid];
+        s.ai.manual.baseUrlOverrides = bag;
+        this.rememberActiveProvider();
+        await this.save();
+      });
+    });
   }
 
   // ── Persistence ─────────────────────────────────────────────────────────

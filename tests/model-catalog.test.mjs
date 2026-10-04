@@ -98,8 +98,9 @@ describe("settings + chat wiring (static, shipped source)", () => {
     assert.match(src, /settings_ai_model/);
     // Custom model entry stays available next to the dropdown.
     assert.match(src, /settings_ai_model_enter_custom|custom-model-id/);
-    // Full provider board is the primary surface (not a one-at-a-time picker).
-    assert.match(src, /renderProviderBoard/);
+    // Credential row is its own definition render, not a group-list paint.
+    assert.match(src, /renderCredentialRow/);
+    assert.match(src, /renderProviderChooser/);
   });
 
   test("AI settings render via getSettingDefinitions, not deprecated display()", () => {
@@ -111,8 +112,11 @@ describe("settings + chat wiring (static, shipped source)", () => {
     assert.match(src, /override getSettingDefinitions\s*\(\s*\)\s*:\s*SettingDefinitionItem\[\]/u);
     assert.doesNotMatch(src, /override display\s*\(\s*\)\s*:\s*void/u);
     assert.doesNotMatch(src, /paintSettings\(setting\.settingEl\)/);
-    assert.match(src, /renderProviderBoard/);
+    assert.match(src, /renderCredentialRow/);
+    assert.match(src, /renderProviderChooser/);
     assert.match(src, /renderModelPicker/);
+    assert.doesNotMatch(src, /group\.listEl/);
+    assert.doesNotMatch(src, /renderProviderBoard/);
     // Credential board must expose key fields for the major providers.
     assert.match(src, /PROVIDER_KEY_FIELDS/);
     assert.match(src, /settings_ai_key|password/);

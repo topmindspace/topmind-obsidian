@@ -105,24 +105,27 @@ jobs:
             TAG="${{ inputs.release_tag }}"
             DRAFT="--draft"
           fi
+          CHANGELOG_SECTION=$(awk 'BEGIN{p=0} /^## /{if(p) exit; p=1} p' CHANGELOG.md)
           NOTES="Topmind Stream v${VER}
 
           ## Install
           - Community plugins (after listing): search **Topmind Stream**
           - BRAT: add \`topmindspace/topmind-obsidian\`
-          - Manual: unzip into \`<Vault>/.obsidian/plugins/topmind-stream/\`
+          - Manual: copy \`main.js\`, \`manifest.json\`, and \`styles.css\` into \`<Vault>/.obsidian/plugins/topmind-stream/\`
 
           ## Requires
           - Obsidian ≥ 1.13.0
-          - Desktop-only (uses Node fs)
+          - Desktop-only
 
-          Kernel engine inlined at build time from topmindspace/topmind.
+          This Release ships only those three files. \`main.js\` is the vendored build from the committed \`lib/\` in this tag.
+
+          ${CHANGELOG_SECTION}
           "
           # Community plugin required assets ONLY at Release root.
           # Obsidian downloads just these three; extra files (zip / SHA256SUMS /
           # versions.json) are flagged as "Release contains extra unsupported
-          # files" and never fetched. Manual zip stays in Actions artifacts /
-          # local release/ — versions.json stays at repo root for BRAT.
+          # files" and never fetched. The local `npm run pack` zip stays out of
+          # this Release. versions.json stays at repo root for BRAT.
           gh release create "$TAG" $DRAFT \
             --title "v${VER}" \
             --notes "$NOTES" \

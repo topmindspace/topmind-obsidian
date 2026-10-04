@@ -1,5 +1,5 @@
 // Node builtins for the community review type-checker.
-// That scan does not load @types/node, so fs/path/os/crypto/process otherwise
+// That scan does not load @types/node, so fs/path/crypto/process otherwise
 // collapse to an error type and trip no-unsafe-*. These are the calls the
 // plugin actually makes. tsconfig "types": [] keeps @types/node from merging
 // a second, conflicting copy over this file.
@@ -43,10 +43,6 @@ declare module "node:path" {
   export function resolve(...parts: string[]): string;
   export function relative(from: string, to: string): string;
   export function isAbsolute(path: string): boolean;
-}
-
-declare module "node:os" {
-  export function homedir(): string;
 }
 
 declare module "node:crypto" {

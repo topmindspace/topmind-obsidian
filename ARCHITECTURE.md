@@ -122,7 +122,7 @@ npm run pack
 npm run pack
 ```
 
-输出：`release/topmind-obsidian-<version>.zip`，用户手动安装或通过 BRAT / Obsidian 社区插件市场。
+本地输出：`release/topmind-obsidian-<version>.zip`（含 `templates/`，仅供手动安装）。GitHub Release 与社区目录只收 `main.js`、`manifest.json`、`styles.css` 三份文件，不要把 zip 传到 Release 上。BRAT 与社区市场走这个 Release。模板已打进 `main.js`，磁盘上的 `templates/` 可有可无。
 
 ---
 
@@ -519,8 +519,9 @@ interface TopmindSettings {
 ```
 
 > **设计决策**：
-> - 所有服务商密钥同时存储于 `ai.manual`，用户通过 `sourcePreference` 切换优先服务商。设置面板按「国际/国内/本地」分组展示。
-> - **从 Desktop 导入**：设置面板支持从 `~/topmind/topmind-desktop/state/app-settings.json` 导入已配置的密钥（加密密钥不可导入）。
+> - 所有服务商密钥同时存储于 `ai.manual`，用户通过 `sourcePreference` 切换优先服务商。
+> - **首次打开即可配置**：没有保存密钥、服务商偏好为空时，设置页仍显示服务商、模型（预设 / 默认 + 自定义模型 ID）和凭证（API Key，或 Ollama 的 Base URL，或 Custom 的 Base URL + API Key）。默认选中一个具体服务商，凭证框因此在屏幕上。写入后重新打开仍在，并作为已配置的服务商。已有的单服务商或 `ai.manual` 升级后，同一组控件带上已保存的服务商、模型和密钥。
+> - **从 Desktop 导入**：用户点击后选择一份导出文件，只读这一份。不扫描用户主目录。加密内容不导入。
 > - 所有设置项均有实际作用，无装饰性开关。
 
 ### 7.2 设置与 Kernel 的接入
@@ -543,19 +544,19 @@ interface TopmindSettings {
 3. 🤖 AI 副驾与写回策略（多服务商密钥 + 偏好选择 + 模型 + 从 Desktop 导入 + 测试连接 + 写回模式 + 自动建议/清单维护）
 4. 🛡️ 安全与归档（备份份数 + 回执份数）
 
-> **设置渲染**：`getSettingDefinitions()` 声明式分组 + 原生 `Setting` 行（Obsidian 1.13+）。**禁止** override 废弃的 `display()`（社区扫描 `settings-tab/no-deprecated-display`）。**禁止**把多行设置画进单个 `Setting.settingEl`——那是 flex 行，CJK 会被压成竖排。
+> **设置渲染**：`getSettingDefinitions()` 声明式分组 + 原生 `Setting` 行（Obsidian 1.13+）。**禁止** override 废弃的 `display()`（社区扫描 `settings-tab/no-deprecated-display`）。**禁止**把多行设置画进单个 `Setting.settingEl`——那是 flex 行，CJK 会被压成竖排。服务商、模型、密钥/URL 各自是定义行上的控件，不往分组列表里追加会被宿主丢掉的兄弟节点。
 
 > **快速进入设置**：侧边栏头部 ⚙ 按钮 / 动态页签工具栏 ⚙ 按钮 / Obsidian Settings → Community plugins → Topmind Stream
 >
 > **模型徽章（已退役）**：侧栏头 / 工具栏**不**展示模型徽章（能力单家 · 对齐 Desktop）。模型唯一切换面 = 对话 tab 紧凑切换器 + 设置页（`kernelService.getActiveModelLabel()` 为遗留 API 面，当前无 chrome 调用方）。
 >
-> **模型选择**：只要配置了任意一个 AI 服务商，模型选择下拉框就会显示。解析顺序为 **官方 list-models > [models.dev](https://models.dev) 社区目录 > 精选默认**（解析/合并/缓存策略与 Desktop 共用 `lib/model-catalog.mjs`）。已配置 OpenAI 兼容 / Google / Ollama / Custom 时刷新打官方接口；Anthropic 无公开 list 端点，刷新打 models.dev。失败不把空列表或默认列表写成 live 缓存。下拉框旁可手填自定义模型 ID。auto 模式（服务商偏好留空）时模型选择仍可用。
+> **模型选择**：首次打开（尚未配置服务商）模型下拉和自定义模型 ID 就在设置页上，不依赖已经配好服务商。解析顺序为 **官方 list-models > [models.dev](https://models.dev) 社区目录 > 精选默认**（解析/合并/缓存策略与 Desktop 共用 `lib/model-catalog.mjs`）。已配置 OpenAI 兼容 / Google / Ollama / Custom 时刷新打官方接口；Anthropic 无公开 list 端点，刷新打 models.dev。失败不把空列表或默认列表写成 live 缓存。下拉框旁可手填自定义模型 ID。
 >
 > **工作区状态卡片**：显示当前工作区是否就绪、大类数量、契约是否有效。提供「诊断契约」和「重建契约」按钮。
 >
 > **测试连接**：点击后用当前配置发送一条测试消息到 AI API，验证连通性。
 >
-> **API Key 安全**：API Key 存储在 Obsidian 插件 `data.json`（明文），与大多数 Obsidian 插件一致。
+> **API Key 安全**：API Key 存储在 Obsidian 插件 `data.json`（明文），与大多数 Obsidian 插件一致。复制按钮只在用户点击时调用 `writeText`，不读剪贴板。`styles.css` 不含 `!important`。`main.js` 由 lockfile 与已提交的 vendored `lib/` 构建，不设置 `TOPMIND_SRC` 时两次构建字节相同，可复现。
 
 ---
 
@@ -574,7 +575,7 @@ npm run typecheck
 # 测试
 npm test
 
-# 构建
+# 构建（lockfile + 已提交的 vendored `lib/`；不要设置 TOPMIND_SRC。生产构建单线程跑 esbuild，两次 `npm run build` 的 `main.js` 字节相同，可复现）
 npm run build
 
 # 打包验证
@@ -593,7 +594,7 @@ npm run pack:verify
 | `build-writepath.test.mjs` | 构建产物 / 写路径结构契约 / 语言切换重注册命令 |
 | `kernel-integration.test.mjs` | 真实 Kernel API + temp workspace |
 | `obsidian-guideline-compliance.test.mjs` | 社区插件规范硬门 |
-| `style-compliance.test.mjs` | token / 无硬编码色 / HOST OVERRIDE / `!important` 边界 |
+| `style-compliance.test.mjs` | token / 无硬编码色 / HOST OVERRIDE / `styles.css` 不含 `!important` |
 | `agent-loop.test.mjs` | 多步 agent 工具环 / auto-continue |
 | `precise-edit.test.mjs` | 精确编辑与写回围栏 |
 | `policy-parity.test.mjs` | Desktop / Obsidian 策略面一致 |

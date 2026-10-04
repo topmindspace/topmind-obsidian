@@ -313,21 +313,11 @@ AI 操作按钮仅在 AI 已配置时显示（未配置点击跳设置）。底�
 │                                                           │
 │  🤖 AI 副驾与写回策略                                    │
 │  ──────────────────────────────────────────────────────  │
-│  AI 状态             ✓ 已配置 — AI 功能可用              │
-│  [从 Desktop 导入]  ← 一键导入已配置密钥                  │
-│  默认服务商          [自动 ▾]                              │
+│  AI 状态             未配置 / 已配置                       │
+│  [从 Desktop 导入]  ← 点击后选择一份导出文件              │
+│  服务商              [OpenAI ▾]  ← 未配置时也有默认选中    │
 │  模型                [服务商默认 ▾] [自定义 ID] [↻]       │
-│                                                           │
-│  ── 国际服务商 ───────────────────────────────────────  │
-│  OpenAI     [BaseURL] [API Key]  ✓ ★  ↗                  │
-│  Anthropic  [BaseURL] [API Key]     ↗                    │
-│  Google…    [BaseURL] [API Key]     ↗                    │
-│  xAI/Grok · Groq · Mistral · OpenRouter  …                │
-│  ── 国内服务商 ───────────────────────────────────────  │
-│  DeepSeek · Moonshot · Zhipu · MiniMax · Qwen · …         │
-│  ── 本地 / 兼容 ──────────────────────────────────────  │
-│  Ollama     [http://127.0.0.1:11434/v1]                   │
-│  Custom     [BaseURL] [API Key]                           │
+│  API Key / URL       [sk-… 或 Base URL]                   │
 │                                                           │
 │  [测试连接]  ← 验证 AI 连通性                            │
 │  写回模式            [删除/归档前问我 ▾]                  │
@@ -344,10 +334,10 @@ AI 操作按钮仅在 AI 已配置时显示（未配置点击跳设置）。底�
 
 ### 5.2 AI 模型选择
 
-- **模型选择始终可见**：只要配置了任意一个 AI 服务商，模型选择下拉框就会显示
+- **模型选择始终可见**：首次打开设置（尚未保存密钥、服务商偏好为空）也会显示模型下拉和自定义模型 ID，不依赖已经配好服务商
 - **双源模型目录**：已配置密钥/端点时刷新走官方 list-models（OpenAI 兼容 `GET {base}/models`、Google `GET /v1beta/models`、Ollama 同形）；Anthropic 与未配置浏览走 [models.dev](https://models.dev) 社区目录；两者皆失败则保留精选默认。刷新强制绕过 TTL，失败不会把空列表或默认列表写成「已同步」。
 - **自定义模型输入**：在下拉框旁提供文本输入框，可直接输入任意模型 ID
-- **auto 模式**：服务商偏好留空时，自动选择第一个已配置的服务商，模型选择仍可用
+- **未配置**：服务商偏好留空时，设置页仍选中一个具体服务商并显示其凭证；调用侧在偏好仍为空时，自动选择第一个已配置的服务商。模型选择不依赖已经配好服务商
 - **模型徽章不进 chrome**（能力单家 · 对齐 Desktop）：侧栏头/工具栏**不展示**模型徽章；唯一切换面 = 对话 tab 紧凑切换器 + 设置页（见 §1.3）
 
 遵循用户概念 ≤5 原则，不暴露技术术语：
@@ -508,7 +498,7 @@ System prompt 跟随 UI locale：
 
 **Chrome 对齐**：`.tm-toolbar` · `.tm-section-header` · `.tm-sidebar-header` · `.tm-feed-chrome` · `.tm-suggestion-refresh-bar` · `.tm-todo-open-file-bar` 共用 `min-height: var(--tm-hit)` 与 `gap: var(--tm-gap-sm)`，多层标题栏不再错位。
 
-**样式加载（社区规范）**：Obsidian 自动加载插件目录 `styles.css`，这是**唯一** CSS 通道。社区插件审查**禁止** `createElement("style")` / `document.head` 注入（Error）。全部 token、组件样式与宿主覆盖写在 `styles.css`；`src/` 内禁止 `!important` 与运行时样式注入（测试 `src/: no runtime style injection` 守护）。
+**样式加载（社区规范）**：Obsidian 自动加载插件目录 `styles.css`，这是**唯一** CSS 通道。社区插件审查**禁止** `createElement("style")` / `document.head` 注入（Error）。全部 token、组件样式与宿主覆盖写在 `styles.css`；`styles.css` 与 `src/` 都不使用 `!important`，宿主覆盖靠选择器优先级（测试 `src/: no runtime style injection` 守护）。
 
 **工作区底色（2026-09-28 冷调渐变）**：动态页与我的情况页使用上冷下暖的极轻渐变——顶部 `color-mix(--color-blue 6%, --background-secondary)`，中部 `color-mix(--color-cyan 4%, --background-primary-alt)`，底部 `--background-primary` 纸白。`background-attachment: fixed` 保证滚动稳定。取色走主题 `--color-blue/--color-cyan`，明暗主题自动适配；`color-mix` 不可用时回退纯 `--background-secondary`。**不用死色值**。
 

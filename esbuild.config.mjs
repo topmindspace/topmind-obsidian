@@ -222,6 +222,12 @@ async function main() {
     await ctx.watch();
     console.log("[topmind-obsidian] watching for changes...");
   } else {
+    // esbuild 0.28's parallel parser races on the `"use strict";` prologue
+    // inside CJS wrappers, so two production builds can differ by that token.
+    // Pin the Go runtime to one thread before the service process starts.
+    // The child inherits process.env; this must stay in the build itself so
+    // `npm run build` (CI included) stays byte-identical with TOPMIND_SRC unset.
+    process.env.GOMAXPROCS = "1";
     await esbuild.build(buildOptions);
     console.log("[topmind-obsidian] build complete → dist/main.js");
   }

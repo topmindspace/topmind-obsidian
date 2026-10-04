@@ -138,12 +138,11 @@ test("styles.css: no hardcoded colors", async (t) => {
   });
 });
 
-test("styles.css: host surface steps, no !important outside HOST OVERRIDE, no multicolumn gap", () => {
-  // The HOST OVERRIDE section is the force-win layer against host/theme CSS
-  // and uses !important on purpose. The design-system body must stay clean.
-  const marker = "HOST OVERRIDE — leaf-scoped force-win layer";
-  const body = css.includes(marker) ? css.slice(0, css.indexOf(marker)) : css;
-  const code = body
+test("styles.css: no !important anywhere, no multicolumn gap", () => {
+  // Community review flags every !important. Specificity (body + leaf
+  // attribute) is the force-win layer. Comments count too.
+  assert.doesNotMatch(css, /!important/);
+  const code = css
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
   assert.doesNotMatch(code, /!important/);

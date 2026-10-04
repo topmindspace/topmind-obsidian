@@ -97,17 +97,16 @@ Topmind Stream reduces mental overhead by focusing on 5 plain-language concepts:
 4. Enable **Topmind Stream**.
 
 #### Option C: Manual Installation
-1. Download the release assets from [Releases](https://github.com/topmindspace/topmind-obsidian/releases): either `main.js` + `manifest.json` + `styles.css` (+ `templates/`), or the zip.
-2. Extract `main.js`, `manifest.json`, `styles.css`, and `templates/` to:
-   `<your-vault>/.obsidian/plugins/topmind-stream/`
+1. Download `main.js`, `manifest.json`, and `styles.css` from [Releases](https://github.com/topmindspace/topmind-obsidian/releases). Those are the only files on the Release.
+2. Put them in `<your-vault>/.obsidian/plugins/topmind-stream/`.
 3. Reload Obsidian, navigate to **Settings -> Community plugins**, and enable **Topmind Stream**.
 
 #### Upgrade
 | Method | How |
 |--------|-----|
 | Community / BRAT | Update from the plugin list / BRAT "Check for updates" |
-| Manual zip | Download the newer `topmind-obsidian-<ver>.zip`, replace files under `plugins/topmind-stream/`, reload Obsidian |
-| From source | `npm run pack` -> install zip as above |
+| Manual | Replace `main.js`, `manifest.json`, and `styles.css` under `plugins/topmind-stream/`, then reload Obsidian |
+| From source | `npm run pack` writes a local zip (it is not uploaded to the GitHub Release). Unzip it into `plugins/topmind-stream/` |
 
 Your vault files (`topmind.yaml`, `10-动态/`, `memory/`) are **not** replaced by the plugin upgrade. Version truth: [`manifest.json`](./manifest.json) .
 
@@ -126,9 +125,10 @@ When first enabled, Topmind Stream checks if your vault already contains a Topmi
 
 Navigate to **Settings -> Topmind Stream -> AI Co-pilot & Save**:
 
-- **Provider board (all visible at once)**: International / Domestic / Local groups — OpenAI, Anthropic, Google Gemini, DeepSeek, Moonshot, Zhipu, MiniMax, xAI, Groq, Mistral, OpenRouter, Qwen, Doubao, SiliconFlow, Baidu, Hunyuan, Ollama, Custom. Each row has Base URL + API Key, configured ✓, and default ★.
-- **Model**: dropdown + custom model ID + refresh. Official `list-models` when keyed, then the [models.dev](https://models.dev) community catalog via Obsidian `requestUrl`, then curated defaults.
-- **Import from Desktop**: One-click import of AI keys from topmind Desktop. Works with encrypted keys — use Desktop's **Settings → AI → Export for Obsidian** to create a plaintext export file, then click **Import from Desktop** in the plugin settings.
+- **Shown before any key is saved**: On a fresh enable (no saved keys, empty provider preference) the settings page still shows an AI provider chooser, a model chooser (preset / default plus a custom model id), and a credential field. A normal provider asks for an API key, Ollama asks for a base URL, and Custom asks for a base URL plus an API key. The choice is what the plugin treats as configured, and it is still there after you reopen settings.
+- **Upgrades keep the saved setup**: A legacy single-provider install or an existing multi-provider key set loads into the same controls with the saved provider, model, and key.
+- **Model**: dropdown + custom model ID + refresh. Official `list-models` when keyed, then the [models.dev](https://models.dev) community catalog via Obsidian `requestUrl`, then curated defaults. The model control is on screen even when no provider has been configured yet.
+- **Import from Desktop**: Click the button and choose an export file. Only that file is read. The plugin does not scan your home directory. Encrypted exports are refused — export a plaintext file from Desktop first.
 - Choose **Writeback Mode**:
   - `confirm` (*Ask before saving* — Recommended): Preview changes in the Suggestion Popover before writing.
   - `auto` (*Auto Save*): Automatically apply AI suggestions with automatic background backups.
@@ -212,12 +212,12 @@ These capabilities are required by the product and scoped as tightly as we can:
 
 | Capability | Why | Scope |
 |---|---|---|
-| **Node `fs` outside the vault API** | Desktop-only plugin: Kernel workspace I/O, backups/receipts, Desktop key import | Every write path resolves through `resolveInsideVault()` (throws on `../` escape); scope = vault workspace root only; `isDesktopOnly: true` |
+| **Node `fs` outside the vault API** | Desktop-only plugin: Kernel workspace I/O, backups/receipts; import reads only the file you choose | Every write path resolves through `resolveInsideVault()` (throws on `../` escape); scope = vault workspace root or the plugin directory; no home-directory scan; `isDesktopOnly: true` |
 | **Clipboard write** | Copy button on chat answers / stream cards | `writeText` only, on explicit user click — no clipboard read, no background access |
 | **Network (AI providers)** | Chat / suggestions / model list | `requestUrl` only (CSP-safe); provider endpoints you configure; no analytics |
 | **Base64 encode/decode** | Kernel payload plumbing | Local runtime only |
 
-`main.js` / `styles.css` release assets ship with GitHub artifact attestations and a reproducible build.
+`styles.css` has no `!important` (leaf layout is held by selector specificity). `main.js` is a lockfile-vendored reproducible build: `npm run build` with `TOPMIND_SRC` unset bundles the committed `lib/` and two consecutive builds are byte-identical. Release assets ship with GitHub artifact attestations.
 
 ---
 

@@ -4,7 +4,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -231,11 +231,62 @@ describe("quality gates stay honest", () => {
     }
   });
 
-  test("Desktop key import is user-initiated (never auto-reads credentials)", () => {
-    const settings = fs.readFileSync(path.join(src, "settings", "settings-tab.ts"), "utf8");
-    assert.match(settings, /tryImportDesktopSettings\(\)/);
-    // Must only be called from a button onClick, not onload/display.
-    const callSites = [...settings.matchAll(/tryImportDesktopSettings\(\)/g)];
-    assert.equal(callSites.length, 2, "definition + one user-initiated call");
+  test("Desktop key import is a user-chosen file (no home-directory scan)", () => {
+    const strip = (text) => text
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    const offenders = [];
+    for (const f of files) {
+      const code = strip(fs.readFileSync(f, "utf8"));
+      if (/os\.homedir|homedir\s*\(|obsidian-key-export|topmind-desktop\/state|~\/topmind/.test(code)) {
+        offenders.push(path.relative(root, f));
+      }
+    }
+    assert.deepEqual(offenders, [], "src must not discover credential files under the home directory");
+    const settings = strip(fs.readFileSync(path.join(src, "settings", "settings-tab.ts"), "utf8"));
+    assert.match(settings, /parseDesktopExport/);
+    assert.match(settings, /readChosenExport/);
+    assert.match(settings, /input\.type = "file"/);
+    assert.match(settings, /importChosenExport/);
+    // The file input is created inside the import button's onClick, not at render.
+    const clickAt = settings.indexOf('.onClick(() => {\n        const input = document.createElement("input")');
+    assert.ok(clickAt > 0, "file chooser must be created from the import button click");
+    assert.doesNotMatch(settings.slice(0, clickAt), /createElement\("input"\)/);
+  });
+
+  test("clipboard writeText is an explicit click and nothing reads the clipboard", () => {
+    const strip = (text) => text
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    const hits = [];
+    for (const f of files) {
+      const code = strip(fs.readFileSync(f, "utf8"));
+      assert.doesNotMatch(code, /clipboard\.read/, path.relative(root, f));
+      let from = 0;
+      while (true) {
+        const at = code.indexOf("clipboard.writeText", from);
+        if (at < 0) break;
+        const behind = code.slice(Math.max(0, at - 600), at);
+        assert.match(
+          behind,
+          /addEventListener\(\s*["']click["']|\.onClick\s*\(/,
+          `${path.relative(root, f)} writeText is not inside a click handler`,
+        );
+        hits.push(path.relative(root, f));
+        from = at + 1;
+      }
+    }
+    assert.ok(hits.length >= 2, "chat and stream copy buttons both write the clipboard");
+  });
+
+  test("resolveInsideVault stays inside the vault root", async () => {
+    const { resolveInsideVault } = await import(
+      pathToFileURL(path.join(src, "bridge", "vault-bridge.ts")).href
+    );
+    const vault = path.resolve("/vault/workspace");
+    assert.equal(resolveInsideVault(vault, "memory/a.md"), path.resolve(vault, "memory/a.md"));
+    assert.equal(resolveInsideVault(vault, "."), vault);
+    assert.throws(() => resolveInsideVault(vault, "../outside.md"), /escapes vault root/);
+    assert.throws(() => resolveInsideVault(vault, "/etc/passwd"), /escapes vault root/);
   });
 });

@@ -92,17 +92,17 @@ topmind Stream 通过 5 个通俗直观的概念降低认知负担：
 3. 输入仓库地址：`topmindspace/topmind-obsidian`
 4. 点击 Add Plugin，启用 **Topmind Stream**。
 
-#### 方式 C：手动解压安装
-1. 从 [GitHub Releases](https://github.com/topmindspace/topmind-obsidian/releases) 下载最新版的 `topmind-obsidian-<ver>.zip`。
-2. 解压并将 `topmind-stream` 文件夹放入你的 Obsidian Vault 目录：`<Vault>/.obsidian/plugins/`。
+#### 方式 C：手动安装
+1. 从 [GitHub Releases](https://github.com/topmindspace/topmind-obsidian/releases) 下载 `main.js`、`manifest.json`、`styles.css`。Release 上只有这三份文件。
+2. 放到 `<Vault>/.obsidian/plugins/topmind-stream/`。
 3. 重新打开 Obsidian，在 **设置 → 社区插件** 中开启 **Topmind Stream**。
 
 #### 升级
 | 方式 | 操作 |
 |------|------|
 | 社区市场 / BRAT | 从插件列表更新 / BRAT「检查更新」 |
-| 手动 zip | 下载新版 `topmind-obsidian-<ver>.zip`，替换 `plugins/topmind-stream/` 下的文件，重新加载 Obsidian |
-| 从源码构建 | `npm run pack` → 按上述方式安装 |
+| 手动 | 用新版的 `main.js`、`manifest.json`、`styles.css` 覆盖 `plugins/topmind-stream/` 下的同名文件，重新加载 Obsidian |
+| 从源码构建 | `npm run pack` 得到本地 zip（不会上传到 GitHub Release），解压进 `plugins/topmind-stream/` |
 
 你的 Vault 文件（`topmind.yaml`、`10-动态/`、`memory/`）**不会**被插件升级替换。版本真源：[`manifest.json`](./manifest.json)。
 
@@ -121,9 +121,10 @@ topmind Stream 通过 5 个通俗直观的概念降低认知负担：
 
 进入 **设置 → Topmind Stream → AI 副驾与写回策略**：
 
-- **服务商看板（全部可见）**：国际 / 国内 / 本地三组同时展示 — OpenAI、Anthropic、Google Gemini、DeepSeek、Moonshot、Zhipu、MiniMax、xAI、Groq、Mistral、OpenRouter、Qwen、Doubao、SiliconFlow、Baidu、Hunyuan、Ollama、Custom。每行可填 Base URL + API Key，已配置显示 ✓，可设默认 ★。
-- **模型**：下拉 + 自定义模型 ID + 刷新。已配置密钥/端点时走官方 list-models，否则用 [models.dev](https://models.dev) 社区目录，再回退精选默认。
-- **从 Desktop 导入**：一键导入 topmind Desktop 的 `app-settings.json` 中已配置的 AI 密钥。
+- **首次打开即可配置**：还没有保存任何密钥、服务商偏好为空时，设置页也会显示 AI 服务商、模型（预设 / 默认 + 自定义模型 ID）和凭证。普通服务商填 API Key，Ollama 填 Base URL，Custom 填 Base URL 加 API Key。选好后写入插件数据，重新打开仍然在，并作为已配置的服务商。
+- **已有配置的升级**：旧的单服务商字段或已经存好的多服务商密钥会迁过来，同一组控件带上已保存的服务商、模型和密钥。
+- **模型**：下拉 + 自定义模型 ID + 刷新。已配置密钥/端点时走官方 list-models，否则用 [models.dev](https://models.dev) 社区目录，再回退精选默认。模型控件不依赖「已经配好一个服务商」才出现。
+- **从 Desktop 导入**：点击后由你选择一份导出文件，只读这一份。插件不扫描用户主目录。
 - 选择**写回模式**：
   - `confirm`（*删除/归档前问我* — 推荐）：分级——内容新建/更新/编辑直接落盘；仅删除/归档需你确认。
   - `auto`（*自动保存*）：自动应用 AI 建议，同时自动创建后台备份。
@@ -207,12 +208,12 @@ Obsidian Vault (纯文件系统 = 唯一内容真源)
 
 | 能力 | 原因 | 范围 |
 |---|---|---|
-| **Node `fs`（非 vault API）** | 桌面端插件：Kernel 工作区 I/O、备份/回执、Desktop 密钥导入 | 所有写路径经 `resolveInsideVault()`（检测 `../` 逃逸即抛错）；范围 = vault 工作区根；`isDesktopOnly: true` |
+| **Node `fs`（非 vault API）** | 桌面端插件：Kernel 工作区 I/O、备份/回执；导入时只读你选中的那一份文件 | 所有写路径经 `resolveInsideVault()`（检测 `../` 逃逸即抛错）；范围 = vault 工作区根或插件目录；不扫描用户主目录；`isDesktopOnly: true` |
 | **剪贴板写入** | 对话回答 / 动态卡片的复制按钮 | 仅 `writeText`，仅在用户显式点击时；不读剪贴板、无后台访问 |
 | **网络（AI 提供商）** | 对话 / 建议 / 模型列表 | 仅 `requestUrl`（CSP 安全）；端点由你自行配置；无分析上报 |
 | **Base64 编解码** | Kernel 载荷管道 | 仅本地运行时 |
 
-`main.js` / `styles.css` 发行资产附带 GitHub artifact attestation 与可复现构建。
+`styles.css` 不含 `!important`（叶面布局靠选择器优先级）。`main.js` 由锁定依赖的 vendored 构建产出：`npm run build` 且不设置 `TOPMIND_SRC`，两次构建字节相同，可复现。发行资产附带 GitHub artifact attestation。
 
 ---
 
