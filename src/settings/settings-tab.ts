@@ -4,23 +4,24 @@
 // Surface order: workspace · stream · **AI (providers / model / keys)** · security.
 //
 // AI section design (visible on a fresh enable, not buried):
-//   - Status card + user-chosen Desktop export import (no home-directory scan)
-//   - Provider chooser (a concrete provider is selected even when nothing
-//     is saved yet) + model picker + that provider's key or URL
-//   - Connection test + writeback policy
+//   - "AI 服务商与模型": native `control` rows (provider, model, custom id,
+//     key or URL). The 1.13 host paints `control` itself. A `render`
+//     callback is not what shows those rows on open — that is why 4.18.1
+//     still left only the writeback heading on screen.
+//   - "AI 副驾与写回策略": status, user-chosen Desktop import, connection
+//     test, and the writeback policy controls.
 //
-// Renders through `getSettingDefinitions()` + stock `Setting` rows so
-// Obsidian's own setting-group / setting-item CSS applies (native card +
-// info|control row look). Credential controls live ON those definition
-// rows. Do NOT append sibling Settings into the group list — the host
-// drops those extras on first open. Do NOT nest Settings inside another
+// Do NOT append sibling Settings into the group list — the host drops
+// those extras on first open. Do NOT nest Settings inside another
 // Setting's `settingEl` — that is a flex row and squeezes CJK labels.
+// Do NOT fetch the model catalog inside getSettingDefinitions().
 
 import {
   PluginSettingTab,
   Setting,
   Notice,
   type App as ObsidianApp,
+  type SettingDefinition,
   type SettingDefinitionItem,
 } from "obsidian";
 import type TopmindPlugin from "../main";
@@ -34,7 +35,6 @@ import {
 } from "../constants";
 import {
   resolveProviderCatalog,
-  applyModelOptions,
   credentialsForProvider,
   clearModelsDevCache,
 } from "../services/models-dev";
@@ -45,7 +45,6 @@ import { StreamWorkbenchView } from "../views/stream-workbench-view";
 import { SidebarDockView } from "../views/sidebar-dock-view";
 import { VIEW_TYPE_STREAM_WORKBENCH, VIEW_TYPE_SIDEBAR_DOCK } from "../constants";
 import fs from "node:fs";
-import { openExternalUrl } from "../utils";
 import { ConfirmModal } from "../views/confirm-modal";
 
 /** Workspace template options (labels resolved via i18n at render time). */
@@ -164,6 +163,16 @@ async function readChosenExport(file: ChosenExportFile): Promise<string> {
   return file.text();
 }
 
+/** Virtual control keys. The host renders `control` rows itself; `render`
+ * callbacks are not what paints the provider, model, and key on open. */
+const AI_CTRL_PROVIDER = "tm.ai.provider";
+const AI_CTRL_MODEL = "tm.ai.model";
+const AI_CTRL_MODEL_CUSTOM = "tm.ai.modelCustom";
+/** Key and URL rows carry the provider they were built for, so a provider
+ * switch cannot copy the previous field into the newly selected provider. */
+const AI_CTRL_SECRET_PREFIX = "tm.ai.secret.";
+const AI_CTRL_BASE_PREFIX = "tm.ai.baseUrl.";
+
 const KEY_PLACEHOLDERS: Record<string, string> = {
   openai: "sk-...",
   anthropic: "sk-ant-...",
@@ -177,6 +186,8 @@ export class TopmindSettingTab extends PluginSettingTab {
   plugin: TopmindPlugin;
   private templateSelect: HTMLSelectElement | null = null;
   private saveTimer: number | null = null;
+  private dynamicModels: Array<{ id: string; label: string }> = [];
+  private dynamicProvider = "";
 
   constructor(app: ObsidianApp, plugin: TopmindPlugin) {
     super(app, plugin);
@@ -259,6 +270,13 @@ export class TopmindSettingTab extends PluginSettingTab {
         ],
       },
       {
+        // Native control rows. The host paints `control` itself. A render
+        // callback is not what shows the provider, model, and key on open.
+        type: "group",
+        heading: t("settings_ai_setup"),
+        items: this.aiSetupDefinitions(),
+      },
+      {
         type: "group",
         heading: t("settings_ai"),
         items: [
@@ -271,26 +289,6 @@ export class TopmindSettingTab extends PluginSettingTab {
             name: t("settings_ai_import"),
             desc: t("settings_ai_import_desc"),
             render: (setting) => this.renderAiImportRow(setting),
-          },
-          {
-            // Real definition rows. A concrete provider is selected even when
-            // sourcePreference is empty, so the key/URL control is on screen
-            // before anything has been saved. Do not gate these on
-            // hasConfiguredProvider, and do not paint extra rows into the
-            // group list — the host drops those on first open.
-            name: t("settings_ai_provider"),
-            desc: t("settings_ai_provider_desc"),
-            render: (setting) => this.renderProviderChooser(setting),
-          },
-          {
-            name: t("settings_ai_model"),
-            desc: t("settings_ai_model_desc"),
-            render: (setting) => this.renderModelPicker(setting),
-          },
-          {
-            name: t("settings_ai_key"),
-            desc: t("settings_security_note"),
-            render: (setting) => this.renderCredentialRow(setting),
           },
           {
             name: t("settings_ai_test"),
@@ -356,11 +354,18 @@ export class TopmindSettingTab extends PluginSettingTab {
   }
 
   override getControlValue(key: string): unknown {
+    if (key === AI_CTRL_PROVIDER) return this.activeProviderId();
+    if (key === AI_CTRL_MODEL || key === AI_CTRL_MODEL_CUSTOM) {
+      return this.plugin.settings.ai.defaultModel || "";
+    }
+    if (key.startsWith(AI_CTRL_SECRET_PREFIX)) return this.secretFor(key.slice(AI_CTRL_SECRET_PREFIX.length));
+    if (key.startsWith(AI_CTRL_BASE_PREFIX)) return this.baseUrlFor(key.slice(AI_CTRL_BASE_PREFIX.length));
     const s = this.plugin.settings as unknown as Record<string, unknown>;
     return s[key];
   }
 
   override setControlValue(key: string, value: unknown): void {
+    if (this.setAiControl(key, value)) return;
     // Guard the AI bag: declarative settings must never replace `ai` wholesale
     // (a reset/re-render writing `ai: {}` is how keys used to vanish).
     if (key === "ai" || key === "aiApiKey" || key === "aiProvider" || key === "aiBaseUrl" || key === "aiModel") {
@@ -386,6 +391,250 @@ export class TopmindSettingTab extends PluginSettingTab {
     if (key === "feedLayout" || key === "timelineOrder") {
       this.refreshViews();
     }
+  }
+
+  /**
+   * Provider, model, and credential rows as native controls.
+   * Options are data. The host paints the dropdown and the text field.
+   * Nothing here writes settings or talks to the network.
+   */
+  private aiSetupDefinitions(): SettingDefinition[] {
+    const s = this.plugin.settings;
+    const pid = this.activeProviderId();
+    const preset = AI_PROVIDER_PRESETS[pid];
+    const providerOptions: Record<string, string> = {};
+    for (const id of Object.keys(AI_PROVIDER_PRESETS)) {
+      const meta = AI_PROVIDER_PRESETS[id];
+      const mark = this.isProviderConfigured(id) ? " ✓" : "";
+      providerOptions[id] = `${meta?.label || id}${mark}`;
+    }
+
+    const currentModel = s.ai.defaultModel || "";
+    const modelOptions: Record<string, string> = {
+      "": t("settings_ai_model_default"),
+    };
+    if (preset?.model) {
+      modelOptions[preset.model] = `${preset.model} (${t("settings_ai_model_default")})`;
+    }
+    const fallback = PROVIDER_DEFAULT_MODELS[pid] || curatedModelsForSafe(pid);
+    for (const m of fallback) {
+      if (m.id && m.id !== preset?.model && !modelOptions[m.id]) modelOptions[m.id] = m.label || m.id;
+    }
+    if (
+      s.ai.defaultModel &&
+      s.ai.defaultModel !== preset?.model &&
+      !fallback.some((m) => m.id === s.ai.defaultModel)
+    ) {
+      modelOptions[s.ai.defaultModel] = s.ai.defaultModel;
+    }
+    if (this.dynamicProvider === pid) {
+      for (const m of this.dynamicModels) {
+        if (m.id && !modelOptions[m.id]) modelOptions[m.id] = m.label || m.id;
+      }
+    }
+
+    const items: SettingDefinition[] = [
+      {
+        name: t("settings_ai_provider"),
+        desc: t("settings_ai_provider_desc"),
+        control: {
+          type: "dropdown",
+          key: AI_CTRL_PROVIDER,
+          defaultValue: pid,
+          options: providerOptions,
+        },
+      },
+      {
+        name: t("settings_ai_model"),
+        desc: `${t("settings_ai_model_desc")} (${preset?.label || pid})`,
+        control: {
+          type: "dropdown",
+          key: AI_CTRL_MODEL,
+          defaultValue: currentModel,
+          options: modelOptions,
+        },
+      },
+      {
+        name: t("settings_ai_model_custom"),
+        desc: t("settings_ai_model_enter_custom"),
+        control: {
+          type: "text",
+          key: AI_CTRL_MODEL_CUSTOM,
+          defaultValue: currentModel,
+          placeholder: t("settings_ai_model_enter_custom") || "custom-model-id",
+        },
+      },
+    ];
+
+    if (pid === "ollama") {
+      items.push(this.baseUrlDefinition(pid, preset?.baseUrl || "", "http://127.0.0.1:11434/v1"));
+    } else if (pid === "custom") {
+      items.push(this.baseUrlDefinition(pid, t("settings_security_note"), "https://api.example.com/v1"));
+      items.push(this.secretDefinition(pid, KEY_PLACEHOLDERS.custom));
+    } else {
+      items.push(this.secretDefinition(pid, KEY_PLACEHOLDERS[pid] || "sk-..."));
+      items.push(this.baseUrlDefinition(pid, t("settings_ai_base_url_optional"), preset?.baseUrl || "https://…"));
+    }
+
+    items.push({
+      name: t("settings_ai_refresh_models"),
+      desc: t("settings_ai_model_desc"),
+      action: () => {
+        void this.refreshModelCatalog();
+      },
+    });
+    return items;
+  }
+
+  private secretDefinition(pid: string, placeholder: string): SettingDefinition {
+    return {
+      name: t("settings_ai_key"),
+      desc: t("settings_security_note"),
+      control: {
+        type: "text",
+        key: `${AI_CTRL_SECRET_PREFIX}${pid}`,
+        defaultValue: this.secretFor(pid),
+        placeholder,
+      },
+    };
+  }
+
+  private baseUrlDefinition(pid: string, desc: string, placeholder: string): SettingDefinition {
+    const name = pid === "ollama" ? t("settings_ai_ollama_url") : t("settings_base_url");
+    return {
+      name,
+      desc,
+      control: {
+        type: "text",
+        key: `${AI_CTRL_BASE_PREFIX}${pid}`,
+        defaultValue: this.baseUrlFor(pid),
+        placeholder,
+      },
+    };
+  }
+
+  /** Virtual AI controls. Returns true when `key` is one of them. */
+  private setAiControl(key: string, value: unknown): boolean {
+    const secretPid = key.startsWith(AI_CTRL_SECRET_PREFIX) ? key.slice(AI_CTRL_SECRET_PREFIX.length) : "";
+    const basePid = key.startsWith(AI_CTRL_BASE_PREFIX) ? key.slice(AI_CTRL_BASE_PREFIX.length) : "";
+    if (
+      key !== AI_CTRL_PROVIDER &&
+      key !== AI_CTRL_MODEL &&
+      key !== AI_CTRL_MODEL_CUSTOM &&
+      !secretPid &&
+      !basePid
+    ) {
+      return false;
+    }
+    const s = this.plugin.settings;
+    const text = typeof value === "string" ? value : value == null ? "" : String(value);
+
+    if (key === AI_CTRL_PROVIDER) {
+      if (!AI_PROVIDER_PRESETS[text] || text === this.activeProviderId()) return true;
+      s.ai.sourcePreference = text;
+      if (isAiProviderType(text)) s.aiProvider = text;
+      clearModelsDevCache();
+      this.dynamicModels = [];
+      this.dynamicProvider = "";
+      void this.save();
+      this.update();
+      return true;
+    }
+
+    if (key === AI_CTRL_MODEL) {
+      if (text === (s.ai.defaultModel || "") && text === (s.aiModel || "")) return true;
+      s.ai.defaultModel = text;
+      s.aiModel = text;
+      void this.save();
+      return true;
+    }
+
+    if (key === AI_CTRL_MODEL_CUSTOM) {
+      const trimmed = text.trim();
+      if (trimmed && trimmed !== s.ai.defaultModel) {
+        s.ai.defaultModel = trimmed;
+        s.aiModel = trimmed;
+        void this.save();
+      }
+      return true;
+    }
+
+    if (secretPid) {
+      if (!AI_PROVIDER_PRESETS[secretPid] || secretPid === "ollama") return true;
+      if (text === this.secretFor(secretPid)) return true;
+      const wasConfigured = hasConfiguredProvider(s.ai);
+      if (secretPid === "custom") {
+        s.ai.manual.customKey = text;
+      } else {
+        const field = PROVIDER_KEY_FIELDS[secretPid];
+        if (!field) return true;
+        (s.ai.manual as unknown as Record<string, string>)[field] = text;
+      }
+      this.rememberProvider(secretPid);
+      void this.save();
+      if (!wasConfigured && hasConfiguredProvider(s.ai) && !s.ai.defaultModel) {
+        clearModelsDevCache();
+        new Notice(t("settings_ai_model_select_hint"));
+      }
+      return true;
+    }
+
+    if (!AI_PROVIDER_PRESETS[basePid]) return true;
+    const raw = text.trim().replace(/\/+$/u, "");
+    const current = this.baseUrlFor(basePid).trim().replace(/\/+$/u, "");
+    if (raw === current) return true;
+    if (basePid === "ollama") {
+      s.ai.manual.ollamaBaseUrl = raw;
+    } else if (basePid === "custom") {
+      s.ai.manual.customBaseUrl = raw;
+    } else {
+      const bag = { ...(s.ai.manual.baseUrlOverrides || {}) };
+      if (raw) bag[basePid] = raw;
+      else delete bag[basePid];
+      s.ai.manual.baseUrlOverrides = bag;
+    }
+    this.rememberProvider(basePid);
+    void this.save();
+    return true;
+  }
+
+  private secretFor(pid: string): string {
+    const manual = this.plugin.settings.ai.manual;
+    if (pid === "custom") return manual.customKey || "";
+    if (pid === "ollama") return "";
+    const field = PROVIDER_KEY_FIELDS[pid];
+    if (!field) return "";
+    return String((manual as unknown as Record<string, string>)[field] || "");
+  }
+
+  private baseUrlFor(pid: string): string {
+    const manual = this.plugin.settings.ai.manual;
+    if (pid === "ollama") return manual.ollamaBaseUrl || "";
+    if (pid === "custom") return manual.customBaseUrl || "";
+    return manual.baseUrlOverrides?.[pid] || "";
+  }
+
+  /** The credential the user just edited belongs to this provider. */
+  private rememberProvider(pid: string): void {
+    if (!AI_PROVIDER_PRESETS[pid]) return;
+    const s = this.plugin.settings;
+    if (s.ai.sourcePreference === pid) return;
+    s.ai.sourcePreference = pid;
+    if (isAiProviderType(pid)) s.aiProvider = pid;
+  }
+
+  /** User-triggered catalog refresh. Not called from getSettingDefinitions(). */
+  private async refreshModelCatalog(): Promise<void> {
+    const pid = this.activeProviderId();
+    const creds = credentialsForProvider(pid, this.plugin.settings.ai.manual);
+    const result = await resolveProviderCatalog(pid, { force: true, ...creds });
+    this.dynamicModels = result.models || [];
+    this.dynamicProvider = pid;
+    const count = String(this.dynamicModels.length);
+    if (result.source === "official") new Notice(t("notice_models_official", { count }));
+    else if (result.source === "community") new Notice(t("notice_models_community", { count }));
+    else new Notice(t("notice_models_fallback"));
+    this.update();
   }
 
   /** Declarative settings hydrate writeback before first paint. */
@@ -643,7 +892,7 @@ export class TopmindSettingTab extends PluginSettingTab {
     );
   }
 
-  // ── AI provider board (imperative rows inside the AI group) ────────────
+  // ── Which provider the native control rows are editing ─────────────────
 
   private isProviderConfigured(pid: string): boolean {
     const s = this.plugin.settings;
@@ -666,212 +915,6 @@ export class TopmindSettingTab extends PluginSettingTab {
     const configured = all.find((id) => this.isProviderConfigured(id));
     if (configured) return configured;
     return all[0] || "openai";
-  }
-
-  /** Persist the provider the user is actually editing. */
-  private rememberActiveProvider(): void {
-    const pid = this.activeProviderId();
-    const s = this.plugin.settings;
-    if (s.ai.sourcePreference === pid) return;
-    s.ai.sourcePreference = pid;
-    if (isAiProviderType(pid)) s.aiProvider = pid;
-  }
-
-  private renderProviderChooser(setting: Setting): void {
-    const s = this.plugin.settings;
-    const active = this.activeProviderId();
-    setting.addDropdown((dd) => {
-      for (const pid of Object.keys(AI_PROVIDER_PRESETS)) {
-        const meta = AI_PROVIDER_PRESETS[pid];
-        const mark = this.isProviderConfigured(pid) ? " ✓" : "";
-        dd.addOption(pid, `${meta.label}${mark}`);
-      }
-      dd.setValue(active).onChange(async (v) => {
-        s.ai.sourcePreference = v;
-        if (isAiProviderType(v)) s.aiProvider = v;
-        await this.save();
-        clearModelsDevCache();
-        this.update();
-      });
-    });
-  }
-
-  private renderModelPicker(setting: Setting): void {
-    const s = this.plugin.settings;
-    const activeProvider = this.activeProviderId();
-    const preset = AI_PROVIDER_PRESETS[activeProvider];
-    const providerLabel = preset?.label || activeProvider;
-    setting.setDesc(`${t("settings_ai_model_desc")} (${providerLabel})`);
-
-    let modelSelectEl: HTMLSelectElement | null = null;
-    setting.addDropdown((dd) => {
-      dd.addOption("", t("settings_ai_model_default"));
-      if (preset?.model) {
-        dd.addOption(preset.model, `${preset.model} (${t("settings_ai_model_default")})`);
-      }
-      const fallback = PROVIDER_DEFAULT_MODELS[activeProvider] || curatedModelsForSafe(activeProvider);
-      for (const m of fallback) {
-        if (m.id !== preset?.model) dd.addOption(m.id, m.label);
-      }
-      if (
-        s.ai.defaultModel &&
-        s.ai.defaultModel !== preset?.model &&
-        !fallback.some((m) => m.id === s.ai.defaultModel)
-      ) {
-        dd.addOption(s.ai.defaultModel, s.ai.defaultModel);
-      }
-      dd.setValue(s.ai.defaultModel || "").onChange(async (v) => {
-        s.ai.defaultModel = v;
-        s.aiModel = v;
-        await this.save();
-      });
-      modelSelectEl = dd.selectEl;
-    });
-
-    setting.addText((text) => {
-      text.setPlaceholder(t("settings_ai_model_enter_custom") || "custom-model-id").setValue(s.ai.defaultModel || "");
-      text.inputEl.addClass("tm-model-custom-input");
-      text.onChange(async (v) => {
-        const trimmed = v.trim();
-        if (trimmed && trimmed !== s.ai.defaultModel) {
-          s.ai.defaultModel = trimmed;
-          s.aiModel = trimmed;
-          await this.save();
-        }
-      });
-    });
-
-    setting.addExtraButton((btn) => {
-      btn.setIcon("refresh-cw").setTooltip(t("settings_ai_refresh_models")).onClick(async () => {
-        if (!modelSelectEl) return;
-        btn.setDisabled(true);
-        btn.setIcon("loader");
-        try {
-          const result = await this.loadDynamicModels(activeProvider, modelSelectEl, true);
-          const count = String(result.models.length);
-          if (result.source === "official") new Notice(t("notice_models_official", { count }));
-          else if (result.source === "community") new Notice(t("notice_models_community", { count }));
-          else new Notice(t("notice_models_fallback"));
-        } finally {
-          btn.setDisabled(false);
-          btn.setIcon("refresh-cw");
-        }
-      });
-    });
-
-    if (modelSelectEl) void this.loadDynamicModels(activeProvider, modelSelectEl, false);
-  }
-
-  /**
-   * Key / URL for the active provider, painted onto this definition's Setting.
-   * Ollama is a base URL. Custom is base URL plus key. Everyone else is an
-   * API key plus an optional base-URL override.
-   */
-  private renderCredentialRow(setting: Setting): void {
-    const pid = this.activeProviderId();
-    const meta = AI_PROVIDER_PRESETS[pid];
-    if (!meta) return;
-    const s = this.plugin.settings;
-
-    if (pid === "ollama") {
-      setting.setName(t("settings_ai_ollama_url")).setDesc(meta.baseUrl);
-      setting.addText((text) => {
-        text.setPlaceholder("http://127.0.0.1:11434/v1").setValue(s.ai.manual.ollamaBaseUrl || "");
-        text.inputEl.type = "url";
-        text.inputEl.addClass("tm-baseurl-input");
-        text.onChange(async (v) => {
-          s.ai.manual.ollamaBaseUrl = v.trim().replace(/\/+$/u, "");
-          this.rememberActiveProvider();
-          await this.save();
-        });
-      });
-      return;
-    }
-
-    if (pid === "custom") {
-      setting.setName(t("settings_base_url")).setDesc(t("settings_security_note"));
-      setting.addText((text) => {
-        text.setPlaceholder("https://api.example.com/v1").setValue(s.ai.manual.customBaseUrl || "");
-        text.inputEl.type = "url";
-        text.inputEl.addClass("tm-baseurl-input");
-        text.onChange(async (v) => {
-          s.ai.manual.customBaseUrl = v.trim().replace(/\/+$/u, "");
-          this.rememberActiveProvider();
-          await this.save();
-        });
-      });
-      const current = s.ai.manual.customKey || "";
-      setting.addText((text) => {
-        text.inputEl.type = "password";
-        text.setPlaceholder(KEY_PLACEHOLDERS.custom).setValue(current);
-        text.onChange(async (v) => {
-          if (v === current) return;
-          if (!v && current) return;
-          s.ai.manual.customKey = v;
-          this.rememberActiveProvider();
-          await this.save();
-        });
-      });
-      setting.addExtraButton((btn) => {
-        btn.setIcon("x").setTooltip(t("settings_ai_clear_key")).onClick(async () => {
-          s.ai.manual.customKey = "";
-          await this.save();
-          this.update();
-        });
-      });
-      return;
-    }
-
-    const keyField = PROVIDER_KEY_FIELDS[pid];
-    setting.setName(t("settings_ai_key")).setDesc(t("settings_security_note"));
-    if (keyField) {
-      const current = String((s.ai.manual as unknown as Record<string, string>)[keyField] || "");
-      setting.addText((text) => {
-        text.inputEl.type = "password";
-        text.setPlaceholder(KEY_PLACEHOLDERS[pid] || "sk-...").setValue(current);
-        text.onChange(async (v) => {
-          if (v === current) return;
-          if (!v && current) return;
-          const wasConfigured = hasConfiguredProvider(s.ai);
-          (s.ai.manual as unknown as Record<string, string>)[keyField] = v;
-          this.rememberActiveProvider();
-          await this.save();
-          if (!wasConfigured && hasConfiguredProvider(s.ai) && !s.ai.defaultModel) {
-            clearModelsDevCache();
-            new Notice(t("settings_ai_model_select_hint"));
-          }
-        });
-      });
-      setting.addExtraButton((btn) => {
-        btn.setIcon("x").setTooltip(t("settings_ai_clear_key")).onClick(async () => {
-          (s.ai.manual as unknown as Record<string, string>)[keyField] = "";
-          await this.save();
-          this.update();
-        });
-      });
-      setting.addExtraButton((btn) => {
-        btn.setIcon("external-link").setTooltip(meta.helpUrl).onClick(() => {
-          openExternalUrl(meta.helpUrl);
-        });
-      });
-    }
-
-    setting.addText((text) => {
-      text
-        .setPlaceholder(meta.baseUrl || "https://…")
-        .setValue(s.ai.manual.baseUrlOverrides?.[pid] || "");
-      text.inputEl.type = "url";
-      text.inputEl.addClass("tm-baseurl-input");
-      text.onChange(async (v) => {
-        const raw = v.trim().replace(/\/+$/u, "");
-        const bag = { ...(s.ai.manual.baseUrlOverrides || {}) };
-        if (raw) bag[pid] = raw;
-        else delete bag[pid];
-        s.ai.manual.baseUrlOverrides = bag;
-        this.rememberActiveProvider();
-        await this.save();
-      });
-    });
   }
 
   // ── Persistence ─────────────────────────────────────────────────────────
@@ -919,22 +962,5 @@ export class TopmindSettingTab extends PluginSettingTab {
         void view.refresh();
       }
     }
-  }
-
-  private async loadDynamicModels(
-    providerId: string,
-    selectEl: HTMLSelectElement,
-    force = false,
-  ): Promise<{ models: { id: string; label: string }[]; source: string; live: boolean }> {
-    const creds = credentialsForProvider(providerId, this.plugin.settings.ai.manual);
-    const result = await resolveProviderCatalog(providerId, { force, ...creds });
-    const currentValue = this.plugin.settings.ai.defaultModel || selectEl.value || "";
-    const preset = AI_PROVIDER_PRESETS[providerId];
-    applyModelOptions(selectEl, result.models, {
-      currentValue,
-      presetModel: preset?.model || null,
-      defaultLabel: t("settings_ai_model_default"),
-    });
-    return result;
   }
 }

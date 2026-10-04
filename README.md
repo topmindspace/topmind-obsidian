@@ -123,7 +123,7 @@ When first enabled, Topmind Stream checks if your vault already contains a Topmi
 
 ### 3. Configure AI Copilot (Optional)
 
-Navigate to **Settings -> Topmind Stream -> AI Co-pilot & Save**:
+Navigate to **Settings -> Topmind Stream -> AI provider and model** (writeback policy is the next group, AI Co-pilot & Save):
 
 - **Shown before any key is saved**: On a fresh enable (no saved keys, empty provider preference) the settings page still shows an AI provider chooser, a model chooser (preset / default plus a custom model id), and a credential field. A normal provider asks for an API key, Ollama asks for a base URL, and Custom asks for a base URL plus an API key. The choice is what the plugin treats as configured, and it is still there after you reopen settings.
 - **Upgrades keep the saved setup**: A legacy single-provider install or an existing multi-provider key set loads into the same controls with the saved provider, model, and key.

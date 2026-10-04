@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.18.2 — AI provider controls and homepage header hover
+
+- **设置里的服务商和模型**：新增分组「AI 服务商与模型」。服务商、模型（预设 / 默认 + 自定义模型 ID）、API Key 或 Base URL 改成 Obsidian 原生 `control` 行。1.13 宿主会画出 `control`（写回模式、步数、开关一直在），`render` 回调画出来的服务商 / 模型 / 密钥不会出现在打开的设置页上，所以 4.18.1 只剩「AI 副驾与写回策略」。首次打开即可配置：没有保存密钥、服务商偏好为空时这些行也在。已有单服务商或 `ai.manual` 的升级仍显示已保存的服务商、模型和密钥。Ollama 只填 URL，Custom 填 URL 加 Key，其余服务商填 Key，并可留空覆盖默认地址。清空文本即清除密钥。
+- **主页 header 按钮 hover**：产品页藏起了重复的原生 `.view-header`，按钮挪到 `.tm-toolbar`。压过宿主 `.clickable-icon:hover` 的透明底比我们自己的 `:hover` 更具体，所以这一排没有悬停底色。悬停现在用 `--nav-item-background-hover`，并且只作用在 topmind 叶面上。顺手去掉了会改到全库按钮 / 图标的空选择器和裸 `button`、`svg` 选择器。
+- `styles.css` 仍不含 `!important`。发布资产仍只有 `main.js`、`manifest.json`、`styles.css`。
+
 ## 4.18.1 — First-run AI setup and community-review fixes
 
 - **首次打开即可配置**：没有保存密钥、服务商偏好为空时，设置页也会显示服务商、模型（预设 / 默认 + 自定义模型 ID）和凭证（API Key，Ollama 为 Base URL，Custom 为 Base URL + API Key）。已有单服务商或 `ai.manual` 的升级仍显示已保存的服务商、模型和密钥。这些控件是设置定义行，不再画进会被宿主丢掉的分组列表。

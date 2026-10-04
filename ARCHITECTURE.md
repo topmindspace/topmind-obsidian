@@ -538,13 +538,14 @@ interface TopmindSettings {
 
 ### 7.3 设置 Tab
 
-使用 Obsidian `PluginSettingTab` + `Setting` 组件构建，分四个区域：
+使用 Obsidian `PluginSettingTab` + `Setting` 组件构建，分五个区域：
 1. 📂 工作区与契约（工作区状态卡片 + 模板选择 + 初始化工作区按钮 + 契约诊断/重建）
 2. 🌊 动态（自动打开、时间轴排序、标签、语言）
-3. 🤖 AI 副驾与写回策略（多服务商密钥 + 偏好选择 + 模型 + 从 Desktop 导入 + 测试连接 + 写回模式 + 自动建议/清单维护）
-4. 🛡️ 安全与归档（备份份数 + 回执份数）
+3. 🤖 AI 服务商与模型（原生下拉 / 文本：服务商、模型、自定义模型 ID、API Key 或 Base URL、刷新模型列表）
+4. 🤖 AI 副驾与写回策略（状态 + 从 Desktop 导入 + 测试连接 + 写回模式 + 自动建议/清单维护）
+5. 🛡️ 安全与归档（备份份数 + 回执份数）
 
-> **设置渲染**：`getSettingDefinitions()` 声明式分组 + 原生 `Setting` 行（Obsidian 1.13+）。**禁止** override 废弃的 `display()`（社区扫描 `settings-tab/no-deprecated-display`）。**禁止**把多行设置画进单个 `Setting.settingEl`——那是 flex 行，CJK 会被压成竖排。服务商、模型、密钥/URL 各自是定义行上的控件，不往分组列表里追加会被宿主丢掉的兄弟节点。
+> **设置渲染**：`getSettingDefinitions()` 声明式分组（Obsidian 1.13+）。**禁止** override 废弃的 `display()`（社区扫描 `settings-tab/no-deprecated-display`）。**禁止**把多行设置画进单个 `Setting.settingEl`——那是 flex 行，CJK 会被压成竖排。服务商、模型、密钥/URL 是原生 `control` 行：宿主自己画 `control`，`render` 回调不是这些行在打开时出现的原因。不往分组列表里追加会被宿主丢掉的兄弟节点。
 
 > **快速进入设置**：侧边栏头部 ⚙ 按钮 / 动态页签工具栏 ⚙ 按钮 / Obsidian Settings → Community plugins → Topmind Stream
 >

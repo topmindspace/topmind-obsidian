@@ -71,11 +71,10 @@ describe("settings + chat wiring (static, shipped source)", () => {
   test("settings refresh calls resolveProviderCatalog with force and source notices", () => {
     const src = fs.readFileSync(path.join(srcDir, "settings", "settings-tab.ts"), "utf8");
     assert.match(src, /resolveProviderCatalog/);
-    assert.match(src, /loadDynamicModels\(activeProvider, modelSelectEl, true\)/);
+    assert.match(src, /resolveProviderCatalog\(pid, \{ force: true/);
     assert.match(src, /notice_models_official/);
     assert.match(src, /notice_models_community/);
     assert.match(src, /notice_models_fallback/);
-    assert.match(src, /applyModelOptions/);
     assert.match(src, /credentialsForProvider/);
     // Custom model id must survive a catalog refresh even when not in the live list.
     assert.match(src, /s\.ai\.defaultModel &&/);
@@ -94,13 +93,14 @@ describe("settings + chat wiring (static, shipped source)", () => {
     const src = fs.readFileSync(path.join(srcDir, "settings", "settings-tab.ts"), "utf8");
     // Model picker is a first-class AI control — always on screen so a user who
     // just pasted a key never has to hunt for it.
-    assert.match(src, /renderModelPicker/);
+    assert.match(src, /AI_CTRL_MODEL|tm\.ai\.model/);
     assert.match(src, /settings_ai_model/);
     // Custom model entry stays available next to the dropdown.
     assert.match(src, /settings_ai_model_enter_custom|custom-model-id/);
-    // Credential row is its own definition render, not a group-list paint.
-    assert.match(src, /renderCredentialRow/);
-    assert.match(src, /renderProviderChooser/);
+    // Provider, model, and key are native controls, not a group-list paint.
+    assert.match(src, /tm\.ai\.provider/);
+    assert.match(src, /tm\.ai\.secret/);
+    assert.match(src, /settings_ai_setup/);
   });
 
   test("AI settings render via getSettingDefinitions, not deprecated display()", () => {
@@ -112,13 +112,14 @@ describe("settings + chat wiring (static, shipped source)", () => {
     assert.match(src, /override getSettingDefinitions\s*\(\s*\)\s*:\s*SettingDefinitionItem\[\]/u);
     assert.doesNotMatch(src, /override display\s*\(\s*\)\s*:\s*void/u);
     assert.doesNotMatch(src, /paintSettings\(setting\.settingEl\)/);
-    assert.match(src, /renderCredentialRow/);
-    assert.match(src, /renderProviderChooser/);
-    assert.match(src, /renderModelPicker/);
+    assert.match(src, /aiSetupDefinitions/);
+    assert.match(src, /tm\.ai\.provider/);
+    assert.match(src, /tm\.ai\.model/);
     assert.doesNotMatch(src, /group\.listEl/);
     assert.doesNotMatch(src, /renderProviderBoard/);
+    assert.doesNotMatch(src, /override display\s*\(\s*\)/u);
     // Credential board must expose key fields for the major providers.
     assert.match(src, /PROVIDER_KEY_FIELDS/);
-    assert.match(src, /settings_ai_key|password/);
+    assert.match(src, /settings_ai_key/);
   });
 });

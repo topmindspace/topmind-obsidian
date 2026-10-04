@@ -1,6 +1,5 @@
-// Settings surface: the host calls getSettingDefinitions() and each item's
-// render(setting, group). Extra nodes painted into the group list are dropped,
-// which is what hid the credential fields on a fresh enable.
+// Settings surface: the host paints `control` rows from getSettingDefinitions().
+// `render` callbacks are not what shows the provider, model, and key.
 
 import { register } from "node:module";
 import { test } from "node:test";
@@ -56,11 +55,54 @@ function makePlugin(settings) {
   };
 }
 
-/** Host render: definition rows stay; siblings stuffed into the group list do not. */
+/** Paint one native control the way the host binds getControlValue / setControlValue. */
+function paintControl(setting, item, tab) {
+  const control = item.control;
+  if (!control || (control.type !== "dropdown" && control.type !== "text")) return;
+  const key = control.key;
+  const current = tab.getControlValue(key);
+  if (control.type === "dropdown") {
+    const select = host.document.createElement("select");
+    select.setAttribute("data-tm-key", key);
+    const options = control.options || {};
+    for (const value of Object.keys(options)) {
+      const option = host.document.createElement("option");
+      option.value = value;
+      option.text = options[value];
+      select.appendChild(option);
+    }
+    select.value = current == null ? "" : String(current);
+    select.addEventListener("change", () => {
+      tab.setControlValue(key, select.value);
+    });
+    setting.controlEl.appendChild(select);
+    return;
+  }
+  const input = host.document.createElement("input");
+  input.type = "text";
+  input.setAttribute("data-tm-key", key);
+  input.value = current == null ? "" : String(current);
+  input.addEventListener("input", () => {
+    tab.setControlValue(key, input.value);
+  });
+  setting.controlEl.appendChild(input);
+}
+
+/** Host render: `control` rows are data; `render` rows still run when present. */
 function renderSettings(tab) {
   const root = host.document.createElement("div");
   const defs = tab.getSettingDefinitions();
   assert.ok(Array.isArray(defs) && defs.length > 0, "getSettingDefinitions returned nothing");
+  const setup = defs.find((def) => def && def.type === "group" && def.heading && /provider and model|服务商与模型/u.test(def.heading));
+  assert.ok(setup, "AI provider and model group missing");
+  const setupKeys = (setup.items || []).map((item) => item.control && item.control.key).filter(Boolean);
+  assert.ok(setupKeys.includes("tm.ai.provider"), "provider control missing from the setup group");
+  assert.ok(setupKeys.includes("tm.ai.model"), "model control missing from the setup group");
+  assert.ok(setupKeys.includes("tm.ai.modelCustom"), "custom model control missing from the setup group");
+  assert.ok(
+    setupKeys.some((key) => key.startsWith("tm.ai.secret.") || key.startsWith("tm.ai.baseUrl.")),
+    "credential control missing from the setup group",
+  );
   for (const def of defs) {
     if (!def || def.type !== "group") continue;
     const listEl = host.document.createElement("div");
@@ -73,6 +115,7 @@ function renderSettings(tab) {
       const setting = new host.Setting(listEl);
       if (item.name) setting.setName(item.name);
       if (typeof item.desc === "string") setting.setDesc(item.desc);
+      paintControl(setting, item, tab);
       if (typeof item.render === "function") item.render(setting, group);
       for (const child of [...listEl.children]) {
         if (child !== setting.settingEl && !before.has(child)) child.remove();
@@ -80,6 +123,13 @@ function renderSettings(tab) {
     }
   }
   return root;
+}
+
+function keyedInput(root, prefix) {
+  return root.querySelectorAll("input").find((input) => {
+    const key = input.getAttribute("data-tm-key") || "";
+    return key.startsWith(prefix);
+  });
 }
 
 function providerSelect(root) {
@@ -109,8 +159,8 @@ function assertAiControls(root, label) {
   const model = modelSelect(root, provider);
   assert.ok(model, `${label}: model chooser missing`);
   assert.ok(model.options.length > 0, `${label}: model chooser has no options`);
-  const secret = root.querySelector('input[type="password"]');
-  const url = root.querySelector('input[type="url"]');
+  const secret = keyedInput(root, "tm.ai.secret.");
+  const url = keyedInput(root, "tm.ai.baseUrl.");
   assert.ok(secret || url, `${label}: key or URL field missing`);
   return { provider, model, secret, url };
 }
@@ -128,7 +178,7 @@ test("fresh settings render provider, model, and key; the key round-trips", asyn
     "fresh model chooser includes the default provider preset",
   );
 
-  const secret = root.querySelector('input[type="password"]');
+  const secret = keyedInput(root, "tm.ai.secret.");
   assert.ok(secret, "fresh install shows an API key field for the default provider");
   secret.value = "sk-fresh-roundtrip";
   secret.dispatchEvent({ type: "input" });

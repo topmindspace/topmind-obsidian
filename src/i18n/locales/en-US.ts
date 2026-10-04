@@ -215,6 +215,8 @@ export const enUS: typeof zhCN = {
   settings_workspace_status_desc: "topmind workspace readiness and contract health in this vault",
   settings_stream: "Stream",
   settings_ai: "AI Co-pilot & Save",
+  settings_ai_setup: "AI provider and model",
+  settings_ai_base_url_optional: "Leave empty to use the provider default",
   settings_security: "Security & Archive",
 
   settings_auto_open: "Auto-open Stream on Startup",

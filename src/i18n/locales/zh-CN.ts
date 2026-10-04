@@ -213,6 +213,8 @@ export const zhCN = {
   settings_workspace_status_desc: "当前 Vault 的 topmind 工作区状态与契约健康度",
   settings_stream: "动态",
   settings_ai: "AI 副驾与写回策略",
+  settings_ai_setup: "AI 服务商与模型",
+  settings_ai_base_url_optional: "留空则使用服务商默认地址",
   settings_security: "安全与归档",
 
   settings_auto_open: "启动时自动打开动态",

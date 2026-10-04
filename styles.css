@@ -220,7 +220,7 @@
 .tm-btn-confirm,
 .tm-btn-open,
 .tm-btn-dismiss,
-.tm-toolbar-btn,,
+.tm-toolbar-btn,
 .tm-sidebar-action-btn,
 .tm-feed-layout-btn {
   box-sizing: border-box;
@@ -255,7 +255,6 @@
 .tm-btn-open svg,
 .tm-btn-dismiss svg,
 .tm-toolbar-btn svg,
- svg,
 .tm-sidebar-action-btn svg {
   width: var(--tm-icon);
   height: var(--tm-icon);
@@ -331,7 +330,6 @@
 .tm-suggestion-actions .tm-btn-dismiss,
 .tm-toolbar-btn {
   border: none;
-  background: transparent;
   background-color: transparent;
   color: var(--tm-ink-soft);
   padding: 0;
@@ -3371,8 +3369,6 @@ button.tm-toolbar-nav-btn,
 button.tm-btn-ghost,
 button.tm-btn-ghost.tm-btn-icon,
 button.tm-btn-ghost.tm-btn-sm,
-button,
-button,
 button.tm-card-action-btn,
 button.tm-btn-mini,
 button.tm-feed-layout-btn,
@@ -3879,7 +3875,7 @@ button.tm-chat-clear-btn:hover {
   padding: 0 10px;
   border: none;
   border-radius: var(--tm-radius-ctl);
-  background: transparent;
+  background-color: transparent;
   color: var(--tm-on-surface-var);
   font-size: var(--tm-type-meta);
   font-weight: 550;
@@ -3997,17 +3993,14 @@ button.tm-chat-clear-btn:hover {
 .tm-sidebar-dock button,
 .tm-memory-browse button,
 .tm-quick-capture-content button,
- button,
 .tm-stream-workbench select,
 .tm-sidebar-dock select,
 .tm-memory-browse select,
 .tm-quick-capture-content select,
- select,
 .tm-stream-workbench summary,
 .tm-sidebar-dock summary,
 .tm-memory-browse summary,
 .tm-quick-capture-content summary,
- summary,
 [role="button"].tm-feed-layout-btn,
 [role="button"].tm-tab-btn {
   cursor: pointer;
@@ -4245,14 +4238,17 @@ button.tm-chat-clear-btn:hover {
   color: var(--tm-on-surface-var);
 }
 
-button.clickable-icon.tm-toolbar-btn:hover,
-button.clickable-icon.tm-toolbar-nav-btn:hover,
-button.clickable-icon.tm-btn-ghost:hover,
-button.clickable-icon.tm-card-action-btn:hover,
-button.clickable-icon.tm-feed-layout-btn:hover,
-button.clickable-icon.tm-tab-btn:hover {
-  background-color: var(--tm-bg-hover);
-  color: var(--tm-ink);
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-toolbar-btn:hover,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-toolbar-nav-btn:hover,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-btn-ghost:hover,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-card-action-btn:hover,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-btn-mini:hover,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-feed-layout-btn:hover,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-tab-btn:hover,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-chat-msg-btn:hover,
+.workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-chat-clear-btn:hover {
+  background-color: var(--nav-item-background-hover, var(--background-modifier-hover));
+  color: var(--nav-item-color-hover, var(--text-normal));
 }
 
 /* Ghost text buttons that stay without clickable-icon. */
@@ -4826,7 +4822,7 @@ body .workspace-leaf-content .tm-card-action-btn,
 body .workspace-leaf-content .tm-btn-mini,
 body .workspace-leaf-content .tm-chat-msg-btn,
 body .workspace-leaf-content .tm-chat-clear-btn {
-  background:transparent;
+  background-color:transparent;
   border:none;
   border-radius:8px;
   box-shadow:none;
@@ -4835,15 +4831,28 @@ body .workspace-leaf-content .tm-chat-clear-btn {
   transition:background-color .12s ease,color .12s ease;
 }
 
-body .workspace-leaf-content .tm-toolbar-nav-btn:hover,
-body .workspace-leaf-content .tm-btn-ghost:hover,
-body .workspace-leaf-content .tm-toolbar-btn:hover,
-body .workspace-leaf-content .tm-card-action-btn:hover,
-body .workspace-leaf-content .tm-btn-mini:hover,
-body .workspace-leaf-content .tm-chat-msg-btn:hover,
-body .workspace-leaf-content .tm-chat-clear-btn:hover {
-  background:var(--background-modifier-hover);
-  color:var(--text-normal);
+/* Native .view-header is hidden on these leaves, so its .clickable-icon:hover
+   never reaches the transplanted toolbar. The quiet shell above is more
+   specific than a short :hover, which left the homepage header row flat.
+   This hover wins that shell. background-color only — a `background`
+   shorthand on the quiet rule resets the hover fill. */
+body .workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-toolbar-nav-btn:hover,
+body .workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-toolbar-btn:hover,
+body .workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-btn-ghost:hover,
+body .workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-card-action-btn:hover,
+body .workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-btn-mini:hover,
+body .workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-feed-layout-btn:hover,
+body .workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-tab-btn:hover,
+body .workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-chat-msg-btn:hover,
+body .workspace-leaf-content[data-type^="topmind-"] button.clickable-icon.tm-chat-clear-btn:hover {
+  background-color:var(--nav-item-background-hover, var(--background-modifier-hover));
+  color:var(--nav-item-color-hover, var(--text-normal));
+}
+
+body .workspace-leaf-content[data-type="topmind-stream-workbench"] button.clickable-icon.tm-toolbar-nav-btn:active,
+body .workspace-leaf-content[data-type="topmind-stream-workbench"] button.clickable-icon.tm-toolbar-btn:active {
+  background-color:var(--nav-item-background-active, var(--background-modifier-hover));
+  color:var(--nav-item-color-hover, var(--text-normal));
 }
 
 body .workspace-leaf-content .tm-btn-secondary,

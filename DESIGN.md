@@ -311,14 +311,18 @@ AI 操作按钮仅在 AI 已配置时显示（未配置点击跳设置）。底�
 │  自动标签解析        [☑]                                  │
 │  界面语言            [自动 ▾]                             │
 │                                                           │
+│  🤖 AI 服务商与模型                                      │
+│  ──────────────────────────────────────────────────────  │
+│  服务商              [OpenAI ▾]  ← 原生下拉，未配置也选中  │
+│  模型                [服务商默认 ▾]                        │
+│  自定义模型          [模型 ID]                             │
+│  API Key / URL       [sk-… 或 Base URL]                   │
+│  [刷新模型列表]                                           │
+│                                                           │
 │  🤖 AI 副驾与写回策略                                    │
 │  ──────────────────────────────────────────────────────  │
 │  AI 状态             未配置 / 已配置                       │
 │  [从 Desktop 导入]  ← 点击后选择一份导出文件              │
-│  服务商              [OpenAI ▾]  ← 未配置时也有默认选中    │
-│  模型                [服务商默认 ▾] [自定义 ID] [↻]       │
-│  API Key / URL       [sk-… 或 Base URL]                   │
-│                                                           │
 │  [测试连接]  ← 验证 AI 连通性                            │
 │  写回模式            [删除/归档前问我 ▾]                  │
 │  自动准备 AI 建议    [☑]                                  │
@@ -559,7 +563,8 @@ System prompt 跟随 UI locale：
 - 渲染路径：`getSettingDefinitions()` 声明式分组（Obsidian 1.13+）—— 让 Obsidian 自带的
   `.setting-group` / `.setting-items` / `.setting-item` 样式生效（卡片 + info|control 两栏横排，
   与 Settings → 编辑器 一致）；**禁止** override 废弃的 `display()`
-- 分组标题 = `SettingDefinitionGroup.heading`
+- 服务商、模型、自定义模型 ID、密钥 / URL 必须是原生 `control`（下拉或文本）。`render` 回调不是这些行在打开时画出来的东西
+- 分组标题 = `SettingDefinitionGroup.heading`。服务商与模型单独一组，写在「AI 副驾与写回策略」上面
 - **禁止**把多行设置塞进同一个 Setting 的 `settingEl`（那是 flex 行，会把中文压成竖排）
 - 字号/颜色一律走 `--tm-*` 与 Obsidian 变量，禁止硬编码 px / hex
 

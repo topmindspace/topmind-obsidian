@@ -287,6 +287,32 @@ test("no bare :hover/:focus selectors (would tint the whole sidebar)", () => {
   assert.deepEqual(offenders, [], `bare :hover/:focus found:\n${offenders.join("\n")}`);
 });
 
+test("homepage toolbar hover beats the transparent clickable-icon shell", () => {
+  // Hiding .view-header drops the host's .clickable-icon:hover. The replacement
+  // shell is more specific than a short :hover, so the homepage row stayed flat.
+  assert.match(
+    css,
+    /body \.workspace-leaf-content\[data-type\^="topmind-"\] button\.clickable-icon\.tm-toolbar-nav-btn:hover/,
+  );
+  assert.match(
+    css,
+    /body \.workspace-leaf-content\[data-type\^="topmind-"\] button\.clickable-icon\.tm-toolbar-btn:hover/,
+  );
+  assert.match(css, /--nav-item-background-hover/);
+  const blocks = [];
+  const ruleRe = /([^{}]+)\{([^{}]*)\}/g;
+  let match;
+  while ((match = ruleRe.exec(css))) blocks.push({ selector: match[1], body: match[2] });
+  const shorthand = blocks
+    .filter((block) =>
+      /\.tm-toolbar-(?:btn|nav-btn)/.test(block.selector) &&
+      !/:hover|:active|:focus/.test(block.selector) &&
+      /(?:^|[;{\s])background\s*:/.test(block.body)
+    )
+    .map((block) => block.selector.trim().replace(/\s+/g, " ").slice(0, 120));
+  assert.deepEqual(shorthand, [], "toolbar quiet rules must not use the background shorthand");
+});
+
 test("no black-bar hover artifacts: no fixed bg, no global clickable-icon", () => {
   // background-attachment:fixed flashes black on hover/scroll in Electron.
   assert.ok(!/background-attachment\s*:\s*fixed/.test(css), "no background-attachment:fixed");
