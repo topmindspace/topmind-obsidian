@@ -8,6 +8,17 @@ import type { StreamEntry, SuggestionCard, SuggestionKind, TodoItem, ImpactLevel
 /** Max capture body length (guards pathological filenames / giant pastes). */
 export const MAX_CAPTURE_LEN = 10_000;
 
+/** Trailing debug stamp that must not ride on a user-facing tooltip. */
+const TRAILING_BUILD_STAMP = /\s*·\s*build\b[\s\S]*$/iu;
+
+/**
+ * Sidebar footer status tooltip.
+ * The label comes from i18n. A build id is not part of the status.
+ */
+export function footerStatusTitle(label: string): string {
+  return String(label ?? "").replace(TRAILING_BUILD_STAMP, "").trim();
+}
+
 /** Narrow `unknown` to a plain object record (rejects arrays and null). */
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

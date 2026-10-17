@@ -26,7 +26,7 @@ import { renderSuggestionCard } from "./suggestion-card";
 import { hasConfiguredProvider } from "../types";
 import { aiTaskManager, type TaskProgress, type AiTask } from "../services/ai-task-manager";
 import { resolveProviderCatalog, applyModelOptions, credentialsForProvider } from "../services/models-dev";
-import { bindImeEnterGuard, compactChatMessages, isImeEnter, resolveChatCompactBudget } from "../utils";
+import { bindImeEnterGuard, compactChatMessages, footerStatusTitle, isImeEnter, resolveChatCompactBudget } from "../utils";
 import { confirmAction } from "./confirm-modal";
 import { openStreamWorkbench, openPluginSettings } from "../services/view-openers";
 import { buildResultFooter } from "#kernel/agent-goal-protocol.mjs";
@@ -1136,7 +1136,7 @@ export class SidebarDockView extends ItemView {
     statusDiv.setAttribute("role", "button");
     statusDiv.setAttribute("tabindex", "0");
     statusDiv.setAttribute("aria-label", aiReady ? t("sidebar_ai_ready") : t("sidebar_ai_off"));
-    statusDiv.setAttribute("title", (aiReady ? t("settings_ai_quick_test") : t("chat_configure_ai")) + " · build 2026-09-28b");
+    statusDiv.setAttribute("title", footerStatusTitle(aiReady ? t("settings_ai_quick_test") : t("chat_configure_ai")));
     const dot = statusDiv.createSpan({ cls: `tm-status-dot ${aiReady ? "tm-dot-ok" : "tm-dot-off"}` });
     dot.setAttribute("aria-hidden", "true");
     statusDiv.addEventListener("click", () => {

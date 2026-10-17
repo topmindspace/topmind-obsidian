@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.18.3 — Sidebar status tip
+
+- 侧栏底部状态点的 tooltip 只保留当前状态（快速测试或去配置），不再附加过期的 `build 2026-09-28b`。
+
 ## 4.18.2 — AI provider controls and homepage header hover
 
 - **设置里的服务商和模型**：新增分组「AI 服务商与模型」。服务商、模型（预设 / 默认 + 自定义模型 ID）、API Key 或 Base URL 改成 Obsidian 原生 `control` 行。1.13 宿主会画出 `control`（写回模式、步数、开关一直在），`render` 回调画出来的服务商 / 模型 / 密钥不会出现在打开的设置页上，所以 4.18.1 只剩「AI 副驾与写回策略」。首次打开即可配置：没有保存密钥、服务商偏好为空时这些行也在。已有单服务商或 `ai.manual` 的升级仍显示已保存的服务商、模型和密钥。Ollama 只填 URL，Custom 填 URL 加 Key，其余服务商填 Key，并可留空覆盖默认地址。清空文本即清除密钥。

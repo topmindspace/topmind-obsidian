@@ -65,6 +65,15 @@ describe("Obsidian labeled-button chrome (shipped)", () => {
     assert.match(sidebar, /statusDiv\.setAttribute\("title"/);
   });
 
+  test("footer status tooltip is the i18n label and drops a build stamp", async () => {
+    const { footerStatusTitle } = await importShipped("utils.ts");
+    assert.equal(footerStatusTitle("Quick Test"), "Quick Test");
+    assert.equal(footerStatusTitle("Configure AI · build 2026-09-28b"), "Configure AI");
+    assert.equal(footerStatusTitle(""), "");
+    assert.match(sidebar, /footerStatusTitle\(aiReady \? t\("settings_ai_quick_test"\) : t\("chat_configure_ai"\)\)/);
+    assert.doesNotMatch(sidebar, /build 20/);
+  });
+
   test("toolbar label keys exist in both locales", () => {
     for (const key of [
       "toolbar_btn_sidebar",
