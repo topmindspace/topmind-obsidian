@@ -8,6 +8,7 @@ interface NodeDirent {
   name: string;
   isDirectory(): boolean;
   isFile(): boolean;
+  isSymbolicLink(): boolean;
 }
 
 interface NodeStats {
@@ -43,6 +44,7 @@ declare module "node:path" {
   export function resolve(...parts: string[]): string;
   export function relative(from: string, to: string): string;
   export function isAbsolute(path: string): boolean;
+  export const sep: string;
 }
 
 declare module "node:crypto" {

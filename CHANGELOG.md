@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.18.4 — Vault walk fence
+
+- 代理的文件遍历不再跟随指向库外的符号链接，也不进入 `.app` / `.framework` 和 `node_modules` 等依赖目录。`list_files`、`list_topics`、`list_topic_files` 和概览计数会跳过这些目录；路径解析到库外（包括中间经过越界链接）时，`stat_path` 和搜索停在库内。排除规则仍是 Obsidian `.obsidian/app.json` 的 `userIgnoreFilters`。
+
 ## 4.18.3 — Sidebar status tip
 
 - 侧栏底部状态点的 tooltip 只保留当前状态（快速测试或去配置），不再附加过期的 `build 2026-09-28b`。

@@ -7,3 +7,12 @@ declare module "#kernel/kernel-api.mjs" {
   const kernelApi: KernelApi;
   export = kernelApi;
 }
+
+declare module "#kernel/vault-walk.mjs" {
+  export function isEscapingSymlinkSync(workspaceRoot: string, absPath: string): boolean;
+  export function resolvesOutsideVaultSync(workspaceRoot: string, absPath: string): boolean;
+  export function isHeavyDirName(name: string): boolean;
+  export function shouldSkipVaultDirName(name: string): boolean;
+  export function loadVaultIgnoreSync(workspaceRoot: string): RegExp[];
+  export function pathMatchesUserIgnore(relPosix: string, filters: RegExp[]): boolean;
+}

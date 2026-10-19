@@ -17,6 +17,14 @@ import {
   rankResults,
 } from "#kernel/web-search-core.mjs";
 import { resolveInsideVault } from "../bridge/vault-bridge.ts";
+import {
+  isEscapingSymlinkSync,
+  isHeavyDirName,
+  loadVaultIgnoreSync,
+  pathMatchesUserIgnore,
+  resolvesOutsideVaultSync,
+  shouldSkipVaultDirName,
+} from "#kernel/vault-walk.mjs";
 
 export type AgentWriteMode = "auto" | "confirm";
 
@@ -95,6 +103,11 @@ function statSafe(p: string): fs.Stats | null {
   }
 }
 
+/** Escaping link, or any existing path whose real target sits outside the vault. */
+function leavesVault(workspaceRoot: string, abs: string): boolean {
+  return isEscapingSymlinkSync(workspaceRoot, abs) || resolvesOutsideVaultSync(workspaceRoot, abs);
+}
+
 function resolveCategoryDirs(kernel: KernelApi, workspaceRoot: string, engineRoot?: string): Array<{
   directory: string;
   role?: string;
@@ -152,32 +165,41 @@ function resolveArchiveDir(kernel: KernelApi, workspaceRoot: string, engineRoot?
   return found || "99-归档";
 }
 
-function walkFiles(root: string, opts: { maxFiles?: number; skipDirs?: Set<string> } = {}): string[] {
+function walkFiles(
+  root: string,
+  opts: { maxFiles?: number; skipDirs?: Set<string>; workspaceRoot?: string } = {},
+): string[] {
   const maxFiles = opts.maxFiles || 4000;
-  const skip =
-    opts.skipDirs || new Set([".topmind", ".git", "node_modules"]);
+  const skip = opts.skipDirs || new Set([".topmind", ".git", "node_modules"]);
+  const workspaceRoot = opts.workspaceRoot || "";
+  if (workspaceRoot && leavesVault(workspaceRoot, root)) return [];
+  if (workspaceRoot && root !== workspaceRoot && isHeavyDirName(path.basename(root))) return [];
+  const ignore = workspaceRoot ? loadVaultIgnoreSync(workspaceRoot) : [];
   const out: string[] = [];
   const stack = [root];
   while (stack.length && out.length < maxFiles) {
     const dir = stack.pop();
     if (dir === undefined) break;
-    let entries: string[];
+    let entries: fs.Dirent[];
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true }).map((e) => e.name);
+      entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
       continue;
     }
-    for (const name of entries) {
+    for (const entry of entries) {
       if (out.length >= maxFiles) break;
-      if (name.startsWith(".") || skip.has(name)) continue;
+      const name = entry.name;
+      if (skip.has(name) || shouldSkipVaultDirName(name)) continue;
       const abs = path.join(dir, name);
-      const st = statSafe(abs);
-      if (!st) continue;
-      if (st.isDirectory()) {
-        stack.push(abs);
-      } else if (st.isFile()) {
-        out.push(abs);
+      if (workspaceRoot) {
+        const rel = path.relative(workspaceRoot, abs).split(path.sep).join("/");
+        if (!rel || rel === ".." || rel.startsWith("../") || path.isAbsolute(rel)) continue;
+        if (pathMatchesUserIgnore(rel, ignore)) continue;
       }
+      // lstat via dirent: never follow a symlink into /Applications or a package.
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) stack.push(abs);
+      else if (entry.isFile()) out.push(abs);
     }
   }
   return out;
@@ -233,7 +255,7 @@ export function searchWorkspace(
   let filesScanned = 0;
   let truncated = false;
 
-  for (const abs of walkFiles(walkRoot, { skipDirs, maxFiles: 3000 })) {
+  for (const abs of walkFiles(walkRoot, { skipDirs, maxFiles: 3000, workspaceRoot: root })) {
     if (results.length >= maxHits) {
       truncated = true;
       break;
@@ -289,9 +311,14 @@ export function workspaceOverview(ctx: AgentToolContext): AgentToolResult {
     const catDir = path.join(root, c.directory);
     let topicCount = 0;
     let looseNotes = 0;
+    if (leavesVault(root, catDir)) {
+      return { ...c, topicCount: 0, looseNotes: 0 };
+    }
     for (const name of listDirSafe(catDir)) {
-      if (name.startsWith(".")) continue;
-      const st = statSafe(path.join(catDir, name));
+      if (shouldSkipVaultDirName(name)) continue;
+      const abs = path.join(catDir, name);
+      if (leavesVault(root, abs)) continue;
+      const st = statSafe(abs);
       if (st?.isDirectory()) topicCount += 1;
       else if (st?.isFile()) looseNotes += 1;
     }
@@ -300,8 +327,14 @@ export function workspaceOverview(ctx: AgentToolContext): AgentToolResult {
 
   const inboxDir = resolveInboxDir(ctx.kernel, root, ctx.engineRoot);
   const deliveryDir = resolveDeliveryDir(ctx.kernel, root, ctx.engineRoot);
-  const inboxItems = listDirSafe(path.join(root, inboxDir)).filter((n) => n.endsWith(".md"));
-  const outputItems = listDirSafe(path.join(root, deliveryDir)).filter((n) => !n.startsWith("."));
+  const inboxAbs = path.join(root, inboxDir);
+  const deliveryAbs = path.join(root, deliveryDir);
+  const inboxItems = leavesVault(root, inboxAbs)
+    ? []
+    : listDirSafe(inboxAbs).filter((n) => n.endsWith(".md"));
+  const outputItems = leavesVault(root, deliveryAbs)
+    ? []
+    : listDirSafe(deliveryAbs).filter((n) => !n.startsWith("."));
 
   let streamPeriod: string | null = null;
   try {
@@ -331,14 +364,15 @@ export function listTopics(ctx: AgentToolContext, category: string): AgentToolRe
   const cat = normalizeRel(category);
   if (!isSafeRel(cat)) return { ok: false, tool: "list_topics", error: "invalid category" };
   const catDir = absOf(ctx.workspaceRoot, cat);
-  if (!statSafe(catDir)?.isDirectory()) {
+  if (leavesVault(ctx.workspaceRoot, catDir) || !statSafe(catDir)?.isDirectory()) {
     return { ok: false, tool: "list_topics", category: cat, error: `category not found: ${cat}`, hint: "Call list_categories or workspace_overview first." };
   }
   const topics: Array<{ id: string; name: string; fileCount: number }> = [];
   const looseNotes: Array<{ name: string; relativePath: string }> = [];
   for (const name of listDirSafe(catDir)) {
-    if (name.startsWith(".")) continue;
+    if (shouldSkipVaultDirName(name)) continue;
     const abs = path.join(catDir, name);
+    if (leavesVault(ctx.workspaceRoot, abs)) continue;
     const st = statSafe(abs);
     if (st?.isDirectory()) {
       const fileCount = listDirSafe(abs).filter((f) => statSafe(path.join(abs, f))?.isFile()).length;
@@ -356,11 +390,13 @@ export function listTopicFiles(ctx: AgentToolContext, topicId: string): AgentToo
     return { ok: false, tool: "list_topic_files", error: "topicId must be 类别/专题名 (category/topic)" };
   }
   const dir = absOf(ctx.workspaceRoot, id);
-  if (!statSafe(dir)?.isDirectory()) {
+  const topicName = id.split("/").pop() || "";
+  if (shouldSkipVaultDirName(topicName) || leavesVault(ctx.workspaceRoot, dir) || !statSafe(dir)?.isDirectory()) {
     return { ok: false, tool: "list_topic_files", topicId: id, error: `topic not found: ${id}` };
   }
   const files = listDirSafe(dir)
-    .filter((n) => !n.startsWith("."))
+    .filter((n) => !shouldSkipVaultDirName(n))
+    .filter((n) => !leavesVault(ctx.workspaceRoot, path.join(dir, n)))
     .map((n) => {
       const abs = path.join(dir, n);
       const st = statSafe(abs);
@@ -378,6 +414,9 @@ export function listTopicFiles(ctx: AgentToolContext, topicId: string): AgentToo
 export function listInbox(ctx: AgentToolContext): AgentToolResult {
   const inboxDir = resolveInboxDir(ctx.kernel, ctx.workspaceRoot, ctx.engineRoot);
   const dir = absOf(ctx.workspaceRoot, inboxDir);
+  if (leavesVault(ctx.workspaceRoot, dir)) {
+    return { ok: true, tool: "list_inbox", inboxDir, items: [], count: 0 };
+  }
   const items = listDirSafe(dir)
     .filter((n) => n.endsWith(".md") && !n.startsWith("."))
     .map((n) => {
@@ -405,6 +444,9 @@ export function listInbox(ctx: AgentToolContext): AgentToolResult {
 export function listOutputs(ctx: AgentToolContext): AgentToolResult {
   const deliveryDir = resolveDeliveryDir(ctx.kernel, ctx.workspaceRoot, ctx.engineRoot);
   const dir = absOf(ctx.workspaceRoot, deliveryDir);
+  if (leavesVault(ctx.workspaceRoot, dir)) {
+    return { ok: true, tool: "list_outputs", deliveryDir, items: [], count: 0 };
+  }
   const items = listDirSafe(dir)
     .filter((n) => !n.startsWith("."))
     .map((n) => {
@@ -643,6 +685,7 @@ export function getTopic(ctx: AgentToolContext, topicId: string): AgentToolResul
     if (!rel) return { ok: false, tool, error: "topicId required" };
     const homeRel = rel.endsWith("topic.md") ? rel : `${rel.replace(/\/+$/, "")}/topic.md`;
     const abs = absOf(ctx.workspaceRoot, homeRel);
+    if (leavesVault(ctx.workspaceRoot, abs)) return { ok: false, tool, error: `outside vault: ${homeRel}` };
     if (!fs.existsSync(abs)) return { ok: false, tool, error: `not found: ${homeRel}` };
     const body = fs.readFileSync(abs, "utf8");
     return {
@@ -663,15 +706,33 @@ export function listFiles(ctx: AgentToolContext, opts: { relativePath?: string; 
   const tool = "list_files";
   try {
     const rel = normalizeRel(opts.relativePath || ".");
-    const abs = absOf(ctx.workspaceRoot, rel);
-    if (!fs.existsSync(abs)) return { ok: false, tool, error: `not found: ${rel}` };
+    const abs = !rel || rel === "." ? ctx.workspaceRoot : absOf(ctx.workspaceRoot, rel);
+    if (leavesVault(ctx.workspaceRoot, abs)) {
+      return { ok: false, tool, error: `outside vault: ${rel}` };
+    }
+    let dirents: fs.Dirent[];
+    try {
+      dirents = fs.readdirSync(abs, { withFileTypes: true });
+    } catch {
+      return { ok: false, tool, error: `not found: ${rel}` };
+    }
     const limit = Math.min(Math.max(opts.limit || 200, 1), 500);
-    const entries = listDirSafe(abs).slice(0, limit);
+    const ignore = loadVaultIgnoreSync(ctx.workspaceRoot);
+    const files: string[] = [];
+    for (const entry of dirents) {
+      if (files.length >= limit) break;
+      if (shouldSkipVaultDirName(entry.name)) continue;
+      const childAbs = path.join(abs, entry.name);
+      const childRel = !rel || rel === "." ? entry.name : `${rel}/${entry.name}`;
+      if (pathMatchesUserIgnore(childRel, ignore)) continue;
+      if (entry.isSymbolicLink() && isEscapingSymlinkSync(ctx.workspaceRoot, childAbs)) continue;
+      files.push(childRel);
+    }
     return {
       ok: true,
       tool,
-      summary: `${rel} (${entries.length})`,
-      files: entries.map((n) => (rel === "." ? n : `${rel}/${n}`)),
+      summary: `${rel} (${files.length})`,
+      files,
     };
   } catch (err) {
     return { ok: false, tool, error: err instanceof Error ? err.message : String(err) };
@@ -685,6 +746,7 @@ export function statPath(ctx: AgentToolContext, relativePath: string): AgentTool
     const rel = normalizeRel(relativePath);
     if (!rel) return { ok: false, tool, error: "relativePath required" };
     const abs = absOf(ctx.workspaceRoot, rel);
+    if (leavesVault(ctx.workspaceRoot, abs)) return { ok: false, tool, error: `outside vault: ${rel}` };
     const st = statSafe(abs);
     if (!st) return { ok: false, tool, error: `not found: ${rel}` };
     return {
@@ -865,7 +927,7 @@ export function globFiles(ctx: AgentToolContext, opts: { pattern?: string; limit
     const esc = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
     const rxSource = "^" + esc.split("**").join("\u0000").split("*").join("[^/]*").split("\u0000").join(".*") + "$";
     const rx = new RegExp(rxSource, "u");
-    const hits = walkFiles(ctx.workspaceRoot, { maxFiles: 4000 })
+    const hits = walkFiles(ctx.workspaceRoot, { maxFiles: 4000, workspaceRoot: ctx.workspaceRoot })
       .filter((rel) => rx.test(rel))
       .slice(0, limit);
     return { ok: true, tool, summary: `${hits.length} match(es)`, files: hits };
