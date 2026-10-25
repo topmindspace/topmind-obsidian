@@ -48,6 +48,9 @@ jobs:
           TOPMIND_SRC: ${{ github.workspace }}/.topmind-src
         run: npm run build
 
+      - name: Verify reproducible community assets
+        run: npm run build:verify
+
       - name: Test
         env:
           TOPMIND_SRC: ${{ github.workspace }}/.topmind-src

@@ -1,670 +1,134 @@
-# topmind Obsidian Plugin — 架构
+# Topmind Obsidian 架构
 
-> **用户文档**：[简体中文](README.zh-CN.md) · [English](README.md) · **边界**：[PRODUCT-BOUNDARIES.md](https://github.com/topmindspace/topmind/blob/main/PRODUCT-BOUNDARIES.md) · **内容约定**：[PROJECT-MODEL.md](https://github.com/topmindspace/topmind/blob/main/PROJECT-MODEL.md)  
-> **版本真源**：本仓根 [`manifest.json`](./manifest.json)  
-> **Desktop-only**：工具与日志面板（⌘⇧L）、ops journal、workspace stats 仅 Desktop；Obsidian 无 ops journal 对等物（非缺口）。恢复仍用 Kernel 高影响 receipts。
+版本以 [`manifest.json`](manifest.json) 为准。产品行为见 [DESIGN.md](DESIGN.md)，内容与写入契约以主仓 [PROJECT-MODEL](https://github.com/topmindspace/topmind/blob/main/PROJECT-MODEL.md) 和 [TOOLS](https://github.com/topmindspace/topmind/blob/main/TOOLS.md) 为准。本文件只描述当前实现与边界，不复写整套产品规约。
 
----
-
-## 1. 核心架构决策
-
-### 1.1 Kernel 引擎复用策略
-
-topmind Kernel 引擎（`lib/*.mjs`）使用 Node.js `fs` / `path` / `crypto` 模块。Obsidian 桌面端运行在 Electron 渲染进程中，**可以通过 ESM imports（`import fs from "node:fs"`）访问 Node.js 模块**，esbuild `platform: 'node'` 自动转换为 CJS `require()` 调用（与 Dataview / Templater 等流行插件做法一致）。
+## 分层与职责
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│  Obsidian Plugin Surface (TypeScript → esbuild → main.js)    │
-│                                                              │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────┐   │
-│  │ Views       │  │ Settings     │  │ Services          │   │
-│  │ (ItemView)  │  │ (SettingTab) │  │ (KernelService)   │   │
-│  └──────┬──────┘  └──────┬───────┘  └───────┬───────────┘   │
-│         │                │                   │               │
-│  ┌──────▼───────────────────────────────────▼───────────┐   │
-│  │  Bridge Layer                                        │   │
-│  │  ├── kernel-loader.ts   (import 引擎 → esbuild 内联)  │   │
-│  │   ├── ai-provider.ts     (requestUrl AI + 重试 + 结构化操作 systemPrompt)  │   │
-│  │  └── vault-bridge.ts    (Vault ↔ fs 路径映射)         │   │
-│  └───────────────────────┬───────────────────────────────┘   │
-│                          │                                   │
-├──────────────────────────┼───────────────────────────────────┤
-│  Kernel (lib/*.mjs)       │  引擎经 esbuild 打包进 main.js    │
-│  contract · workspace     │  使用 require('fs') / require     │
-│  stream · memory          │  ('path') — Electron 环境可用     │
-│  writeback · lifecycle    │                                   │
-│  derived · ingest         │                                   │
-│  + todo / ai-operation    │                                   │
-│  + suggest / activity     │                                   │
-└──────────────────────────┴───────────────────────────────────┘
-                             │
-┌────────────────────────────▼─────────────────────────────────┐
-│  Obsidian Vault (文件系统 = 唯一内容真源)                      │
-│  topmind.yaml + {NN-名称}/ + memory/ + .topmind/             │
-└──────────────────────────────────────────────────────────────┘
+Obsidian Views / Commands / Settings
+  ├─ ChatController ─ chat-agent ─ workspace-agent-tools
+  └─ AiTaskManager ─ KernelService ─ operation-provider
+                       ↓
+        bridge / provider / editor-context
+                       ↓
+   Kernel：内容模型、待办、记忆、建议、写闸、共享工具契约
+                       ↓
+       Vault Markdown + topmind.yaml + .topmind 状态
 ```
 
-### 1.2 与 Desktop 的架构对比
+| 文件 | 责任 |
+|---|---|
+| `src/main.ts` | 插件生命周期、命令、视图注册、启动任务 |
+| `src/services/kernel-service.ts` | 宿主门面、配置与 Provider 缓存、数据刷新和通知 |
+| `src/services/chat-session.ts` | ChatController：发送/重试、暂停/放弃、持久化与运行归属 |
+| `src/services/chat-agent.ts` | 上下文消费、工具循环、目标协议、进度和结果 |
+| `src/services/kernel-workspace-ops.ts` | 与视图无关的文件、动态、精确编辑适配 |
+| `src/services/workspace-agent-tools.ts` | Obsidian 工具执行器；不再维护第二套参数说明 |
+| `src/services/editor-context.ts` | 当前对象、选区、磁盘窗口及打开编辑器冲突检查 |
+| `src/services/ai-task-manager.ts` | 后台操作串行队列、状态与取消控制 |
+| `src/services/operation-provider.ts` | 把取消状态传递给生成调用，并阻止迟到结果被消费 |
+| `src/bridge/ai-provider.ts` | Obsidian `requestUrl` 传输、协议转换、超时和错误脱敏 |
+| `src/bridge/vault-bridge.ts` | Vault 路径与修改事件 |
+| `src/services/skill-resources.ts` | 随包资源发现与按需加载 |
+| `src/views/` | 渲染及交互，不拥有另一套 Agent 或写入规则 |
 
-| 维度 | Desktop | Obsidian Plugin |
-|------|---------|-----------------|
-| 运行环境 | Electron 主进程 | Obsidian Electron 渲染进程 |
-| Kernel 加载 | 动态 import from engine root | esbuild 打包进 `main.js` |
-| AI Provider | Vercel AI SDK v7 (`generateText`) | `requestUrl` 直调（OpenAI-compatible + Anthropic 原生 + Google Gemini）；无 Pi loop |
-| AI 对话 | Agent 流式（React）+ 精确 `edit_file` | KernelService.chat（requestUrl + 多步工具环 + auto-continue + 思考折叠） |
-| UI 框架 | React + Tailwind + Tiptap | Obsidian 原生 (ItemView + DOM) |
-| 文件系统 | Node.js `fs` | ESM import → esbuild CJS require（Electron 渲染进程） |
-| 设置持久化 | `app-settings.json` + safeStorage | Obsidian `loadSettings()` / `saveSettings()` |
-| 事件 | Electron IPC | Obsidian `App` 事件 + vault `modify`/`create` |
-| i18n | i18next | 轻量 `t()` 双语表（同 UTR 模式） |
-| 瞬态重试 | Kernel AI Provider | `fetchWithRetry`（5xx + 网络错误，指数退避） |
+## 与 Desktop 共享什么
 
-### 1.3 设计原则
+共享业务约束和可移植协议，宿主集成各自维护。
 
-1. **Surface 不得平行实现业务语义** — 所有写入经 `writeback-engine`；落点/保护/提升/生命周期走 Kernel。capture 使用 `appendToPeriodBody` 而非手动拼接。
-2. **Obsidian-native 优先** — 不重建编辑器/文件树/命令面板，复用 Obsidian 原生能力。
-3. **桌面端优先** — 使用 Node.js `fs`（ESM import → CJS require；移动端为 Non-goal，与 Desktop 一致）。
-4. **Vault 即工作区** — Obsidian Vault 根目录 = topmind 工作区根目录。
-5. **用户概念 ≤5** — 记一下 · 动态 · 专题 · 我的情况 · 交付。
+| Kernel 真源 | 两端用途 |
+|---|---|
+| `lib/agent-tool-catalog.mjs` | 工具名称、双语说明、JSON schema、读写分类、旧参数兼容；按宿主能力生成工具指南 |
+| `lib/agent-policy.mjs` | 步数范围、默认预算、写回模式说明 |
+| `lib/agent-goal-protocol.mjs` | 目标、完成判定、续跑决策与回执语义 |
+| `lib/agent-tool-policy.mjs` | 通用文件工具的语义记忆围栏，含路径别名和自定义记忆目录 |
+| `lib/workspace-state.mjs` | 有边界的原子 JSON 状态读写；损坏数据报错并保留 |
+| `lib/pending-writes.mjs` | 工作区隔离的待确认队列、冲突检测与确认执行 |
+| 内容、待办、记忆与 writeback 引擎 | 同一内容格式、精确编辑与真实落盘证据 |
 
----
+Desktop 的静态纯模块由主仓 `npm run sync:agent-contract` 生成，校验命令是 `npm run check:agent-contract`。Obsidian 的 `lib/` 是 Kernel 构建快照，只通过 `npm run ensure-engine` 更新，禁止手改副本。
 
-## 2. 构建管线
+有意不同：Obsidian 使用原生 Markdown 编辑器、文件树、链接与设置 API；Desktop 使用 Electron IPC、自己的编辑器及 Pi Agent 运行时。Obsidian 的网络通过 `requestUrl`，不直接复用 Desktop Provider、React、窗口管理或完整 coding session。Obsidian **不发**记账 mini-app，也没有 Desktop ops journal 面板；恢复依赖 Kernel 已有备份和高影响回执。
 
-### 2.1 esbuild 打包
+## 当前对象与上下文
 
-```text
-src/main.ts  ──┐
-                ├── esbuild (bundle + minify) ──→  main.js
-lib/*.mjs   ──┘                                   (单文件输出)
+发送时固定主区域对象，而非把输入框所在侧栏当成当前笔记。快照含路径、选区和行号；本轮切换其他页签不会把“这篇”改指向新文件。重试和继续沿用原对象。
 
-解析策略:
-  • node:fs → require('fs')     (Electron 环境可用)
-  • node:path → require('path')
-  • node:crypto → require('crypto')
-  • node:module → require('module')
-  • ./yaml-bridge.mjs → yaml-bridge-shim (esbuild plugin)
-  • yaml (npm) → 打包进 bundle
-  • import.meta.url → require("url").pathToFileURL(__filename).href
-```
+`buildFocusContext` 只读库内真实文件，提供 bounded 行号窗口、内容 hash、最近的 `topic.md` 与未保存标记；不推断缺失正文。选区最多 4000 字符、磁盘窗口最多 60 行/6000 字符、专题首页最多 1800 字符。未保存缓冲区不持久化到聊天记录。
 
-esbuild 插件 (`kernelShims`) 处理三个兼容性问题：
-1. **yaml-bridge.mjs** — 将动态 `createRequire` 替换为静态 `import`，使 `yaml` npm 包可被 esbuild 打包。
-2. **contract-engine.mjs** — 移除 `createRequire` 动态 require，替换为静态 import。
-3. **import.meta.url** — 在 CJS 输出中替换为 `require("url").pathToFileURL(__filename).href`。
+基础上下文包含近期动态、未完成待办与活跃画像；画像用 Kernel `readProfileActiveBody` 折叠历史。检索、更多文件窗口、技能正文和共享参考由工具按需补充。会话压缩与 Desktop 使用相同预算公式，默认 maxMessages 60、keepRecent 24，随模型上下文窗口缩放。
 
-### 2.2 开发流
+执行写入前重新检查所有打开的 Markdown 编辑器，包含已失焦对象；文件、源/目标路径、目录后代以及待确认操作都会检查。发现磁盘与编辑器缓冲区不同则拒绝并提示先保存。该检查不提供跨进程文件锁；精确编辑保留 `expectedHash` 和匹配阶梯，整文件保存仍需谨慎处理外部并发修改。
 
-```bash
-# 开发：esbuild watch + Obsidian 手动重载插件
-npm run dev
+## Agent 与工具
 
-# 构建：打包 main.js
-npm run build
+生产路径仍是 `generate → 单个 JSON 工具调用 → 工具结果 → generate`。schema 与工具指南已共享，但目前未切成原生 tool-call 消息协议，不能声称等同于 Desktop 的完整 Pi 运行时。
 
-# 类型检查
+工具范围由共享目录生成：闲聊不提供工具，查询回合只提供读取工具，执行层再次拦截越权调用；任务回合开放宿主支持的行动。未知工具、单工具异常返回可见错误结果，不冒充成功。旧 `capture`、待办 `id`、旧 `save_note.relativePath` 等输入经共享 normalizer 兼容。
+
+Obsidian 不宣称支持渲染网页脚本、任意 shell 或全部 Desktop 工具。`list_recent_memories` 目前为活跃画像窗口；`list_recent_stream` 提供动态文件发现。参数和描述只公布实际支持的能力。
+
+默认每段 32 步、设置范围 3–80；目标协议决定是否继续，预算耗尽显示未完成。完成依据真实工具结果与路径回执，不凭一句 `[DONE]` 假定工作已完成。聊天记忆提案进入建议卡片，确认前明确 `wroteFiles:false`；尚未提供全部正式记忆工具的直接授权传递，详见整改记录。
+
+### Provider
+
+支持配置中的 OpenAI / Anthropic / Gemini 兼容传输。首次打开即可配置服务商、模型与 API Key；不依赖已有密钥才显示控件。Desktop 导入由用户点击选择单个文件，不扫描用户主目录。
+
+输出预算按操作匹配 Desktop `OP_LIMITS`；超时按操作区分（chat 480s）。不接受 system role 的兼容模型进行 system 自愈，折进首条 user。超时、错误和取消不是成功结果；凭证回显在错误展示前脱敏。
+
+后台取消在调用前后检查代际和取消标记，阻止迟到的模型结果进入写入/建议合并。`requestUrl` 底层连接和已经开始的同步 Kernel 操作不能保证即时中断；不承诺回滚此前完成的修改。
+
+## 会话、建议与待确认操作
+
+| 文件 | 内容与生命周期 |
+|---|---|
+| `.topmind/chat-session.json` | version 1：消息、目标台账、运行 id/状态与对象；工具完成后保存 checkpoint |
+| `.topmind/chat-history.json` / `chat-goal.json` | 只在新会话状态不存在时导入；保留旧文件，不继续双写 |
+| `.topmind/chat-proposals.json` | 聊天生成的记忆建议；重载恢复，确认/忽略后移除，不因刷新模型建议而丢失 |
+| `.topmind/pending-writes.json` | Kernel 共享操作队列；兼容旧 `{items}` 格式，区分 write/delete/archive |
+
+ChatController 的 run id 隔离关闭视图后的迟到回复。关闭活动会话会保存暂停状态；重新打开恢复原目标与对象，新运行启动后旧结果不能覆盖新会话或复活已清空记录。磁盘损坏或首写失败明确显示错误并阻止继续覆盖，不能把“读取失败”伪装成空历史。
+
+确认操作先执行实际 Kernel 操作，成功后移出队列；失败保留供重试。已有普通文件的 hash 变化会阻止过期确认；确认删除执行删除，不走保存空正文。队列无模块级工作区缓存，跨工作区不会串项。原子替换保护单次文件写入完整性，**不等于多进程事务锁或严格一次执行**；当前 checkpoint 也不是完整原生工具消息日志。
+
+## 内容写入与 Obsidian 通知
+
+耐久内容由 Kernel `writeback-engine` 写入：
+
+- 内容新建/编辑按既有分级策略直接落盘；confirm 模式的删除/归档进入待确认。
+- 通用文件工具不得直接重写 profile、todo 和其他语义记忆；记账数据保留既有例外。
+- 真实路径围栏处理符号链接与尚不存在的父目录；移动先确认目标落盘，再移除源文。
+- 锁定覆盖及高影响生命周期操作使用既有快照/回执；普通更新不额外造一套归档。
+- 成功后触发 Vault 修改通知，让 Obsidian 缓存与视图刷新。
+
+这是优先 Vault API 指南的 intentional divergence：插件是桌面专用（Node fs/path/crypto），内容写入复用 Kernel 的 writeback 和恢复语义；不能再平行维护一套 Vault API 写闸。只读与导航仍尽量用宿主 API。
+
+## 视图、样式与设置
+
+动态在主区域，侧栏承载 Chat / Suggestions / Todos / History，我的情况是记忆浏览。动态卡片在超过 600 字符或 20 行时折叠；显示内容经清理，不暴露内部追加标记。复制由用户点击触发 `navigator.clipboard.writeText`。
+
+设置用原生 `getSettingDefinitions()`；服务商、模型、Key / URL 使用 `control`，不藏在失效的 render 回调里。中英 locale 同键；命令不绑定默认全局快捷键。样式仅由插件根 `styles.css` 加载，源码不注入 style，样式不含 `!important`。
+
+## 构建与验收
+
+```sh
+npm ci
+npm run ensure-engine   # 显式更新 Kernel 快照
 npm run typecheck
-
-# 测试
+npm run lint
+npm run build          # 仅用 vendored lib，可复现
+npm run build:verify   # 不同目录三次构建，对比安装资产 SHA-256
 npm test
-
-# 打包验证
+npm run pack
 npm run pack:verify
 ```
 
-### 2.3 打包发布
+`ensure-engine` 来源为显式 `TOPMIND_SRC`、姊妹 `../topmind` 或 CI `.topmind-src`；没有有效来源时使用已有 vendored 快照。`build` 不隐式从用户其他目录拉取内容。依赖由 lockfile 固定；构建统一模块的 strict-mode 设置，CI 和发布在不同目录重复构建并逐字节核对三个安装资产。`build:verify` 清除 `TOPMIND_SRC`，验证提交内的快照。核心插件资产为 `main.js`、`manifest.json`、`styles.css`，ZIP 同时附带模板目录。技能资源显式运行 `npm run sync:skills` 更新。
 
-```bash
-# 生成 release zip (main.js + manifest.json + styles.css + templates/)
-npm run pack
+行为回归重点：`chat-session`、`agent-capabilities`、`editor-context`、`kernel-service-behavior`、`operation-provider`、`precise-edit`；社区约束由 `obsidian-guideline-compliance` 守护。真实宿主测试和模拟 Provider 测试必须区分，不能用单测替代真实模型效果或全部受支持 Obsidian 版本验收。
 
-# 或从 repo root
-npm run pack
-```
+## Pi 演进决策
 
-本地输出：`release/topmind-obsidian-<version>.zip`（含 `templates/`，仅供手动安装）。GitHub Release 与社区目录只收 `main.js`、`manifest.json`、`styles.css` 三份文件，不要把 zip 传到 Release 上。BRAT 与社区市场走这个 Release。模板已打进 `main.js`，磁盘上的 `templates/` 可有可无。
+[前次审查与 Pi 实验](docs/OBSIDIAN-AUDIT-2026-10-25.md) 是历史证据；[本轮整改](docs/OBSIDIAN-REFACTOR-2026-10-25.md) 记录新的交付。首选继续评估 Pi Agent Core，通过小型传输/事件适配接入现有共享契约与 ChatController；无需整体引入 coding CLI 的文件系统、认证和资源发现。
 
----
-
-## 3. 模块结构
-
-```text
-topmind-obsidian/              # 本仓根（社区插件仓）
-├── manifest.json              # Obsidian 插件清单（版本真源）
-├── versions.json              # version → minAppVersion（社区/BRAT）
-├── package.json               # 依赖与脚本
-├── tsconfig.json              # TypeScript 配置
-├── esbuild.config.mjs         # 构建配置（含 kernel shims）
-├── styles.css                 # 插件样式
-├── .gitignore                 # 忽略 node_modules / dist-types / release
-├── README.md                  # 用户文档（English default，社区插件目录）
-├── README.zh-CN.md            # 简体中文
-├── ARCHITECTURE.md            # 本文件
-├── DESIGN.md                  # UI/UX 设计
-├── src/
-│   ├── main.ts                # 插件入口（extends Plugin）
-│   ├── types.ts               # 共享类型定义 + DEFAULT_SETTINGS
-│   ├── constants.ts           # 常量（视图 ID、命令 ID、AI 预设）
-│   ├── utils.ts               # 共享纯函数（extractTags / parseStreamEntries / 路径过滤）
-│   ├── bridge/
-│   │   ├── kernel-loader.ts   # 加载 Kernel 引擎（esbuild 内联）+ 类型面
-│  │   ├── ai-provider.ts     # requestUrl AI Provider（OpenAI-compat + Anthropic + Google Gemini + 重试 + 结构化 systemPrompt）
-│   │   └── vault-bridge.ts    # Vault 路径 ↔ 工作区路径映射
-│   ├── settings/
-│   │   └── settings-tab.ts    # PluginSettingTab 实现
-│   ├── views/
-│   │   ├── stream-workbench-view.ts  # 动态页签 ItemView（内部 id 可仍叫 workbench）
-│   │   ├── sidebar-dock-view.ts      # 侧边栏小组件
-│   │   └── quick-capture-modal.ts    # 极速捕捉弹窗
-│   ├── services/
-│   │   ├── kernel-service.ts         # Kernel 操作封装（capture / suggest / ops / todo / chat）
-│   │   ├── kernel-workspace-ops.ts   # 纯 Kernel 写路径操作（无 Obsidian 依赖，可测试）
-│   │   ├── ai-task-manager.ts        # AI 任务管理器（多任务队列、进度追踪、中止）
-│   │   └── models-dev.ts             # 双源模型目录（官方 list-models + models.dev + 精选回退）
-│   └── i18n/
-│       ├── index.ts           # t() 函数
-│       └── locales/
-│           ├── zh-CN.ts        # 中文（默认）
-│           └── en-US.ts        # 英文
-├── scripts/
-│   ├── pack-plugin.mjs        # 打包 release zip
-│   └── verify-pack.mjs        # 打包完整性验证
-└── tests/
-    ├── helpers.mjs                  # 测试共享工具（importShipped / 路径）
-    ├── i18n-locale.test.mjs         # i18n 键对齐
-    ├── ui-chrome.test.mjs           # 工具栏 / 侧栏 chrome 契约
-    ├── stream-utils.test.mjs        # stream 解析 / 标签 / 建议映射
-    ├── settings-model.test.mjs      # 设置默认值 / 迁移 / 密钥 opt-in
-    ├── ai-chat-hygiene.test.mjs     # 任务队列 / chat 写闸
-    ├── build-writepath.test.mjs     # 构建产物 / 写路径 / 命令重注册
-    └── kernel-integration.test.mjs   # Kernel 集成测试（真实 Kernel + temp workspace）
-```
-
----
-
-## 4. Bridge 层设计
-
-### 4.1 Kernel Loader (`bridge/kernel-loader.ts`)
-
-打包后 Kernel 引擎已内联在 `main.js` 中。通过 esbuild 的静态 import 获取 Kernel API，附带手动类型面（`KernelApi` interface）确保类型安全。
-
-`KernelApi` 接口手动声明了插件使用的所有 Kernel 函数签名，包括：
-- `loadContract` / `buildDefaultContract` — 契约加载
-- `resolveWorkspaceModel` / `ensureRequiredStructure` — 工作区模型
-- `resolveStreamTarget` / `findStreamCategory` / `appendToPeriodBody` / `reconcilePeriodBody` — 动态流
-- `listStreamPeriods` — 周期本列表
-- `executeWrite` — 写回引擎（唯一写闸）
-- `ensureTodoFile` / `readTodoList` / `toggleTodoItem` — 待办
-- `createKernelContext` — 每工作区安全上下文
-
-`KernelContext` 接口声明了上下文方法面：
-- `generateSuggestions` — 返回 `Suggestion[]`（同步，直接数组，非 `{ suggestions: [] }` 包装）
-- `applySuggestion` — 接受完整 suggestion 对象（含 `targetPath`，用于 inbox/stale/catch_all 归档类建议）
-- `runOperation` — 异步返回 `OperationResult`（含 `ok` / `summary` / `suggestions` / `reason`）
-
-```typescript
-import * as kernelApi from "../../../lib/kernel-api.mjs";
-// @ts-expect-error — .mjs has no .d.ts; esbuild bundles at build time
-
-const api = kernelApi as unknown as KernelApi;
-
-export function getKernel(): KernelApi { return api; }
-
-export function createKernelContext(
-  vaultPath: string,
-  engineRoot: string,
-  aiProvider?: AiProvider | null,
-): KernelContext {
-  return api.createKernelContext({ workspaceRoot: vaultPath, engineRoot, aiProvider });
-}
-```
-
-### 4.2 AI Provider (`bridge/ai-provider.ts`)
-
-不依赖 Vercel AI SDK，用 Obsidian `requestUrl` 调用 AI API（绕过部分平台 CSP 对 `fetch` 的限制）。支持三种协议：
-
-- **OpenAI-compatible**（OpenAI / DeepSeek / Ollama / Custom）：`/chat/completions`
-- **Anthropic 原生**：`/v1/messages`（不同 header `x-api-key`，不同响应格式）
-- **Google Gemini**：`/v1beta/models/{model}:generateContent`
-
-**与 Desktop `ai-provider-adapter.mjs` 对齐**（差异只在传输层）：
-
-| 维度 | 约定 |
-|------|------|
-| Token 预算 | `OP_LIMITS` 逐项一致：topic_summary 16K · period/todo/memory_organize 12K · memory_extract/topic_classify 4K |
-| 推理模型 | 紧正则 `^o[134](-mini\|-preview)?` + reasoner/r1/qwq/thinking；禁止 `startsWith("o1")` 误伤 o10-* |
-| temperature | 提取/整理 0.3 · 分析 0.5 · chat 交给 provider · 推理模型不传 |
-| 超时 | 按 operation：chat 480s · 分析 300s · 抽取 60s（非一刀切 30s） |
-| system 自愈 | 推理模型拒 `system` 时折进首条 user 重试（Desktop 同策略） |
-| 取消 | `shouldAbort` 轮询；已产出的 partial 正文/思考保留，附「已停止」 |
-| 瞬态重试 | `fetchWithRetry`（5xx + 网络错误，指数退避，最多 2 次） |
-
-```typescript
-interface AiProvider {
-  generate(prompt: string, context?: unknown): Promise<string>;
-}
-
-// context 可携带 operation / systemPrompt — 由 Kernel suggest/ops 引擎传入
-// max_tokens 和 temperature 按 operation 类型动态调整（与 Desktop adapter 对齐）
-
-// resolveAiEndpoint(settings) — 解析当前生效的 provider + model + apiKey
-// 供 chat / ops 的 provider 解析；**不**做 chrome 模型徽章（切换面 = 对话 tab + 设置）
-```
-
-### 4.2.1 AI Chat (`KernelService.chat`)
-
-侧边栏「对话」标签通过 `KernelService.chat()` 与 AI 对话。不再是 generate-only：同一 Kernel 匹配器可完成 **read → 精确中段 edit → writeback**。
-
-```text
-用户输入
-→ KernelService.chat(userMessage, history)
-→ 构建上下文：
-1. 近期动态条目（当前周期本最近 20 条）
-2. 当前清单（未完成的前 10 条）
-3. 用户画像（契约 memory 平面 global 文件前 3000 字符；默认 memory/profile.md）
-4. 近期周期反思（契约 memory.dir/periodic/，平铺与 {YYYY}/ 双扫描，最新文件前 2000 字符）
-→ runWorkspaceChatTurn（多步 agent 工具环，默认 32 / 最多 80 步；目标协议 `[PLAN]`/`done-when`/`[DONE]`/`[NEEDS-USER]` + 目标感知 auto-continue×2–4 + 任务台账 + 结构化 goal chip；匹配阶梯 + postEditWindow + soft expectedHash）
-   发现工具  workspace_overview · search · list_categories/topics/topic_files · list_inbox/outputs/todos · list_files · stat_path · glob_files · workspace_health · get_topic · list_skills · load_skill · fetch_url
-   写入工具  save_file · save_note · edit_file · capture · capture_to_inbox · add_todo · toggle_todo · delete_path · rename_path · create_topic · move_to_topic · publish_to_outputs（文本类 .md/.txt/.json/.yaml/.csv/代码/配置；不写二进制；生命周期 graded-confirm）
-   读取工具  read_file  → formatReadWindow（行号 + around/heading）
-   edit_file → applyUniqueSpan + executeWrite（写闸 / confirm|auto；soft hash）
-   记忆写工具不注册（提案 →「建议」tab 确认）
-→ 写成功后 KernelService.notifyFilesChanged → vault.trigger("modify") 即时刷新
-→ splitAssistantVisible：正文 = 结论；思考折进 reasoning
-→ 侧栏 Markdown 渲染正文；`<details>` 折叠思考过程；工具时间线 + 步数进度
-→ 结果说明页脚（终态消息）：Verified / Assumed / Could not 三段 + `N done · M writes`；
-   Verified 只列真实路径回执芯片（可点击打开），不编造检查证据
-```
-
-**对话控制流（Desktop 对齐，`sidebar-dock-view.ts`）**：
-
-| 方法 | 语义 |
-|------|------|
-| `pauseChat()` | `Esc` 或发送按钮（思考中）= **暂停**：abort 调用但 `pause=true`，保留已产出半成品 + 已完成修改 + **目标台账** |
-| `resumeChat(input?, redirect?)` | 暂停后 ▶ / `Enter` = **继续**：携带原目标 / 计划 / 未完成验收项 / 用户补充指示续跑 |
-| `abandonPausedChat()` | 真正放弃：清目标台账 → `stopChat()` |
-| `sendChatMessageText(text)` | 发送与续跑共用入口（`shouldAbort` 轮询 + `priorGoal`） |
-
-暂停 ≠ 停止：暂停可继续/放弃；停止（`stopChat`）为硬取消语义。未完成收尾走「任务未完成」而非假成功（结构化 goal chip 禁止 `[DONE]` 正则假成功）。
-
-**对齐 Desktop 的是行为契约**（唯一片段匹配 / 拒绝 / nearby 诊断 / 写闸 / `en*`→英文指令否则中文 / locked×mode 策略），不是 React UI。confirm 分级：内容编辑直接落盘，仅删/归档待确认；locked 可编辑（任务级首写快照）。
-
-**上下文自动注入**：用户无需手动选择上下文 — 系统自动从工作区数据构建。**会话压缩**（Desktop `ai-session-compact` 对齐）：`compactChatMessages` 预算 `maxMessages 60 / keepRecent 24 / maxChars 240K / maxPerMessage 16K`；最近全文、旧消息截断、保尾。磁盘 `chat-history.json` 同预算。
-
-**Locale 感知**：System prompt 跟随 UI locale（`settings.localeOverride`）— 中文模式使用中文 prompt，英文模式使用英文 prompt。留空时跟随 Obsidian 语言。
-
-### 4.2.2 AI Task Manager (`services/ai-task-manager.ts`)
-
-AI 操作的任务管理器，提供多任务队列、进度追踪和中止能力：
-
-```text
-用户触发 AI 操作（侧边栏底部按钮 / 命令面板）
-  → aiTaskManager.enqueue(operation, label, executor)
-  → 串行队列（一次只执行一个 AI 操作，与 Desktop background lane 对齐）
-  → 进度追踪：pending → running → done/error/aborted
-  → 事件通知：subscribe(listener) → UI 实时更新
-  → 历史记录：最近 20 条任务结果
-  → 中止能力：abortController.abort()
-```
-
-**设计原则**：
-- **串行队列**：一次只执行一个 AI 操作，避免并发 API 调用导致速率限制
-- **进度徽章**：动态页签工具栏 + 侧边栏头部实时显示当前任务
-- **任务历史标签**：侧边栏新增「任务历史」标签页，展示所有 AI 操作状态
-- **去重**：`isOperationActive(operation)` 防止同一操作重复排队
-- **可中止**：用户可随时取消正在运行的 AI 操作
-
-**UI 集成**：
-- 动态页签工具栏：AI 任务进度徽章 + 中止按钮
-- 侧边栏头部：AI 任务进度徽章
-- 侧边栏标签页：**对话** · 建议 · 清单 · **历史**（动态流的家在主区，不进 Dock）
-- 底部操作：AI 操作按钮经任务管理器入队
-
-### 4.3 Pure Ops Layer (`services/kernel-workspace-ops.ts`)
-
-纯 Kernel 写路径操作，无 Obsidian 依赖。`KernelService` UI 层调用这些函数，单元/集成测试用真实 Kernel + temp workspace 直接调用。
-
-导出函数：
-- `captureToWorkspace` — 经 `appendToPeriodBody` + `executeWrite` 写入周期本
-- `listStreamPeriodsForWorkspace` — 异步 `listStreamPeriods` + 映射为 `StreamPeriod[]`
-- `reconcilePeriodNote` — `reconcilePeriodBody(body, opts)` → `.changed` 判定
-- `readTodosFromWorkspace` — 读取待办 + `mapKernelTodoItem` 字段映射
-- `initWorkspaceStructure` — 首次模板种子 + `ensureRequiredStructure`
-- `reseedWorkspaceContract` — 备份坏契约 + 重写默认 v4 契约
-- `seedFullTemplateIfEmpty` — 首次创建全量大类目录
-
-### 4.4 Vault Bridge (`bridge/vault-bridge.ts`)
-
-Obsidian Vault 根 = topmind 工作区根。所有 Kernel 引擎通过 Node.js `fs`（ESM import → CJS require）直接操作文件系统，与 Obsidian 的 `Vault` API 操作同一物理路径。
-
-```typescript
-export function getVaultBasePath(app: App): string {
-  // @ts-expect-error — getBasePath is internal but stable on desktop
-  return app.vault.adapter.getBasePath?.();
-}
-
-export function getEngineRoot(plugin: { manifest: { dir?: string } }): string {
-  return plugin.manifest.dir || "";  // 插件目录 = engineRoot（templates/ 在此）
-}
-```
-
----
-
-## 5. 写回链路
-
-```text
-用户操作 (capture / AI suggest apply / reconcile)
-  → KernelService
-  → kernel.appendToPeriodBody  (Kernel 的 stream-period 引擎)
-  → kernel.executeWrite
-  → writeback-engine:
-      1. evaluateWritePermission (protection + confirm)
-      2. backup (only high-impact: locked overwrite / locked-or-core delete-archive; BACKUP_KEEP from settings)
-      3. atomic write (fs.writeFileSync)
-      4. receipt only when a backup was taken (99-归档/receipts/)
-  → Obsidian Vault 感知文件变更 (metadataCache refresh)
-  → UI 刷新 (vault.on("modify") 事件 + 防抖)
-```
-
-**关键**：writeback-engine 使用 Node.js `fs` 写入文件。Obsidian 的 `Vault.adapter` 会通过 FSEvents / fs.watch 感知变更并自动刷新 `metadataCache` 和文件树。无需手动通知 Obsidian。
-
-**capture 链路**：`KernelService.capture()` → `kernel.resolveStreamTarget()` 定位周期本 → `kernel.appendToPeriodBody()` 构造追加块（处理 day heading、seed 等）→ `kernel.executeWrite()` 经写闸写入。
-
-**URL 抓取链路**（「抓取」按钮 → Inbox 独立文章）：`KernelService.fetchUrlForCapture()` → `capture-fetch.ts` 三路分派——① X/Twitter 状态 → `api.fxtwitter.com` JSON（文章取 `article.title`，动态取首行文案作标题；x.com 是 SPA 壳，**禁止**走 HTML 抓取）；② GitHub 仓库/树 → `api.github.com/.../readme` 解析 README → raw 直取，标题取 README H1；GitHub markdown 文件 → `raw.githubusercontent` + 相对图片改写；③ 其余网页 → `og:`/`twitter:` 元信息 + 启发式 HTML→Markdown。标题统一过 `cleanCaptureTitle`（剥品牌后缀/零宽字符），来源头 `buildFetchMarkdown`。HTTP 一律宿主 `requestUrl`。
-
-**reconcile 链路**：`KernelService.reconcilePeriod()` → `kernel.reconcilePeriodBody()` 合并散落条目、修复 day heading → `kernel.executeWrite()` 经写闸写回。
-
-**设置接入**：`backupKeep`/`receiptKeep` 通过 `process.env.BACKUP_KEEP`/`RECEIPT_KEEP` 接入 Kernel（Kernel 在**每次剪枝时**读 env——bundle 顶层求值会早于 onload 设置而失效）；`writebackMode` 为 Settings 展示缓存（默认 `auto`，与契约默认一致；打开 Settings 时若契约值与缓存不同则 hydrate 后立即落盘），操作真源是 `topmind.yaml` `writeback.mode`（改下拉框会镜像进契约）。
-
-**Todo 字段对齐**：Kernel `todo-engine` 的 TodoItem 字段为 `done`（非 `completed`）。插件 `mapKernelTodoItem` / UI 过滤必须读 `done`，与 Desktop `todo-store` 一致。
-
-### 5.1 与 Obsidian 官方「优先 Vault API」的关系（intentional divergence）
-
-[Obsidian Plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines) 建议插件本地文件操作优先用 Vault API 而非 Adapter/raw FS。本表面**有意**走 Node `fs` + Kernel `writeback-engine`：
-
-| 点 | 选择 | 原因 |
-|----|------|------|
-| 内容写入 | Kernel `executeWrite` → `fs` | 四体共享唯一写闸（保护级别、confirm、高影响备份/回执）；Surface 不得平行实现业务写语义 |
-| Vault 根路径 | `vault.adapter.getBasePath()` | 仅解析工作区根；不用于内容写 |
-| AI HTTP | Obsidian `requestUrl`（非裸 `fetch`） | 绕过渲染进程 CSP；与 Kernel AiProvider 接口一致 |
-| 移动端 | 不支持 | 与 Desktop 一致 Non-goal；`manifest.isDesktopOnly: true` |
-
-**不要**为了满足「Vault API 优先」而把 capture/reconcile/todo 改成 `vault.modify` 绕过 writeback。
-
-### 5.2 官方规约活体守卫（`tests/obsidian-guideline-compliance.test.mjs`）
-
-发布前跑 `npm test`；以下断言锁死，防止回归：
-
-| 规约 | 断言 |
-|------|------|
-| Desktop-only | `manifest.isDesktopOnly === true`（Node `fs`/`path`/`crypto` 前提） |
-| 版本表 | `versions.json` 必须映射 `manifest.version` |
-| 无危险 API | 无 `eval` / `new Function` / `localStorage` / `innerHTML` / `document.write` |
-| CSP 安全 HTTP | 外网只走 `requestUrl`；禁 `fetch`/`XMLHttpRequest` |
-| 设置持久化 | `loadData` / `saveData` |
-| Markdown 渲染 | `MarkdownRenderer.render` 必传 `Component` |
-| 生命周期 | 每个 `onLayoutReady` 有 `_unloaded` 守卫；插件自有 DOM 用 `registerDomEvent` |
-| 热键 | 不设默认 `hotkeys:`（用户在 Settings → Hotkeys 绑定） |
-| 无远程代码 | 无 script 注入 / 远程 `.js|.wasm` |
-| 密钥导入 | 桌面密钥仅用户点击导入，不静默读取 |
-| ItemView 契约 | 三视图齐备 `getViewType/getDisplayText/getIcon/onOpen/onClose` |
-| 渲染错误边界 | 主视图 render/refresh 有 try/catch，不产生 unhandled rejection |
-
----
-
-## 6. 视图架构
-
-### 6.1 Stream Workbench View (动态页签)
-
-```typescript
-export class StreamWorkbenchView extends ItemView {
-  getViewType(): string { return VIEW_TYPE_STREAM_WORKBENCH; }
-  getDisplayText(): string { return t('stream_workbench_title'); }
-  getIcon(): string { return 'waves'; }
-
-  async onOpen() {
-    // 渲染：工具栏 + 极速输入框 + 周期本条目卡片流 + AI 涌现建议区
-    // 工具栏：标题 + 任务徽章 + [侧边栏] [设置] [新笔记] [画像]（icon-only；不复读 AI 状态/模型）
-    // 监听 vault.on("modify" / "create") 事件 → 450ms 防抖刷新（仅刷新动态流）
-    // AI 建议刷新仅在初始加载和用户显式操作时触发（避免频繁 AI 调用）
-  }
-
-  async refreshStream() {
-    // kernelService.getStreamContext() → 读取周期本
-    // kernelService.readPeriodNote() → 解析条目 → 渲染卡片
-    // 卡片仅超长（>600 字或 >20 非空行）才折叠；点击展开，✏ 打开编辑器
-  }
-
-  async refreshSuggestions() {
-    // kernelService.generateSuggestions() → 渲染涌现建议卡片
-    // 建议类型覆盖 Kernel suggest-engine + ai-operation-engine 全部 kind
-    // 每种 kind 有专属图标和左边条颜色
-  }
-}
-```
-
-### 6.2 Sidebar Dock View (AI 副驾面板 — 标签式)
-
-```typescript
-export class SidebarDockView extends ItemView {
-  // 标签式布局：对话 · 建议 · 清单 · 历史（动态在主区）
-  // 头部：AI 状态点 + 任务徽章 + [动态] [⚙ 设置]（无模型徽章）
-  // 底部 3 格：[⚡记一下] [⇩整理] [✨AI 菜单（待办/分类/记忆）]
-  // 
-  // 对话标签（agent 脊）：
-  //   - 上下文感知：自动注入近期动态 + 当前清单 + 用户画像
-  //   - Markdown 渲染 AI 回复
-  //   - 对话历史（持久化到 .topmind/chat-history.json，重载不丢失）
-  //   - kernelService.chat(userMessage, history) → AI Provider
-  //   - 暂停/继续（Desktop 对齐）：pauseChat（Esc / 发送按钮）· resumeChat（续跑
-  //     原目标 + 未完成验收项）· abandonPausedChat（真放弃，清目标台账）·
-  //     sendChatMessageText（发送/续跑共用入口）；暂停保留已完成修改 + 目标台账
-  //
-  // 事件驱动刷新：vault.on("modify" / "create") → 450ms 防抖
-  // 路径过滤：isStreamOrTodoPath() 只关注动态目录 + memory/todo.md
-}
-```
-
-### 6.3 记一下弹窗 (`QuickCaptureModal`)
-
-```typescript
-export class QuickCaptureModal extends Modal {
-  onOpen() {
-    // 单行/多行输入 → Enter 提交 → Kernel capture → 关闭
-    // 目标选择：本周动态（默认）/ Inbox
-  }
-}
-```
-
----
-
-## 7. 设置体系
-
-### 7.1 设置结构
-
-```typescript
-interface TopmindSettings {
-  // Stream 动态页签
-  autoOpenWorkbench: boolean;
-  timelineOrder: 'desc' | 'asc';
-  autoTag: boolean;
-  localeOverride: string;  // "" = auto, "zh-CN" / "en-US" = override
-
-  // AI 副驾（多服务商模型 — 与 Desktop 对齐）
-  ai: {
-    sourcePreference: string;  // "" = auto, provider id = preferred
-    defaultModel: string;       // "" = provider default
-    manual: {                   // 全量密钥同时存储
-      openAiKey: string;
-      anthropicKey: string;
-      googleKey: string;
-      deepseekKey: string;
-      moonshotKey: string;
-      zhipuKey: string;
-      minimaxKey: string;
-      xaiKey: string;
-      customBaseUrl: string;
-      customKey: string;
-      ollamaBaseUrl: string;
-    };
-  };
-  writebackMode: 'auto' | 'confirm';
-  autoSuggest: boolean;
-  autoMaintainTodos: boolean;
-
-  // 安全与归档
-  backupKeep: number;       // → process.env.BACKUP_KEEP 接入 Kernel
-  receiptKeep: number;      // → process.env.RECEIPT_KEEP 接入 Kernel 回执轮转
-}
-```
-
-> **设计决策**：
-> - 所有服务商密钥同时存储于 `ai.manual`，用户通过 `sourcePreference` 切换优先服务商。
-> - **首次打开即可配置**：没有保存密钥、服务商偏好为空时，设置页仍显示服务商、模型（预设 / 默认 + 自定义模型 ID）和凭证（API Key，或 Ollama 的 Base URL，或 Custom 的 Base URL + API Key）。默认选中一个具体服务商，凭证框因此在屏幕上。写入后重新打开仍在，并作为已配置的服务商。已有的单服务商或 `ai.manual` 升级后，同一组控件带上已保存的服务商、模型和密钥。
-> - **从 Desktop 导入**：用户点击后选择一份导出文件，只读这一份。不扫描用户主目录。加密内容不导入。
-> - 所有设置项均有实际作用，无装饰性开关。
-
-### 7.2 设置与 Kernel 的接入
-
-| 设置项 | 接入方式 |
-|--------|----------|
-| `writebackMode` | Settings 展示缓存（默认 `auto` 对齐契约）；写入 `topmind.yaml` `writeback.mode`；`executeWrite` 不读 plugin data |
-| `backupKeep` | `process.env.BACKUP_KEEP` 写入，Kernel `writeback-engine` 调用时读取（非模块加载时） |
-| `receiptKeep` | `process.env.RECEIPT_KEEP` 写入，Kernel 回执轮转调用时读取 |
-| `ai.manual` (多服务商密钥) + `ai.sourcePreference` | `createAiProvider()` 解析 → `createKernelContext()` 注入 |
-| `autoSuggest` | 控制 `generateSuggestions()` 是否调用 |
-| `autoMaintainTodos` | 控制 `todo_maintain` 操作是否自动运行 |
-| `localeOverride` | `setLocale()` 覆盖 Obsidian 自动检测的语言 |
-
-### 7.3 设置 Tab
-
-使用 Obsidian `PluginSettingTab` + `Setting` 组件构建，分五个区域：
-1. 📂 工作区与契约（工作区状态卡片 + 模板选择 + 初始化工作区按钮 + 契约诊断/重建）
-2. 🌊 动态（自动打开、时间轴排序、标签、语言）
-3. 🤖 AI 服务商与模型（原生下拉 / 文本：服务商、模型、自定义模型 ID、API Key 或 Base URL、刷新模型列表）
-4. 🤖 AI 副驾与写回策略（状态 + 从 Desktop 导入 + 测试连接 + 写回模式 + 自动建议/清单维护）
-5. 🛡️ 安全与归档（备份份数 + 回执份数）
-
-> **设置渲染**：`getSettingDefinitions()` 声明式分组（Obsidian 1.13+）。**禁止** override 废弃的 `display()`（社区扫描 `settings-tab/no-deprecated-display`）。**禁止**把多行设置画进单个 `Setting.settingEl`——那是 flex 行，CJK 会被压成竖排。服务商、模型、密钥/URL 是原生 `control` 行：宿主自己画 `control`，`render` 回调不是这些行在打开时出现的原因。不往分组列表里追加会被宿主丢掉的兄弟节点。
-
-> **快速进入设置**：侧边栏头部 ⚙ 按钮 / 动态页签工具栏 ⚙ 按钮 / Obsidian Settings → Community plugins → Topmind Stream
->
-> **模型徽章（已退役）**：侧栏头 / 工具栏**不**展示模型徽章（能力单家 · 对齐 Desktop）。模型唯一切换面 = 对话 tab 紧凑切换器 + 设置页（`kernelService.getActiveModelLabel()` 为遗留 API 面，当前无 chrome 调用方）。
->
-> **模型选择**：首次打开（尚未配置服务商）模型下拉和自定义模型 ID 就在设置页上，不依赖已经配好服务商。解析顺序为 **官方 list-models > [models.dev](https://models.dev) 社区目录 > 精选默认**（解析/合并/缓存策略与 Desktop 共用 `lib/model-catalog.mjs`）。已配置 OpenAI 兼容 / Google / Ollama / Custom 时刷新打官方接口；Anthropic 无公开 list 端点，刷新打 models.dev。失败不把空列表或默认列表写成 live 缓存。下拉框旁可手填自定义模型 ID。
->
-> **工作区状态卡片**：显示当前工作区是否就绪、大类数量、契约是否有效。提供「诊断契约」和「重建契约」按钮。
->
-> **测试连接**：点击后用当前配置发送一条测试消息到 AI API，验证连通性。
->
-> **API Key 安全**：API Key 存储在 Obsidian 插件 `data.json`（明文），与大多数 Obsidian 插件一致。复制按钮只在用户点击时调用 `writeText`，不读剪贴板。`styles.css` 不含 `!important`。`main.js` 由 lockfile 与已提交的 vendored `lib/` 构建，不设置 `TOPMIND_SRC` 时两次构建字节相同，可复现。
-
----
-
-## 8. i18n
-
-轻量 `t()` 双语表，同 UTR 模式（`zh-CN` 默认，`en-US` 回退）。locale 从 Obsidian 公开 API `getLanguage()`（≥1.8.7）解析，失败时回退 `navigator.language`；`app.locale` 是未公开属性，在现行宿主上取不到值。`settings.localeOverride` 可覆盖，切换后 `refreshViews()` 立即重渲染已打开视图。测试覆盖键集对齐验证。
-
----
-
-## 9. 质量门
-
-```bash
-# 类型检查
-npm run typecheck
-
-# 测试
-npm test
-
-# 构建（lockfile + 已提交的 vendored `lib/`；不要设置 TOPMIND_SRC。生产构建单线程跑 esbuild，两次 `npm run build` 的 `main.js` 字节相同，可复现）
-npm run build
-
-# 打包验证
-npm run pack:verify
-```
-
-测试入口：`npm test`（`node --test tests/*.test.mjs`，按关注点拆分）：
-
-| 套件 | 覆盖 |
-|------|------|
-| `i18n-locale.test.mjs` | zh-CN / en-US 键对齐与文案 |
-| `ui-chrome.test.mjs` | 工具栏/侧栏 icon-only、标签隐藏、容器查询 |
-| `stream-utils.test.mjs` | stream 解析 / 标签 / sanitize / frontmatter / todo / suggestion / capture / 路径过滤 |
-| `settings-model.test.mjs` | DEFAULT_SETTINGS / 迁移 / 多服务商 / 密钥备份 opt-in |
-| `ai-chat-hygiene.test.mjs` | 任务队列串行、chat 写闸、思考折叠、会话压缩 |
-| `build-writepath.test.mjs` | 构建产物 / 写路径结构契约 / 语言切换重注册命令 |
-| `kernel-integration.test.mjs` | 真实 Kernel API + temp workspace |
-| `obsidian-guideline-compliance.test.mjs` | 社区插件规范硬门 |
-| `style-compliance.test.mjs` | token / 无硬编码色 / HOST OVERRIDE / `styles.css` 不含 `!important` |
-| `agent-loop.test.mjs` | 多步 agent 工具环 / auto-continue |
-| `precise-edit.test.mjs` | 精确编辑与写回围栏 |
-| `policy-parity.test.mjs` | Desktop / Obsidian 策略面一致 |
-| `model-catalog.test.mjs` | 模型目录与 provider 预设 |
-
-共享工具：`tests/helpers.mjs`（`importShipped` / 路径）。
-
-本仓独立验证（无 monorepo root）：
-
-```bash
-npm run typecheck && npm test && npm run build && npm run pack:verify
-```
-
----
-
-## 10. 版本管理
-
-版本真源：本仓根 `manifest.json` 的 `version` 字段。
-
-独立版本策略：
-- 版本号以本仓 `manifest.json` 为准；`package.json` / `versions.json` 必须与其一致
-- 仅插件有改动时 bump patch / minor
-- **Tag 命名（社区插件硬规则）**：`X.Y.Z`，与 `manifest.version` 完全一致，**禁止 `v` 前缀**（社区目录按 tag 解析 release 资产；见 `release.yml`）
-
----
-
-## 11. 边界约束
-
-- ❌ 不把用户数据放进本仓 `src/` 源码目录
-- ❌ 不让插件 runtime state 成为内容真源
-- ❌ 不平行实现 Kernel 业务语义（落点/保护/提升/生命周期/流追加）
-- ❌ 不重建 Obsidian 已有的能力（编辑器、文件树、命令面板）
-- ❌ 不默认创建 outline/setting/style 锚点
-- ✅ 所有写入经 `writeback-engine`（唯一写闸）
-- ✅ capture 使用 Kernel `appendToPeriodBody`（不手动拼接 bullet）
-- ✅ 遵循三平面约定（`topmind.yaml` + `memory/` + `.topmind/`）
-- ✅ 用户概念 ≤5；UI 白话
-- ✅ 代码用 Topic* / Category*，不用 Project*
-- ✅ AI Provider 支持 OpenAI-compatible + Anthropic 原生 + Google Gemini + 瞬态重试
-- ✅ 多步 agent 工具环（发现/读/写/待办）+ auto-continue + 步数进度（Desktop maxAgentSteps 对齐）
-
----
-
-## 12. 未来适配策略
-
-### 12.1 Kernel API 变更适配
-
-插件通过 `kernel-loader.ts` 的 `KernelApi` 类型面与 Kernel 交互。当 Kernel API 变更时：
-
-| 变更类型 | 适配方式 |
-|----------|----------|
-| 函数签名扩展（新增可选参数） | 无需修改 — 扩展参数是可选的 |
-| 函数签名变更（参数重命名/移除） | 更新 `KernelApi` 类型面 + 调用处 |
-| 新增 Kernel 能力 | 在 `KernelApi` 添加类型 + `KernelService` 封装 |
-| 函数移除 | 移除 `KernelApi` 条目 + `KernelService` 调用 |
-
-### 12.2 底层规约更新影响
-
-| 规约变更 | 对插件的影响 |
-|----------|-------------|
-| `topmind.yaml` schema 升级 | Kernel `contract-engine` 处理迁移；插件无感 |
-| 三平面目录模型调整 | Kernel `workspace-model` 处理；插件通过 `resolveWorkspaceModel` 自动适配 |
-| 新增模板 | `esbuild.config.mjs` 的 `copyTemplates()` 自动复制；无需代码改动 |
-| writeback 行为变更 | 插件通过 `executeWrite` 调用；mode 来自 `topmind.yaml`，Settings 仅镜像 |
-| AI Provider 接口扩展 | `ai-provider.ts` 的 `generate()` 适配；`context` 参数透传 |
-
-### 12.3 适配原则
-
-1. **类型面优先** — `KernelApi` interface 是插件与 Kernel 之间的契约。变更先反映在类型面，编译时即可发现不兼容。
-2. **不平行实现** — 任何新的 Kernel 能力都应通过 `KernelService` 封装后暴露给 View，不在 View 中直接调 Kernel。
-3. **esbuild shim 随引擎演进** — 若 Kernel 新增 `createRequire` 模式，需在 `esbuild.config.mjs` 添加对应 shim。
-4. **测试覆盖** — 每次适配变更需更新 `tests/` 中的对应测试（优先 `kernel-integration.test.mjs` / `build-writepath.test.mjs`）。
+迁移完成条件是实际宿主的原生工具消息、服务商协议、取消、长会话压缩、暂停恢复和写闸等价测试全部通过。安装一个框架包不构成这些能力已完成。当前保留兼容循环，但不再给它复制第二份工具 schema 和权限规则。

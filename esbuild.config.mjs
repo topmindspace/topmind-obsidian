@@ -14,12 +14,13 @@
 //    directory acts as engineRoot for template-loader.mjs.
 
 import esbuild from "esbuild";
-import { existsSync, mkdirSync, copyFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, copyFileSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isWatch = process.argv.includes("--watch");
+const tsconfig = JSON.parse(readFileSync(path.join(__dirname, "tsconfig.json"), "utf8"));
 
 const root = path.resolve(__dirname);
 const outDir = path.join(root, "dist");
@@ -187,6 +188,12 @@ const buildOptions = {
   sourcemap: isWatch ? "inline" : false,
   minify: !isWatch,
   treeShaking: true,
+  // Give every module loaded through a shim the same strict-mode setting.
+  // Explicit config avoids loader-dependent directive emission in ESM wrappers.
+  tsconfigRaw: {
+    ...tsconfig,
+    compilerOptions: { ...tsconfig.compilerOptions, alwaysStrict: true },
+  },
   banner: {
     js: "// topmind Obsidian Plugin — bundled by esbuild\n// DO NOT EDIT — edit src/ and run npm run build",
   },
@@ -222,12 +229,6 @@ async function main() {
     await ctx.watch();
     console.log("[topmind-obsidian] watching for changes...");
   } else {
-    // esbuild 0.28's parallel parser races on the `"use strict";` prologue
-    // inside CJS wrappers, so two production builds can differ by that token.
-    // Pin the Go runtime to one thread before the service process starts.
-    // The child inherits process.env; this must stay in the build itself so
-    // `npm run build` (CI included) stays byte-identical with TOPMIND_SRC unset.
-    process.env.GOMAXPROCS = "1";
     await esbuild.build(buildOptions);
     console.log("[topmind-obsidian] build complete → dist/main.js");
   }

@@ -32,7 +32,7 @@ function largeBody() {
 
 describe("Obsidian chat locale + tool guide", () => {
   test("resolveChatPromptLocale matches Desktop en* → en else zh", async () => {
-    const ops = await importShipped("services/kernel-workspace-ops.ts");
+    const ops = { ...await importShipped("services/kernel-workspace-ops.ts"), ...await importShipped("services/chat-agent.ts") };
     assert.equal(ops.resolveChatPromptLocale("en-US"), "en");
     assert.equal(ops.resolveChatPromptLocale("en"), "en");
     assert.equal(ops.resolveChatPromptLocale("zh-CN"), "zh");
@@ -43,7 +43,7 @@ describe("Obsidian chat locale + tool guide", () => {
 
   test("resolveChatDurableLocale uses Kernel 3-tier not UI chrome", async () => {
     const kernel = await import(pathToFileURL(path.join(repoRoot, "lib", "kernel-api.mjs")).href);
-    const ops = await importShipped("services/kernel-workspace-ops.ts");
+    const ops = { ...await importShipped("services/kernel-workspace-ops.ts"), ...await importShipped("services/chat-agent.ts") };
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tm-obs-chat-loc-"));
     try {
       fs.writeFileSync(
@@ -67,7 +67,7 @@ describe("Obsidian chat locale + tool guide", () => {
   });
 
   test("buildObsidianChatToolGuide has unique-span + writeback + protection; no Model A", async () => {
-    const ops = await importShipped("services/kernel-workspace-ops.ts");
+    const ops = { ...await importShipped("services/kernel-workspace-ops.ts"), ...await importShipped("services/chat-agent.ts") };
     for (const loc of ["zh-CN", "en-US"]) {
       for (const mode of ["auto", "confirm"]) {
         const guide = ops.buildObsidianChatToolGuide(loc, mode);
@@ -95,17 +95,15 @@ describe("Obsidian precise edit / read window", () => {
   let runWorkspaceChatTurn;
   let listPendingWrites;
   let acceptPendingWrite;
-  let clearPendingWrites;
 
   before(async () => {
     kernel = await import(pathToFileURL(path.join(repoRoot, "lib", "kernel-api.mjs")).href);
-    const ops = await importShipped("services/kernel-workspace-ops.ts");
+    const ops = { ...await importShipped("services/kernel-workspace-ops.ts"), ...await importShipped("services/chat-agent.ts") };
     readWorkspaceWindow = ops.readWorkspaceWindow;
     preciseEditWorkspace = ops.preciseEditWorkspace;
     runWorkspaceChatTurn = ops.runWorkspaceChatTurn;
     listPendingWrites = ops.listPendingWrites;
     acceptPendingWrite = ops.acceptPendingWrite;
-    clearPendingWrites = (await importShipped("services/pending-writes.ts")).clearPendingWrites;
   });
 
   before(() => {
@@ -273,7 +271,6 @@ describe("Obsidian precise edit / read window", () => {
       assert.match(fs.readFileSync(path.join(confirmWs, rel), "utf8"), /new span here/);
       assert.doesNotMatch(fs.readFileSync(path.join(confirmWs, rel), "utf8"), /old span here/);
     } finally {
-      clearPendingWrites();
       fs.rmSync(confirmWs, { recursive: true, force: true });
     }
   });

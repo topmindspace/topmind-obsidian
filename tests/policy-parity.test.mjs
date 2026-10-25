@@ -27,7 +27,7 @@ const engineRoot = resolveEngineRoot();
 describe("writeback + agent-step policy parity with Desktop", () => {
   test("tool guide writeback copy shares Desktop graded-confirm key phrases", async () => {
     const ops = await import(
-      pathToFileURL(path.join(pluginSrc, "services/kernel-workspace-ops.ts")).href
+      pathToFileURL(path.join(pluginSrc, "services/chat-agent.ts")).href
     );
     const desktopCopy = await import(
       pathToFileURL(path.join(engineRoot, "topmind-desktop", "electron", "lib", "writeback-mode-copy.mjs")).href
@@ -58,7 +58,7 @@ describe("writeback + agent-step policy parity with Desktop", () => {
 
   test("agent step budget matches Desktop 3–80 default 32 + auto-continue×2", async () => {
     const ops = await import(
-      pathToFileURL(path.join(pluginSrc, "services/kernel-workspace-ops.ts")).href
+      pathToFileURL(path.join(pluginSrc, "services/chat-agent.ts")).href
     );
     const settingsCore = await import(
       pathToFileURL(path.join(engineRoot, "topmind-desktop", "electron", "lib", "settings-core.mjs")).href
@@ -71,7 +71,7 @@ describe("writeback + agent-step policy parity with Desktop", () => {
 
   test("tool guide keeps unique-span edit contract and continuous-work mandate", async () => {
     const ops = await import(
-      pathToFileURL(path.join(pluginSrc, "services/kernel-workspace-ops.ts")).href
+      pathToFileURL(path.join(pluginSrc, "services/chat-agent.ts")).href
     );
     for (const loc of ["zh-CN", "en-US"]) {
       const guide = ops.buildObsidianChatToolGuide(loc, "auto");
@@ -84,7 +84,7 @@ describe("writeback + agent-step policy parity with Desktop", () => {
   });
 
   test("agent tools module is wired into the chat loop (not a dead shelf)", () => {
-    const ops = fs.readFileSync(path.join(pluginSrc, "services/kernel-workspace-ops.ts"), "utf8");
+    const ops = fs.readFileSync(path.join(pluginSrc, "services/chat-agent.ts"), "utf8");
     assert.match(ops, /from "\.\/workspace-agent-tools\.ts"/);
     assert.match(ops, /runAgentTool/);
     const tools = fs.readFileSync(path.join(pluginSrc, "services/workspace-agent-tools.ts"), "utf8");
@@ -128,7 +128,7 @@ describe("writeback + agent-step policy parity with Desktop", () => {
   });
 
   test("writebackModeOverride never forces a default that forks topmind.yaml", () => {
-    const ops = fs.readFileSync(path.join(pluginSrc, "services", "kernel-workspace-ops.ts"), "utf8");
+    const ops = fs.readFileSync(path.join(pluginSrc, "services", "chat-agent.ts"), "utf8");
     // Only pass override when contract actually resolved.
     assert.match(ops, /writebackMode: contractMode \|\| opts\.writebackMode/);
     assert.doesNotMatch(ops, /writebackMode: modeHint/);

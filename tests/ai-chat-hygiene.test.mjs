@@ -35,7 +35,7 @@ describe("AI task manager + chat write-gate hygiene (source)", () => {
 
   test("chat UI chrome follows getLocale; durable answer uses Kernel 3-tier", () => {
     const src = fs.readFileSync(path.join(srcDir, "services", "kernel-service.ts"), "utf8");
-    const ops = fs.readFileSync(path.join(srcDir, "services", "kernel-workspace-ops.ts"), "utf8");
+    const ops = (fs.readFileSync(path.join(srcDir, "services", "chat-agent.ts"), "utf8") + fs.readFileSync(path.join(srcDir, "services", "kernel-workspace-ops.ts"), "utf8"));
     assert.match(src, /getLocale\(\)/);
     assert.match(src, /localeOverride \|\| getLocale/);
     assert.match(src, /resolveChatDurableLocale/);
@@ -46,7 +46,7 @@ describe("AI task manager + chat write-gate hygiene (source)", () => {
 
   test("chat sanitizes thinking and does not write notes", () => {
     const src = fs.readFileSync(path.join(srcDir, "services", "kernel-service.ts"), "utf8");
-    const ops = fs.readFileSync(path.join(srcDir, "services", "kernel-workspace-ops.ts"), "utf8");
+    const ops = (fs.readFileSync(path.join(srcDir, "services", "chat-agent.ts"), "utf8") + fs.readFileSync(path.join(srcDir, "services", "kernel-workspace-ops.ts"), "utf8"));
     assert.match(src, /runWorkspaceChatTurn/);
     assert.match(src, /<think>/);
     assert.match(ops, /splitAssistantVisible|applyUniqueSpan/);
@@ -56,7 +56,7 @@ describe("AI task manager + chat write-gate hygiene (source)", () => {
     assert.doesNotMatch(ops, /executeWrite\(\s*\{[\s\S]{0,200}operation:\s*["']chat["']/u);
   });
 
-  test("chat reasoning fold defaults collapsed; host stays Pi-free and ledger-free", () => {
+  test("chat reasoning defaults collapsed; optional specialty apps do not become core UI", () => {
     const sidebar = fs.readFileSync(path.join(srcDir, "views", "sidebar-dock-view.ts"), "utf8");
     assert.match(sidebar, /createEl\("details", \{ cls: "tm-chat-reasoning" \}\)/);
     // Historical turns stay collapsed; the live working row may open so the
@@ -66,11 +66,8 @@ describe("AI task manager + chat write-gate hygiene (source)", () => {
     assert.doesNotMatch(historyBlock, /setAttribute\(["']open["']/);
     assert.match(sidebar, /data-chat-reasoning-live/);
     assert.doesNotMatch(sidebar, /pi-agent-core|@earendil-works/);
-    const pkg = fs.readFileSync(path.join(srcDir, "..", "package.json"), "utf8");
-    assert.doesNotMatch(pkg, /pi-agent-core|pi-coding-agent/);
     const design = fs.readFileSync(path.join(srcDir, "..", "DESIGN.md"), "utf8");
     assert.match(design, /\*\*不发\*\*记账/);
-    assert.match(design, /无 Pi/);
     const srcTree = [
       "main.ts",
       "views/sidebar-dock-view.ts",
@@ -83,7 +80,7 @@ describe("AI task manager + chat write-gate hygiene (source)", () => {
 describe("Obsidian chat profile context (active-body collapse)", () => {
   test("loadChatProfileContext uses Kernel collapse and omits archived facts", async () => {
     const os = await import("node:os");
-    const { loadChatProfileContext } = await importShipped("services/kernel-workspace-ops.ts");
+    const { loadChatProfileContext } = await importShipped("services/chat-agent.ts");
     const kernel = await import(
       pathToFileURL(path.join(__dirname, "..", "lib", "kernel-api.mjs")).href
     );
@@ -124,7 +121,7 @@ describe("runWorkspaceChatTurn folds Kernel thinking (shipped)", () => {
     const { splitAssistantVisible } = await import(
       pathToFileURL(path.join(__dirname, "..", "lib", "ai-content-sanitize.mjs")).href
     );
-    const { runWorkspaceChatTurn } = await importShipped("services/kernel-workspace-ops.ts");
+    const { runWorkspaceChatTurn } = await importShipped("services/chat-agent.ts");
     const kernel = {
       loadContract: () => ({ writeback: { mode: "auto" } }),
       resolveAgentOutputLanguage: () => "zh",

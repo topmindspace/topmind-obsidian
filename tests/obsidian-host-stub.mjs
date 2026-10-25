@@ -20,6 +20,15 @@ class El {
     this.style = {};
   }
 
+  get classList() {
+    return {
+      add: (...classes) => classes.forEach(cls => this.addClass(cls)),
+      remove: (...classes) => classes.forEach(cls => this.removeClass(cls)),
+      contains: cls => this.className.split(/\s+/u).includes(cls),
+      toggle: (cls, force) => { const on = force ?? !this.className.split(/\s+/u).includes(cls); on ? this.addClass(cls) : this.removeClass(cls); return on; },
+    };
+  }
+
   get value() {
     return this._value;
   }
@@ -67,6 +76,13 @@ class El {
     if (name === "type") this.attrs.type = String(value);
     if (name === "class") this.className = String(value);
   }
+
+  removeAttribute(name) { delete this.attrs[name]; }
+
+  focus() { documentStub.activeElement = this; }
+  click() { if (!this.disabled) this.dispatchEvent({ type: "click", detail: 0 }); }
+  contains(node) { return this === node || this.children.some(child => child.contains(node)); }
+  setCssStyles(styles) { Object.assign(this.style, styles); }
 
   getAttribute(name) {
     if (name === "type") return this.type;
@@ -139,11 +155,11 @@ class El {
 }
 
 function matches(el, selector) {
-  const match = String(selector).match(/^([a-z0-9]+)(?:\[([a-z0-9-]+)="([^"]*)"\])?$/iu);
+  const match = String(selector).match(/^([a-z0-9]+)?(?:\.([a-z0-9-]+))?(?:\[([a-z0-9-]+)="([^"]*)"\])?$/iu);
   if (!match) return false;
-  if (el.tagName !== match[1].toUpperCase()) return false;
-  if (!match[2]) return true;
-  return el.getAttribute(match[2]) === match[3];
+  if (match[1] && el.tagName !== match[1].toUpperCase()) return false;
+  if (match[2] && !el.classList.contains(match[2])) return false;
+  return !match[3] || el.getAttribute(match[3]) === match[4];
 }
 
 function createElement(tag) {
@@ -339,8 +355,10 @@ export class PluginSettingTab {
 }
 
 export class Notice {
+  static messages = [];
   constructor(message) {
     this.message = message == null ? "" : String(message);
+    Notice.messages.push(this.message);
   }
 }
 
@@ -348,6 +366,7 @@ export class Modal {
   constructor(app) {
     this.app = app;
     this.contentEl = createElement("div");
+    this.modalEl = createElement("div");
   }
 
   open() {}
@@ -390,8 +409,8 @@ export function getLanguage() {
   return "en";
 }
 
-export function requestUrl() {
-  return Promise.reject(new Error("obsidian host stub: no network"));
-}
+let requestUrlHandler = () => Promise.reject(new Error("obsidian host stub: no network"));
+export function setRequestUrlHandler(handler) { requestUrlHandler = handler; }
+export function requestUrl(options) { return requestUrlHandler(options); }
 
 export { createElement, documentStub as document };

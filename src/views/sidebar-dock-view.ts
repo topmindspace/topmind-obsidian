@@ -1,102 +1,59 @@
 // ── Sidebar Dock View: AI Copilot Panel in Obsidian right sidebar ───────────
 //
-// Design: tabbed command center — all AI capabilities in one place.
-// - Header: AI status + model badge + quick settings button + task badge
-// - Tab bar: Todos | Suggestions | Chat | History
-// - 动态流的家是主区 Stream View（能力单家，不进 Dock）
-// - Tab content: rich, interactive panels
-// - Quick actions row at bottom with optional labels
-//
-// UIUX (2026-08-11 refactor):
-// - Header buttons: icon + text labels (with responsive hide on narrow)
-// - Bottom actions: icon-first (labels opt-in via eye toggle)
-// - Chat message buttons: icon-only with tooltips
-// - Suggestion refresh: icon-only
-// - Todo open file: icon-only
-// - Chat send: icon-only with send icon
-// - All loading states use spinners
+// Chat owns conversation state; the dock renders it and keeps keyboard focus,
+// unsent drafts and other tabs independent from background progress.
 
 import { ItemView, WorkspaceLeaf, Notice, MarkdownRenderer, setIcon, Menu, Component } from "obsidian";
 import type TopmindPlugin from "../main";
 import { t, getLocale } from "../i18n";
 import { VIEW_TYPE_SIDEBAR_DOCK } from "../constants";
 import { AI_PROVIDER_PRESETS, PROVIDER_DEFAULT_MODELS } from "../constants";
-import type { SuggestionCard } from "../types";
+import type { SuggestionCard, TodoItem } from "../types";
 import { renderSuggestionCard } from "./suggestion-card";
 import { hasConfiguredProvider } from "../types";
 import { aiTaskManager, type TaskProgress, type AiTask } from "../services/ai-task-manager";
 import { resolveProviderCatalog, applyModelOptions, credentialsForProvider } from "../services/models-dev";
-import { bindImeEnterGuard, compactChatMessages, footerStatusTitle, isImeEnter, resolveChatCompactBudget } from "../utils";
+import { bindImeEnterGuard, footerStatusTitle, isImeEnter } from "../utils";
 import { confirmAction } from "./confirm-modal";
 import { openStreamWorkbench, openPluginSettings } from "../services/view-openers";
+import { captureChatFocus, type ChatFocus } from "../services/editor-context";
+import { ChatController, type ChatMessage } from "../services/chat-session";
 import { buildResultFooter } from "#kernel/agent-goal-protocol.mjs";
 
-// ── Node.js built-ins (esbuild platform:'node' converts to require) ──
-import fs from "node:fs";
-import path from "node:path";
+let sidebarSequence = 0;
 
 type SidebarTab = "todos" | "suggestions" | "chat" | "history";
-
-interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-  /** Folded chain-of-thought (not the visible answer). */
-  reasoning?: string;
-  /** Whether this message was an error */
-  isError?: boolean;
-  /** Turn was paused (not abandoned) — keep goal ledger for Resume. */
-  paused?: boolean;
-  /** Hard stop / abandon. Distinct from paused. */
-  cancelled?: boolean;
-  stopReason?: "paused" | "cancelled";
-  /** The user message that triggered this AI response (for regenerate) */
-  prompt?: string;
-  /** Agent tool timeline for continuous-work visibility. */
-  toolCalls?: Array<{ tool: string; ok: boolean; summary?: string }>;
-  steps?: number;
-  autoContinues?: number;
-  stepLimitHit?: boolean;
-  /** Structured goal snapshot (Desktop goalSummary parity). */
-  goal?: {
-    goal?: string;
-    plan?: string[];
-    criteria?: string[];
-    openCriteria?: string[];
-    pathReceipts?: string[];
-    status?: string;
-    blockReason?: string | null;
-    autoContinues?: number;
-    checksRun?: string[];
-    assumptions?: string[];
-  } | null;
-}
-
-
-/** Runtime shape check for persisted goal payloads (no `as` on the return). */
-function isGoalLike(v: unknown): v is NonNullable<ChatMessage["goal"]> {
-  return !!v && typeof v === "object";
-}
 
 export class SidebarDockView extends ItemView {
   plugin: TopmindPlugin;
   private refreshTimer: number | null = null;
   private activeTab: SidebarTab = "chat";
-  private chatHistory: ChatMessage[] = [];
-  private chatThinking = false;
+  private readonly tabIdPrefix = `tm-dock-${++sidebarSequence}`;
+  private chatController: ChatController | null = null;
+  private get chat(): ChatController {
+    return this.chatController ||= new ChatController({
+      root: () => this.plugin.kernelService.getVaultPath(),
+      chat: (prompt, history, options) => this.plugin.kernelService.chat(prompt, history, options),
+      copy: () => ({ paused: t("chat_paused"), stopped: t("chat_stopped"), error: t("chat_error") }),
+    });
+  }
+  private get chatHistory(): ChatMessage[] { return this.chat.messages; }
+  private get chatThinking(): boolean { return this.chatController?.thinking || false; }
+  private closed = false;
   /** True while a turn is paused waiting for Resume / redirect / abandon. */
-  private chatPaused = false;
+  private get chatPaused(): boolean { return this.chatController?.paused || false; }
+  private set chatPaused(value: boolean) { this.chat.paused = value; }
   /** Live agent progress line while a turn is working (step / tool / auto-continue). */
   private chatStatus = "";
   /** Turn start timestamp for elapsed progress. */
-  private chatStartedAt = 0;
+  private get chatStartedAt(): number { return this.chatController?.startedAt || 0; }
   /** Folded reasoning shown while the turn is still running. */
-  private chatReasoningLive = "";
-  /** Set by pause/stop; the in-flight turn checks it between steps. */
-  private chatAbort: { aborted: boolean; pause?: boolean } | null = null;
+  private get chatReasoningLive(): string { return this.chatController?.reasoning || ""; }
   /** Set on user-initiated chat renders (tab open / send) — never on vault-event refreshes. */
   private chatFocusOnRender = false;
   /** Re-entrancy guard for suggestion generation (workbench parity). */
-  private suggestionsInFlight = false;
+  private suggestionRequest: Promise<SuggestionCard[]> | null = null;
+  private get suggestionsInFlight(): boolean { return this.suggestionRequest !== null; }
   private contentContainer!: HTMLElement;
   private taskUnsub: (() => void) | null = null;
   /** Currently selected provider in chat model switcher */
@@ -109,6 +66,14 @@ export class SidebarDockView extends ItemView {
   private chatModelCatalog: { id: string; contextLimit?: number }[] = [];
   /** Unsent chat draft preserved across full re-renders (settings refresh). */
   private pendingChatDraft = "";
+  private todoDraft = "";
+  private todoQuery = "";
+  private todoVisible = 20;
+  private completedVisible = 20;
+  private completedOpen = false;
+  private chatViewport = { top: 0, follow: true };
+  private chatScrollToLatest = false;
+  private chatResizeObserver: ResizeObserver | null = null;
   /** Markdown children for the current tab paint — unloaded before each rebuild. */
   private renderComp = new Component();
 
@@ -130,6 +95,7 @@ export class SidebarDockView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    this.closed = false;
     await this.loadChatHistory();
     await this.render();
     this.registerEvent(
@@ -157,6 +123,18 @@ export class SidebarDockView extends ItemView {
       }),
     );
 
+    this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
+      const strip = this.contentContainer?.querySelector(".tm-chat-context-bar");
+      if (this.activeTab !== "chat" || !strip?.parentElement) return;
+      const parent = strip.parentElement;
+      const next = strip.nextSibling;
+      strip.remove();
+      void this.renderChatContextBar(parent).then(() => {
+        const replacement = parent.querySelector(".tm-chat-context-bar");
+        if (replacement) parent.insertBefore(replacement, next);
+      });
+    }));
+
     // Subscribe to AI task progress
     this.taskUnsub = aiTaskManager.subscribe((progress) => {
       // Only re-render if history tab is active
@@ -170,79 +148,16 @@ export class SidebarDockView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    this.closed = true;
+    this.captureChatViewport();
+    this.chatController?.close();
     if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
     this.taskUnsub?.();
     this.renderComp.unload();
   }
 
-  // ── Chat History Persistence ──────────────────────────────────────────
-
-  /** Chat history file path: {vault}/.topmind/chat-history.json */
-  private get chatHistoryPath(): string {
-    return path.join(this.plugin.kernelService.getVaultPath(), ".topmind", "chat-history.json");
-  }
-
-  /** Session goal snapshot (Desktop .goal.json parity). */
-  private get chatGoalPath(): string {
-    return path.join(this.plugin.kernelService.getVaultPath(), ".topmind", "chat-goal.json");
-  }
-
-  private saveChatGoal(goal: ChatMessage["goal"] | null | undefined): void {
-    try {
-      const dir = path.dirname(this.chatGoalPath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(this.chatGoalPath, JSON.stringify(goal || null, null, 2), "utf-8");
-    } catch { /* non-fatal */ }
-  }
-
-  private loadChatGoal(): ChatMessage["goal"] | null {
-    try {
-      if (!fs.existsSync(this.chatGoalPath)) return null;
-      const parsed: unknown = JSON.parse(fs.readFileSync(this.chatGoalPath, "utf-8"));
-      return isGoalLike(parsed) ? parsed : null;
-    } catch {
-      return null;
-    }
-  }
-
-  /** Load persisted chat history from disk (best-effort, non-fatal). */
-  private async loadChatHistory(): Promise<void> {
-    try {
-      const filePath = this.chatHistoryPath;
-      if (!fs.existsSync(filePath)) return;
-      const raw = fs.readFileSync(filePath, "utf-8");
-      const parsed: unknown = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        const budget = resolveChatCompactBudget(this.chatContextLimit);
-        this.chatHistory = compactChatMessages(parsed as ChatMessage[], {
-          maxMessages: budget.maxMessages,
-          keepRecent: budget.keepRecent,
-        });
-      }
-    } catch {
-      // Corrupt or missing file — start fresh
-    }
-  }
-
-  /** Save chat history to disk (best-effort, non-fatal). */
-  private saveChatHistory(): void {
-    try {
-      const filePath = this.chatHistoryPath;
-      const dir = path.dirname(filePath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      // Session compact (Desktop parity) — scale with model context window.
-      const budget = resolveChatCompactBudget(this.chatContextLimit);
-      const toSave = compactChatMessages(this.chatHistory, {
-        maxMessages: budget.maxMessages,
-        keepRecent: budget.keepRecent,
-      });
-      fs.writeFileSync(filePath, JSON.stringify(toSave, null, 2), "utf-8");
-    } catch {
-      // Disk full / permissions — non-fatal
-    }
-  }
+  private loadChatGoal(): ChatMessage["goal"] | null { return this.chat.goal; }
+  private async loadChatHistory(): Promise<void> { this.chat.load(); }
 
   private scheduleRefresh(delay: number): void {
     if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
@@ -276,6 +191,7 @@ export class SidebarDockView extends ItemView {
   private async renderInner(): Promise<void> {
     const { contentEl } = this;
     // Preserve unsent chat draft across settings-driven full re-renders.
+    this.captureChatViewport();
     const existingInput = contentEl.querySelector<HTMLTextAreaElement>("textarea.tm-chat-input");
     if (existingInput && existingInput.value) {
       this.pendingChatDraft = existingInput.value;
@@ -305,7 +221,16 @@ export class SidebarDockView extends ItemView {
   private async refreshActiveTab(): Promise<void> {
     if (this.contentContainer) {
       const savedScroll = this.contentContainer.scrollTop;
+      const activeInput = document.activeElement as HTMLInputElement | null;
+      const focusClass = activeInput?.classList.contains("tm-todo-filter-input") ? "tm-todo-filter-input"
+        : activeInput?.classList.contains("tm-todo-add-input") ? "tm-todo-add-input" : "";
+      const selection = focusClass ? [activeInput?.selectionStart, activeInput?.selectionEnd] : null;
       await this.renderActiveTab();
+      if (focusClass && this.activeTab === "todos" && !this.closed && (document.activeElement === document.body || document.activeElement === activeInput)) {
+        const replacement = this.contentContainer.querySelector<HTMLInputElement>(`.${focusClass}`);
+        replacement?.focus();
+        if (selection?.[0] != null && selection[1] != null) replacement?.setSelectionRange?.(selection[0], selection[1]);
+      }
       if (savedScroll > 0) {
         this.contentContainer.scrollTop = savedScroll;
         window.requestAnimationFrame(() => {
@@ -331,30 +256,31 @@ export class SidebarDockView extends ItemView {
   }
 
   /** Run AI quick test and update the status indicator */
-  private async runAiQuickTest(statusEl: HTMLElement): Promise<void> {
-    const labelEl = statusEl.querySelector(".tm-status-label");
+  private async runAiQuickTest(statusEl: HTMLButtonElement): Promise<void> {
+    if (statusEl.disabled) return;
     const dotEl = statusEl.querySelector(".tm-status-dot");
-    if (!labelEl || !dotEl) return;
-
-    const originalText = labelEl.textContent;
-    labelEl.textContent = t("ai_checking");
-    dotEl.className = "tm-status-dot tm-dot-checking";
-
-    const result = await this.plugin.kernelService.quickTestAi();
-    if (result.ok) {
-      labelEl.textContent = t("ai_test_ok");
-      dotEl.className = "tm-status-dot tm-dot-ok";
-    } else {
-      labelEl.textContent = t("ai_test_fail");
-      dotEl.className = "tm-status-dot tm-dot-error";
-      new Notice(`${t("ai_test_fail")}: ${result.error || ""}`);
+    const originalTitle = statusEl.getAttribute("title") || "";
+    statusEl.disabled = true;
+    statusEl.setAttribute("aria-busy", "true");
+    statusEl.setAttribute("aria-label", t("ai_checking"));
+    statusEl.setAttribute("title", t("ai_checking"));
+    if (dotEl) dotEl.className = "tm-status-dot tm-dot-checking";
+    try {
+      const result = await this.plugin.kernelService.quickTestAi();
+      const label = result.ok ? t("ai_test_ok") : t("ai_test_fail");
+      statusEl.setAttribute("aria-label", label);
+      statusEl.setAttribute("title", `${label} · ${t("settings_ai_quick_test")}`);
+      if (dotEl) dotEl.className = `tm-status-dot ${result.ok ? "tm-dot-ok" : "tm-dot-error"}`;
+      new Notice(result.ok ? label : `${label}: ${result.error || ""}`);
+    } catch {
+      statusEl.setAttribute("aria-label", t("ai_test_fail"));
+      statusEl.setAttribute("title", originalTitle);
+      if (dotEl) dotEl.className = "tm-status-dot tm-dot-error";
+      new Notice(t("ai_test_fail"));
+    } finally {
+      statusEl.disabled = false;
+      statusEl.removeAttribute("aria-busy");
     }
-
-    // Restore original after 3 seconds
-    window.setTimeout(() => {
-      labelEl.textContent = originalText;
-      dotEl.className = `tm-status-dot ${result.ok ? "tm-dot-ok" : "tm-dot-off"}`;
-    }, 3000);
   }
 
   /** Update header task badge from progress */
@@ -392,6 +318,7 @@ export class SidebarDockView extends ItemView {
   private renderTabBar(container: HTMLElement): void {
     const tabBar = container.createDiv({ cls: "tm-tab-bar" });
     tabBar.setAttribute("role", "tablist");
+    tabBar.setAttribute("aria-label", t("sidebar_dock_title"));
 
     // 动态流的家是主区 Stream View，不进 AI Dock（能力单家 · 对齐 Desktop）
     // Order matches Desktop AI workspace: 对话 first (agent spine), then confirm faces.
@@ -409,7 +336,10 @@ export class SidebarDockView extends ItemView {
         cls: `tm-tab-btn ${isActive ? "tm-tab-active" : ""}`,
         attr: { "data-tab-id": tab.id, type: "button" },
       });
+      btn.id = `${this.tabIdPrefix}-${tab.id}`;
       btn.setAttribute("role", "tab");
+      btn.setAttribute("aria-controls", `${this.tabIdPrefix}-panel`);
+      btn.setAttribute("title", tab.label);
       btn.setAttribute("aria-selected", String(isActive));
       // Roving tabindex: only the active tab is in the tab order.
       btn.tabIndex = isActive ? 0 : -1;
@@ -418,9 +348,9 @@ export class SidebarDockView extends ItemView {
       btn.createSpan({ text: tab.label, cls: "tm-tab-label" });
       btn.setAttribute("aria-label", tab.label);
       tabBtns.push(btn);
-      const activate = () => {
+      const activate = (focusComposer: boolean) => {
         this.activeTab = tab.id;
-        if (tab.id === "chat") this.chatFocusOnRender = true;
+        this.chatFocusOnRender = tab.id === "chat" && focusComposer;
         tabBtns.forEach((b, i) => {
           const on = tabs[i].id === tab.id;
           b.classList.toggle("tm-tab-active", on);
@@ -429,7 +359,7 @@ export class SidebarDockView extends ItemView {
         });
         void this.renderActiveTab();
       };
-      btn.addEventListener("click", activate);
+      btn.addEventListener("click", (event: MouseEvent) => activate(event.detail > 0));
       // WAI-ARIA tabs: Left/Right move focus+select, Home/End jump.
       btn.addEventListener("keydown", (e: KeyboardEvent) => {
         const idx = tabBtns.indexOf(btn);
@@ -465,6 +395,10 @@ export class SidebarDockView extends ItemView {
 
   private async renderActiveTabInner(): Promise<void> {
     if (!this.contentContainer) return;
+    this.captureChatViewport();
+    this.contentContainer.id = `${this.tabIdPrefix}-panel`;
+    this.contentContainer.setAttribute("role", "tabpanel");
+    this.contentContainer.setAttribute("aria-labelledby", `${this.tabIdPrefix}-${this.activeTab}`);
     // Preserve unsent chat draft when re-rendering the active tab (e.g. thinking indicator).
     const existingChatInput = this.contentContainer.querySelector<HTMLTextAreaElement>("textarea.tm-chat-input");
     if (existingChatInput && existingChatInput.value && !this.pendingChatDraft) {
@@ -526,119 +460,131 @@ export class SidebarDockView extends ItemView {
       void this.app.workspace.openLinkText(this.plugin.kernelService.todoRelPath(), "", false);
     });
 
+    const addRow = todoSection.createDiv({ cls: "tm-todo-add-row" });
+    const addInput = addRow.createEl("input", { cls: "tm-todo-add-input", attr: { type: "text", placeholder: t("todo_add_placeholder"), "aria-label": t("todo_add_placeholder") } });
+    const addBtn = addRow.createEl("button", { text: t("todo_add"), cls: "tm-btn-secondary tm-btn-sm" });
+    addInput.value = this.todoDraft;
+    addBtn.disabled = !addInput.value.trim();
+    addInput.addEventListener("input", () => { this.todoDraft = addInput.value; addBtn.disabled = !addInput.value.trim(); });
+    const add = () => {
+      if (!addInput.value.trim()) return;
+      if (this.plugin.kernelService.addTodo(addInput.value).ok) {
+        this.todoDraft = "";
+        addInput.value = "";
+        void this.refreshActiveTab().then(() => this.contentContainer?.querySelector<HTMLInputElement>(".tm-todo-add-input")?.focus());
+      }
+    };
+    addBtn.addEventListener("click", add);
+    addInput.addEventListener("keydown", (event: KeyboardEvent) => {
+      if (event.key === "Enter" && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); add(); }
+    });
+
     const todos = this.plugin.kernelService.readTodos();
-    const activeTodos = todos.filter((item) => !item.done);
-    const doneTodos = todos.filter((item) => item.done);
+    let filterInput: HTMLInputElement | null = null;
+    if (todos.filter(item => !item.done).length > 10 || this.todoQuery) {
+      filterInput = todoSection.createEl("input", { cls: "tm-todo-filter-input", attr: { type: "search", placeholder: t("todo_filter"), "aria-label": t("todo_filter") } });
+      filterInput.value = this.todoQuery;
+    }
+    const list = todoSection.createDiv({ cls: "tm-todo-list" });
+    const paint = () => this.renderTodoList(list, todos, () => {
+      this.todoQuery = "";
+      this.todoVisible = 20;
+      if (filterInput) { filterInput.value = ""; filterInput.focus(); }
+      paint();
+    });
+    filterInput?.addEventListener("input", () => {
+      this.todoQuery = filterInput!.value;
+      this.todoVisible = 20;
+      paint();
+    });
+    paint();
+  }
 
-    if (activeTodos.length === 0) {
-      const empty = todoSection.createDiv({ cls: "tm-empty-state tm-empty-compact" });
-      const icon = empty.createDiv({ cls: "tm-empty-icon" });
-      setIcon(icon, "check-check");
-      empty.createDiv({ text: t("sidebar_no_todos") });
+  private renderTodoList(container: HTMLElement, todos: TodoItem[], clearFilter: () => void): void {
+    container.empty();
+    const query = this.todoQuery.normalize("NFKC").trim().toLocaleLowerCase();
+    const activeTodos = todos.filter(item => !item.done && (!query || [item.text, item.dueDate, item.sourcePeriod].join(" ").normalize("NFKC").toLocaleLowerCase().includes(query)));
+    const doneTodos = todos.filter(item => item.done);
+    const activeList = container.createDiv({ cls: "tm-todo-active-list" });
+    if (!activeTodos.length) {
+      this.renderEmptyState(activeList, query ? t("todo_no_matches") : t("sidebar_no_todos"), query ? t("todo_no_matches_hint") : "", "check-check", query ? { label: t("todo_clear_filter"), onClick: clearFilter } : undefined);
     } else {
-      for (const todo of activeTodos.slice(0, 20)) {
-        const item = todoSection.createDiv({ cls: "tm-todo-item" });
-        const checkbox = item.createEl("input", {
-          attr: { type: "checkbox", "aria-label": todo.text },
-          cls: "tm-todo-checkbox",
-        });
-        checkbox.addEventListener("change", () => {
-          const toggled = this.plugin.kernelService.toggleTodo(todo.id);
-          if (!toggled.ok) {
-            checkbox.checked = !checkbox.checked;
-            return;
-          }
-          if (checkbox.checked) {
-            item.classList.add("tm-completed");
-          }
-        });
-        item.createSpan({ cls: "tm-todo-text", text: todo.text });
-        if (todo.sourcePeriod) {
-          const srcBtn = item.createEl("button", {
-            cls: "tm-todo-source",
-            attr: { "aria-label": t("todo_open_source") },
-          });
-          setIcon(srcBtn, "external-link");
-          srcBtn.createSpan({ text: ` ${todo.sourcePeriod}` });
-          srcBtn.addEventListener("click", (e: MouseEvent) => {
-            e.stopPropagation();
-            // Prefer the live stream category from the workspace model; if the
-            // role is missing, fall back to a bare-filename link (Obsidian
-            // resolves it vault-wide) instead of a hardcoded "10-动态" path.
-            const streamDir =
-              this.plugin.kernelService.getResolvedModel()?.categories
-                ?.find((c) => c.role === "loose-stream")?.directory;
-            const link = streamDir
-              ? `${streamDir}/${todo.sourcePeriod}.md`
-              : `${todo.sourcePeriod}.md`;
-            void this.app.workspace.openLinkText(link, "", false);
-          });
-        }
-        if (todo.dueDate) {
-          const dueSpan = item.createSpan({ cls: "tm-todo-due" });
-          setIcon(dueSpan, "calendar");
-          dueSpan.createSpan({ text: ` ${todo.dueDate}` });
-        }
-        // Hover delete button (shown on hover)
-        const deleteBtn = item.createEl("button", {
-          cls: "tm-todo-delete",
-          attr: { "aria-label": t("todo_row_delete"), title: t("todo_row_delete") },
-        });
-        setIcon(deleteBtn, "trash-2");
-        deleteBtn.addEventListener("click", (e: MouseEvent) => {
-          e.stopPropagation();
-          item.classList.add("tm-card-removing");
-          window.setTimeout(() => {
-            this.plugin.kernelService.deleteTodo(todo.id);
-            void this.refreshActiveTab();
-          }, 150);
-        });
-      }
-
-      if (doneTodos.length > 0) {
-        const doneHeader = todoSection.createDiv({ cls: "tm-todo-done-header" });
-        const doneIcon = doneHeader.createSpan({ cls: "tm-todo-done-label" });
-        setIcon(doneIcon, "check");
-        doneIcon.createSpan({ text: ` ${doneTodos.length} ${t("sidebar_todos_done")}` });
-        // Clear completed button
-        const clearDoneBtn = doneHeader.createEl("button", {
-          cls: "tm-btn-mini tm-todo-clear-done",
-        });
-        setIcon(clearDoneBtn, "trash-2");
-        clearDoneBtn.setAttribute("aria-label", t("todo_clear_completed"));
-        clearDoneBtn.setAttribute("title", t("todo_clear_completed"));
-        clearDoneBtn.addEventListener("click", () => {
-          confirmAction(this.app, t("confirm_clear_todos_title"), t("confirm_clear_todos_body"), () => {
-            for (const done of doneTodos) {
-              this.plugin.kernelService.deleteTodo(done.id);
-            }
-            void this.refreshActiveTab();
-          });
-        });
-      }
-
-      if (activeTodos.length > 20) {
-        const viewAllBtn = todoSection.createEl("button", {
-          cls: "tm-view-all",
-          text: t("sidebar_view_all_todos"),
-        });
-        viewAllBtn.addEventListener("click", () => {
-          void this.app.workspace.openLinkText(this.plugin.kernelService.todoRelPath(), "", false);
+      for (const todo of activeTodos.slice(0, this.todoVisible)) this.renderTodoRow(activeList, todo);
+      if (activeTodos.length > this.todoVisible) {
+        const more = activeList.createEl("button", { cls: "tm-btn-secondary tm-todo-load-more", text: t("todo_load_more", { count: activeTodos.length - this.todoVisible }) });
+        more.addEventListener("click", () => {
+          const firstNew = this.todoVisible;
+          this.todoVisible += 20;
+          this.renderTodoList(container, todos, clearFilter);
+          container.querySelectorAll<HTMLElement>(".tm-todo-item")[firstNew]?.querySelector<HTMLInputElement>("input")?.focus();
         });
       }
     }
+    if (!doneTodos.length) return;
+    const doneHeader = container.createDiv({ cls: "tm-todo-done-header" });
+    const doneLabel = doneHeader.createSpan({ cls: "tm-todo-done-label", text: `${doneTodos.length} ${t("sidebar_todos_done")}` });
+    doneLabel.setAttribute("aria-live", "polite");
+    const clearDoneBtn = doneHeader.createEl("button", { cls: "tm-btn-mini tm-todo-clear-done", attr: { "aria-label": t("todo_clear_completed"), title: t("todo_clear_completed") } });
+    setIcon(clearDoneBtn, "trash-2");
+    clearDoneBtn.addEventListener("click", () => {
+      confirmAction(this.app, t("confirm_clear_todos_title"), t("confirm_clear_todos_body"), () => {
+        if (this.plugin.kernelService.clearCompletedTodos().ok) void this.refreshActiveTab();
+      });
+    });
+    const completed = container.createEl("details", { cls: "tm-todo-completed" });
+    completed.open = this.completedOpen;
+    completed.createEl("summary", { text: t("todo_view_completed") });
+    completed.addEventListener("toggle", () => { this.completedOpen = completed.open; });
+    for (const todo of doneTodos.slice(0, this.completedVisible)) this.renderTodoRow(completed, todo);
+    if (doneTodos.length > this.completedVisible) {
+      const more = completed.createEl("button", { cls: "tm-btn-secondary", text: t("todo_load_more", { count: doneTodos.length - this.completedVisible }) });
+      more.addEventListener("click", () => {
+        this.completedVisible += 20;
+        this.completedOpen = true;
+        this.renderTodoList(container, todos, clearFilter);
+      });
+    }
+  }
+
+  private renderTodoRow(container: HTMLElement, todo: TodoItem): void {
+    const item = container.createDiv({ cls: "tm-todo-item" });
+    const toggle = item.createEl("label", { cls: "tm-todo-toggle", attr: { title: todo.text } });
+    const checkbox = toggle.createEl("input", { attr: { type: "checkbox", "aria-label": todo.text }, cls: "tm-todo-checkbox" });
+    checkbox.checked = todo.done;
+    checkbox.addEventListener("change", () => {
+      if (!this.plugin.kernelService.toggleTodo(todo.id).ok) { checkbox.checked = !checkbox.checked; return; }
+      void this.refreshActiveTab();
+    });
+    item.createSpan({ cls: "tm-todo-text", text: todo.text });
+    if (todo.sourcePeriod) {
+      const source = item.createEl("button", { cls: "tm-todo-source", attr: { "aria-label": t("todo_open_source"), title: t("todo_open_source") } });
+      setIcon(source, "external-link");
+      source.createSpan({ text: ` ${todo.sourcePeriod}` });
+      source.addEventListener("click", () => { void (async () => {
+        const link = await this.plugin.kernelService.todoSourcePath(todo.sourcePeriod!);
+        if (link) await this.app.workspace.openLinkText(link, "", false);
+        else new Notice(t("todo_source_missing"));
+      })().catch(() => new Notice(t("todo_source_missing"))); });
+    }
+    if (todo.dueDate) {
+      const due = item.createSpan({ cls: "tm-todo-due" });setIcon(due, "calendar");due.createSpan({ text: ` ${todo.dueDate}` });
+    }
+    const remove = item.createEl("button", { cls: "tm-todo-delete", attr: { "aria-label": t("todo_row_delete"), title: t("todo_row_delete") } });
+    setIcon(remove, "trash-2");
+    remove.addEventListener("click", () => { if (this.plugin.kernelService.deleteTodo(todo.id).ok) void this.refreshActiveTab(); });
   }
 
   // ── Suggestions Tab ────────────────────────────────────────────────────
 
   private renderPendingWrites(container: HTMLElement): number {
     const pending = this.plugin.kernelService.listPendingWrites();
+    if (this.plugin.kernelService.reviewStorageError?.()) container.createDiv({ text: t("review_storage_error"), cls: "tm-inline-error", attr: { role: "alert" } });
     if (pending.length === 0) return 0;
     const section = container.createDiv({ cls: "tm-sidebar-section tm-pending-writes" });
     section.createDiv({ cls: "tm-suggestion-summary", text: t("pending_writes_title") });
     for (const item of pending) {
       const card = section.createDiv({ cls: "tm-suggestion-card tm-pending-write-card" });
-      card.createDiv({ cls: "tm-suggestion-title", text: item.relativePath });
+      card.createDiv({ cls: "tm-suggestion-title", text: item.operation === "delete" ? t("pending_delete_title", { path: item.relativePath }) : item.relativePath });
       const actions = card.createDiv({ cls: "tm-suggestion-actions" });
       // Confirm must not be blind: the stashed content is inspectable in place.
       const preview = actions.createEl("button", {
@@ -659,7 +605,7 @@ export class SidebarDockView extends ItemView {
         previewBox = card.createDiv({ cls: "tm-pending-preview" });
         const meta = previewBox.createDiv({ cls: "tm-pending-preview-meta" });
         meta.setText(
-          t("pending_writes_preview_meta", { chars: item.content.length }),
+          item.operation === "delete" ? t("pending_delete_preview") : t("pending_writes_preview_meta", { chars: item.content.length }),
         );
         previewBox.createEl("pre", { text: item.content });
         preview.setText(t("pending_writes_hide_preview"));
@@ -667,12 +613,12 @@ export class SidebarDockView extends ItemView {
       });
       const accept = actions.createEl("button", {
         cls: "tm-btn-primary tm-btn-sm",
-        text: t("pending_writes_accept"),
+        text: item.operation === "delete" ? t("pending_delete_accept") : t("pending_writes_accept"),
       });
-      accept.setAttribute("aria-label", t("pending_writes_accept"));
+      accept.setAttribute("aria-label", item.operation === "delete" ? t("pending_delete_accept") : t("pending_writes_accept"));
       accept.addEventListener("click", () => {
         this.plugin.kernelService.acceptPendingWrite(item.id);
-        void this.renderSuggestionsTab(container);
+        void this.renderSuggestionsTab(this.contentContainer);
       });
       const reject = actions.createEl("button", {
         cls: "tm-btn-secondary tm-btn-sm",
@@ -681,7 +627,7 @@ export class SidebarDockView extends ItemView {
       reject.setAttribute("aria-label", t("pending_writes_reject"));
       reject.addEventListener("click", () => {
         this.plugin.kernelService.rejectPendingWrite(item.id);
-        void this.renderSuggestionsTab(container);
+        void this.renderSuggestionsTab(this.contentContainer);
       });
     }
     return pending.length;
@@ -702,6 +648,7 @@ export class SidebarDockView extends ItemView {
   private async renderSuggestionsTab(container: HTMLElement, opts: { force?: boolean } = {}): Promise<void> {
     const force = opts.force === true;
     container.empty();
+    container = container.createDiv({ cls: "tm-suggestions-surface" });
     const pendingCount = this.renderPendingWrites(container);
     const aiConfigured = hasConfiguredProvider(this.plugin.settings.ai);
     if (!aiConfigured) {
@@ -716,24 +663,18 @@ export class SidebarDockView extends ItemView {
     const cached = this.plugin.kernelService.peekSuggestions();
     if (!force && cached.length > 0) {
       this.paintSuggestionCards(container, cached);
-      if (this.plugin.settings.autoSuggest && !this.suggestionsInFlight) {
+      if (this.plugin.settings.autoSuggest || this.suggestionsInFlight) {
         void this.softRefreshSuggestions(container);
       }
-      return;
-    }
-
-    if (this.suggestionsInFlight) {
-      const progressEl = container.createDiv({ cls: "tm-task-progress-inline" });
-      progressEl.createSpan({ text: t("suggestions_loading") });
       return;
     }
 
     const loadingEl = container.createDiv({ cls: "tm-task-progress-inline" });
     loadingEl.createSpan({ text: t("suggestions_loading") });
 
-    this.suggestionsInFlight = true;
     try {
-      const suggestions = await this.plugin.kernelService.generateSuggestions({ force });
+      const suggestions = await this.requestSuggestions(force);
+      if (this.closed || container.isConnected === false) return;
       container.empty();
       const pendingAfter = this.renderPendingWrites(container);
       this.renderSuggestionRefreshButton(container);
@@ -746,38 +687,38 @@ export class SidebarDockView extends ItemView {
             ? t("suggestions_empty_hint")
             : t("suggestions_disabled_hint");
           this.renderEmptyState(container, emptyTitle, emptyHint, "lightbulb", this.plugin.settings.autoSuggest
-            ? { label: t("sidebar_op_suggestions"), onClick: () => { void this.renderSuggestionsTab(container, { force: true }); } }
+            ? { label: t("sidebar_op_suggestions"), onClick: () => { void this.renderSuggestionsTab(this.contentContainer, { force: true }); } }
             : undefined);
         }
         return;
       }
       this.paintSuggestionCards(container, suggestions);
     } catch (err) {
+      if (this.closed || container.isConnected === false) return;
       container.empty();
-      this.renderEmptyState(
-        container,
-        t("error"),
-        err instanceof Error ? err.message : String(err),
-        "alert-circle",
-      );
-    } finally {
-      this.suggestionsInFlight = false;
+      this.renderPendingWrites(container);
+      this.renderSuggestionRefreshButton(container);
+      this.paintSuggestionCards(container, this.plugin.kernelService.peekSuggestions());
+      container.createDiv({ cls: "tm-inline-error", text: `${t("notice_execute_failed")}: ${err instanceof Error ? err.message : String(err)}`, attr: { role: "alert" } });
     }
+  }
+
+  private requestSuggestions(force: boolean): Promise<SuggestionCard[]> {
+    return this.suggestionRequest ||= this.plugin.kernelService.generateSuggestions({ force }).finally(() => { this.suggestionRequest = null; });
   }
 
   /** Background regenerate — keep cached cards on screen. */
   private async softRefreshSuggestions(container: HTMLElement): Promise<void> {
-    if (this.suggestionsInFlight) return;
-    this.suggestionsInFlight = true;
     try {
-      const suggestions = await this.plugin.kernelService.generateSuggestions({ force: false });
-      if (this.activeTab !== "suggestions") return;
+      const suggestions = await this.requestSuggestions(false);
+      if (this.closed || container.isConnected === false) return;
       container.empty();
       this.renderPendingWrites(container);
       this.renderSuggestionRefreshButton(container);
       this.paintSuggestionCards(container, suggestions);
-    } finally {
-      this.suggestionsInFlight = false;
+    } catch (err) {
+      if (this.closed || container.isConnected === false) return;
+      container.createDiv({ cls: "tm-inline-error", text: `${t("notice_execute_failed")}: ${err instanceof Error ? err.message : String(err)}`, attr: { role: "alert" } });
     }
   }
 
@@ -878,7 +819,7 @@ export class SidebarDockView extends ItemView {
     refreshBtn.setAttribute("title", t("cmd_refresh_suggestions"));
     refreshBtn.addEventListener("click", () => { void (async () => {
       refreshBtn.disabled = true;
-      await this.renderSuggestionsTab(container, { force: true });
+      await this.renderSuggestionsTab(this.contentContainer, { force: true });
     })(); });
   }
 
@@ -897,6 +838,13 @@ export class SidebarDockView extends ItemView {
   // ── Chat Tab ───────────────────────────────────────────────────────────
 
   private renderChatTab(container: HTMLElement): void {
+    if (this.chatController?.storageError) {
+      this.renderEmptyState(container, t("chat_storage_error"), this.chatController.storageError, "alert-triangle", {
+        label: t("chat_retry"), onClick: () => { this.chat.load(); void this.renderActiveTab(); },
+      });
+      return;
+    }
+
     const aiConfigured = hasConfiguredProvider(this.plugin.settings.ai);
     if (!aiConfigured) {
       this.renderEmptyState(container, t("chat_no_ai"), t("chat_no_ai_hint"), "message-circle");
@@ -907,6 +855,8 @@ export class SidebarDockView extends ItemView {
         text: t("empty_action_configure"),
       });
       configureBtn.addEventListener("click", () => this.openSettings());
+      const captureBtn = actionDiv.createEl("button", { cls: "tm-btn-secondary", text: t("sidebar_open_workbench") });
+      captureBtn.addEventListener("click", () => { void this.openWorkbench(); });
       return;
     }
 
@@ -950,8 +900,7 @@ export class SidebarDockView extends ItemView {
       for (const msg of this.chatHistory) {
         this.renderChatMessage(messagesEl, msg);
       }
-      // Scroll to bottom
-      messagesEl.scrollTop = messagesEl.scrollHeight;
+
     }
 
     // Thinking / agent-working indicator
@@ -985,8 +934,10 @@ export class SidebarDockView extends ItemView {
         });
         pre.setText(this.chatReasoningLive);
       }
-      messagesEl.scrollTop = messagesEl.scrollHeight;
     }
+
+    const jump = container.createEl("button", { cls: "tm-btn-secondary tm-chat-jump", text: t("chat_jump_latest"), attr: { type: "button" } });
+    this.bindChatViewport(messagesEl, jump);
 
     // Chat input area — input on top, foot row below (send/clear right).
     const inputArea = container.createDiv({ cls: "tm-chat-input-area" });
@@ -996,6 +947,7 @@ export class SidebarDockView extends ItemView {
         placeholder: t("chat_placeholder"),
         rows: "2",
         "aria-label": t("chat_title"),
+        "aria-describedby": `${this.tabIdPrefix}-input-hint`,
       },
     });
     if (this.pendingChatDraft) {
@@ -1005,6 +957,8 @@ export class SidebarDockView extends ItemView {
       input.setCssStyles({ height: `${Math.min(input.scrollHeight, 100)}px` });
     }
 
+    const inputHint = inputArea.createDiv({ cls: "tm-chat-input-hint", text: t("chat_input_hint") });
+    inputHint.id = `${this.tabIdPrefix}-input-hint`;
     const inputFoot = inputArea.createDiv({ cls: "tm-chat-input-foot" });
 
     // Left: status dot (no words) + provider/model
@@ -1019,11 +973,14 @@ export class SidebarDockView extends ItemView {
       attr: { "aria-label": t("chat_new_chat"), title: t("chat_new_chat") },
     });
     setIcon(newChatBtn, "message-square-plus");
+    newChatBtn.disabled = this.chatThinking;
     newChatBtn.addEventListener("click", () => {
       if (this.chatHistory.length === 0) return;
       confirmAction(this.app, t("confirm_new_chat_title"), t("confirm_new_chat_body"), () => {
-        this.chatHistory = [];
-        this.saveChatHistory();
+        this.chat.clear();
+        this.chatScrollToLatest = true;
+        this.pendingChatDraft = "";
+        input.value = "";
         void this.renderActiveTab();
       });
     });
@@ -1033,9 +990,11 @@ export class SidebarDockView extends ItemView {
       attr: { "aria-label": t("chat_send"), title: t("chat_send") },
     });
     setIcon(sendBtn, "send");
+    sendBtn.disabled = !this.chatThinking && !this.chatPaused && !input.value.trim();
 
     // Auto-grow textarea
     input.addEventListener("input", () => {
+      sendBtn.disabled = !this.chatThinking && !this.chatPaused && !input.value.trim();
       input.setCssStyles({ height: "auto" });
       input.setCssStyles({ height: `${Math.min(input.scrollHeight, 100)}px` });
     });
@@ -1086,56 +1045,69 @@ export class SidebarDockView extends ItemView {
     }
   }
 
+  /** Preserve a reading position before replacing this tab's DOM. */
+  private captureChatViewport(): void {
+    const pane = this.contentContainer?.querySelector<HTMLElement>(".tm-chat-messages");
+    if (pane && pane.clientHeight > 0) {
+      this.chatViewport = { top: pane.scrollTop, follow: pane.scrollHeight - pane.clientHeight - pane.scrollTop <= 48 };
+    }
+    this.chatResizeObserver?.disconnect();
+    this.chatResizeObserver = null;
+  }
+
+  private bindChatViewport(pane: HTMLElement, jump: HTMLButtonElement): void {
+    if (this.chatScrollToLatest) { this.chatViewport.follow = true; this.chatScrollToLatest = false; }
+    let restoring = true;
+    jump.hidden = this.chatViewport.follow;
+    const latest = () => {
+      this.chatViewport.follow = true;
+      pane.scrollTop = pane.scrollHeight;
+      jump.hidden = true;
+    };
+    jump.addEventListener("click", latest);
+    pane.addEventListener("scroll", () => {
+      if (restoring || !pane.isConnected) return;
+      this.chatViewport = { top: pane.scrollTop, follow: pane.scrollHeight - pane.clientHeight - pane.scrollTop <= 48 };
+      jump.hidden = this.chatViewport.follow;
+    });
+    const restore = () => {
+      if (!pane.isConnected) return;
+      pane.scrollTop = this.chatViewport.follow ? pane.scrollHeight : this.chatViewport.top;
+      restoring = false;
+      jump.hidden = this.chatViewport.follow;
+    };
+    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(restore);
+    else window.setTimeout(restore, 0);
+    if (typeof ResizeObserver !== "undefined") {
+      this.chatResizeObserver = new ResizeObserver(() => {
+        if (!restoring && pane.isConnected && this.chatViewport.follow) latest();
+      });
+      for (const child of Array.from(pane.children)) this.chatResizeObserver.observe(child);
+    }
+  }
+
   /** Quiet context strip — what the agent can see right now (UI/UX 2.0 §31). */
   private async renderChatContextBar(container: HTMLElement): Promise<void> {
     const bar = container.createDiv({ cls: "tm-chat-context-bar", attr: { role: "status" } });
     bar.createSpan({ text: t("chat_context_label"), cls: "tm-chat-context-label" });
 
-    const sources: string[] = [];
-    try {
-      const ctx = await this.plugin.kernelService.getStreamContext();
-      if (ctx.current) {
-        const { entries } = await this.plugin.kernelService.readPeriodNoteAsync(ctx.current.relPath);
-        if (entries.length > 0) {
-          sources.push(t("chat_context_stream"));
-        }
-      }
-    } catch {
-      /* stream unavailable */
-    }
-    try {
-      const active = this.plugin.kernelService.readTodos().filter((todo) => !todo.done);
-      if (active.length > 0) {
-        sources.push(t("chat_context_todos"));
-      }
-    } catch {
-      /* todos unavailable */
-    }
-    try {
-      const health = this.plugin.kernelService.profileHealth?.();
-      if (health && (health.activeCount || 0) > 0) {
-        sources.push(t("chat_context_profile"));
-      }
-    } catch {
-      /* profile unavailable */
-    }
-
-    if (sources.length === 0) {
-      bar.createSpan({ text: t("chat_context_empty"), cls: "tm-chat-context-empty" });
+    const focus = captureChatFocus(this.app.workspace);
+    if (!focus) {
+      bar.createSpan({ text: t("chat_context_no_object"), cls: "tm-chat-context-empty" });
       return;
     }
-    for (const label of sources) {
-      bar.createSpan({ text: label, cls: "tm-chip tm-chat-context-chip" });
-    }
+    const file = bar.createEl("button", { cls: "tm-chip tm-chat-context-chip", text: focus.path.split("/").pop() || focus.path,
+      attr: { type: "button", title: focus.path, "aria-label": t("chat_context_current_object", { path: focus.path }) } });
+    file.addEventListener("click", () => { void this.app.workspace.openLinkText(focus.path, "", false); });
+    if (focus.selection) bar.createSpan({ cls: "tm-chip tm-chat-context-chip", text: t("chat_context_selection", { count: focus.selection.length }) });
+    bar.createSpan({ text: t("chat_context_on_send"), cls: "tm-chat-context-empty" });
   }
 
   /** Status dot only (no label). Click = quick test / settings. */
   private renderFooterStatus(container: HTMLElement): void {
     const aiReady = hasConfiguredProvider(this.plugin.settings.ai);
-    const statusDiv = container.createDiv({ cls: "tm-footer-status" });
-    statusDiv.setAttribute("role", "button");
-    statusDiv.setAttribute("tabindex", "0");
-    statusDiv.setAttribute("aria-label", aiReady ? t("sidebar_ai_ready") : t("sidebar_ai_off"));
+    const statusDiv = container.createEl("button", { cls: "tm-footer-status clickable-icon", attr: { type: "button" } });
+    statusDiv.setAttribute("aria-label", aiReady ? t("settings_ai_quick_test") : t("chat_configure_ai"));
     statusDiv.setAttribute("title", footerStatusTitle(aiReady ? t("settings_ai_quick_test") : t("chat_configure_ai")));
     const dot = statusDiv.createSpan({ cls: `tm-status-dot ${aiReady ? "tm-dot-ok" : "tm-dot-off"}` });
     dot.setAttribute("aria-hidden", "true");
@@ -1143,12 +1115,7 @@ export class SidebarDockView extends ItemView {
       if (aiReady) void this.runAiQuickTest(statusDiv);
       else this.openSettings();
     });
-    statusDiv.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        statusDiv.click();
-      }
-    });
+
   }
 
   /** Compact provider·model control in the dock header (one row, no extra chrome). */
@@ -1215,6 +1182,15 @@ export class SidebarDockView extends ItemView {
     });
     msgEl.createSpan({ cls: "tm-chat-role", text: msg.role === "user" ? t("chat_you") : t("chat_ai") });
 
+    if (msg.role === "assistant" && msg.focus?.path) {
+      const objectPath = msg.focus.path;
+      const bound = msgEl.createEl("button", {
+        cls: "tm-chat-object", text: t("chat_bound_object", { path: objectPath.split("/").pop() || objectPath }),
+        attr: { type: "button", title: objectPath, "aria-label": t("chat_bound_object", { path: objectPath }) },
+      });
+      bound.addEventListener("click", () => { void this.app.workspace.openLinkText(objectPath, "", false); });
+    }
+
     if (msg.role === "assistant" && !msg.isError && msg.reasoning?.trim()) {
       const fold = msgEl.createEl("details", { cls: "tm-chat-reasoning" });
       const summary = fold.createEl("summary", { cls: "tm-chat-reasoning-summary" });
@@ -1254,7 +1230,7 @@ export class SidebarDockView extends ItemView {
             : tc.tool;
           const chip = toolRow.createEl("button", {
             cls: `tm-chat-tool-chip${tc.ok ? "" : " tm-chat-tool-chip-fail"}`,
-            text: label,
+            text: tc.pending || tc.needsConfirm ? `${label} · ${t("chat_tool_pending")}` : label,
             attr: { type: "button", title: isPath ? `${tc.tool} · ${rel}` : tc.summary || tc.tool },
           });
           if (isPath) {
@@ -1379,7 +1355,7 @@ export class SidebarDockView extends ItemView {
       });
 
       // Regenerate button (only if there's a prompt)
-      if (msg.prompt) {
+      if (msg.prompt && this.chatHistory[this.chatHistory.length - 1] === msg) {
         const regenBtn = actionsEl.createEl("button", { cls: "tm-chat-msg-btn clickable-icon" });
         setIcon(regenBtn, "refresh-cw");
         regenBtn.setAttribute("aria-label", t("chat_regenerate"));
@@ -1389,7 +1365,7 @@ export class SidebarDockView extends ItemView {
           const idx = this.chatHistory.lastIndexOf(msg);
           if (idx >= 0) {
             this.chatHistory.splice(idx, 1);
-            void this.regenerateResponse(msg.prompt!);
+            void this.regenerateResponse(msg.prompt!, msg.focus);
           }
         });
       }
@@ -1397,7 +1373,7 @@ export class SidebarDockView extends ItemView {
       // Error message with retry button
       bodyEl.textContent = msg.content;
       const actionsEl = msgEl.createDiv({ cls: "tm-chat-msg-actions" });
-      if (msg.prompt) {
+      if (msg.prompt && !this.chatThinking && msg === this.chatHistory[this.chatHistory.length - 1]) {
         const retryBtn = actionsEl.createEl("button", { cls: "tm-chat-msg-btn tm-chat-retry-btn" });
         setIcon(retryBtn, "refresh-cw");
         retryBtn.setAttribute("aria-label", t("chat_retry"));
@@ -1406,7 +1382,7 @@ export class SidebarDockView extends ItemView {
           const idx = this.chatHistory.lastIndexOf(msg);
           if (idx >= 0) {
             this.chatHistory.splice(idx, 1);
-            void this.regenerateResponse(msg.prompt!);
+            void this.regenerateResponse(msg.prompt!, msg.focus);
           }
         });
       }
@@ -1422,8 +1398,8 @@ export class SidebarDockView extends ItemView {
   }
 
   /**
-   * Result footer: Changes (path footprint) + Verified / Assumed / Could not.
-   * Segments come from the shared protocol helper. Empty segments say none.
+   * Result footer: actual tool completion + referenced paths and available evidence.
+   * A path footprint includes reads and must never be counted as file writes.
    * Path receipts are never labeled Verified.
    */
   private renderResultFooter(msgEl: HTMLElement, msg: ChatMessage): void {
@@ -1431,12 +1407,15 @@ export class SidebarDockView extends ItemView {
     const model = buildResultFooter(goal);
     if (!goal || !model) return;
 
-    const okTools = (msg.toolCalls || []).filter((tc) => tc.ok).length;
+    const okTools = (msg.toolCalls || []).filter((tc) => tc.ok && !tc.pending && !tc.needsConfirm).length;
+    const pendingTools = (msg.toolCalls || []).filter((tc) => tc.pending || tc.needsConfirm).length;
     const footer = msgEl.createDiv({ cls: "tm-goal-footer" });
     footer.createDiv({
       cls: "tm-goal-footer-summary",
-      text: t("chat_result_summary", { done: okTools, writes: model.changes.length }),
+      text: t("chat_result_summary", { done: okTools }),
     });
+
+    if (pendingTools) footer.createDiv({ cls: "tm-goal-footer-summary", text: t("chat_result_pending", { count: pendingTools }) });
 
     const row = (labelKey: "chat_result_changes" | "chat_result_verified" | "chat_result_assumed" | "chat_result_could_not") => {
       const r = footer.createDiv({ cls: "tm-goal-footer-row" });
@@ -1466,18 +1445,15 @@ export class SidebarDockView extends ItemView {
       }
     };
 
-    fill(row("chat_result_changes"), model.changes, true);
-    fill(row("chat_result_verified"), model.verified);
-    fill(row("chat_result_assumed"), model.assumed);
-    fill(row("chat_result_could_not"), model.couldNot);
+    if (model.changes.length) fill(row("chat_result_changes"), model.changes, true);
+    if (model.verified.length) fill(row("chat_result_verified"), model.verified);
+    if (model.assumed.length) fill(row("chat_result_assumed"), model.assumed);
+    if (model.couldNot.length) fill(row("chat_result_could_not"), model.couldNot);
   }
 
   private stopChat(): void {
     // Hard stop / abandon — honest cancelled semantics.
-    if (this.chatAbort) {
-      this.chatAbort.aborted = true;
-      this.chatAbort.pause = false;
-    }
+    this.chat.cancel();
     this.chatPaused = false;
     this.chatStatus = t("chat_stopped");
     const statusEl = this.contentContainer?.querySelector("[data-chat-status]");
@@ -1490,11 +1466,8 @@ export class SidebarDockView extends ItemView {
    */
   private pauseChat(): void {
     if (!this.chatThinking) return;
-    if (this.chatAbort) {
-      this.chatAbort.aborted = true;
-      this.chatAbort.pause = true;
-    }
-    this.chatPaused = true;
+
+    this.chat.pause();
     this.chatStatus = t("chat_paused");
     const statusEl = this.contentContainer?.querySelector("[data-chat-status]");
     if (statusEl) statusEl.textContent = this.chatStatus;
@@ -1531,20 +1504,20 @@ export class SidebarDockView extends ItemView {
       input.value = "";
       input.setCssStyles({ height: "auto" });
     }
-    await this.sendChatMessageText(parts.join("\n"));
+    await this.sendChatMessageText(parts.join("\n"), this.chat.focus);
   }
 
   /** Abandon a paused turn (true cancel). */
   private abandonPausedChat(): void {
     if (!this.chatPaused) return;
-    this.chatPaused = false;
-    this.saveChatGoal(null);
+    this.chat.cancel();
     this.stopChat();
     void this.renderActiveTab();
   }
 
   /** Update the working row in place so a progress tick does not rebuild the composer. */
   private patchChatWorkingRow(): void {
+    if (this.closed || this.activeTab !== "chat") return;
     const statusEl = this.contentContainer?.querySelector("[data-chat-status]");
     if (statusEl) statusEl.textContent = this.chatStatus || t("chat_thinking");
     const live = this.chatReasoningLive.trim();
@@ -1566,83 +1539,24 @@ export class SidebarDockView extends ItemView {
     await this.sendChatMessageText(text);
   }
 
-  private async sendChatMessageText(text: string): Promise<void> {
-    if (!text || this.chatThinking) return;
+  private async sendChatMessageText(text: string, boundFocus?: ChatFocus | null): Promise<void> {
+    const focus = boundFocus === undefined ? captureChatFocus(this.app.workspace) : boundFocus;
+    await this.executeChat(text, focus);
+  }
 
-    // Add user message
-    this.chatHistory.push({ role: "user", content: text });
-    this.saveChatHistory();
-
-    const gate = { aborted: false, pause: false };
-    this.chatAbort = gate;
-    this.chatThinking = true;
-    this.chatPaused = false;
-    this.chatStartedAt = Date.now();
-    this.chatStatus = t("chat_working");
-    this.chatReasoningLive = "";
-    this.chatFocusOnRender = true;
-    void this.renderActiveTab();
-
+  private async executeChat(text: string, focus: ChatFocus | null, retry = false): Promise<void> {
     try {
-      const response = await this.plugin.kernelService.chat(text, this.chatHistory.slice(0, -1), {
-        shouldAbort: () => gate.aborted,
-        stopKind: () => (gate.pause ? "paused" : "cancelled"),
-        contextLimit: this.chatContextLimit,
-        priorGoal: this.loadChatGoal(),
-        onProgress: (ev) => {
-          this.chatStatus = this.formatChatProgress(ev);
-          if (ev.reasoning) this.chatReasoningLive = ev.reasoning;
-          this.patchChatWorkingRow();
+      await this.chat.send(text, focus, { retry, contextLimit: this.chatContextLimit,
+        onStart: () => { this.chatScrollToLatest = true; this.chatStatus = t("chat_working"); this.chatFocusOnRender = true; void this.renderActiveTab(); },
+        onProgress: event => { this.chatStatus = this.formatChatProgress(event); this.patchChatWorkingRow(); },
+        onFinish: () => {
+          this.chatStatus = this.chatPaused ? t("chat_paused") : "";
+          if (this.closed || this.activeTab !== "chat") return;
+          this.chatFocusOnRender = !!this.contentContainer?.contains(document.activeElement);
+          void this.renderActiveTab();
         },
       });
-      const stopReason = response.stopReason
-        || (gate.pause ? "paused" as const : gate.aborted ? "cancelled" as const : undefined);
-      const goal = response.goal || (stopReason === "paused" ? this.loadChatGoal() : null);
-      this.chatHistory.push({
-        role: "assistant",
-        content: response.content || (stopReason === "paused" ? t("chat_paused") : stopReason === "cancelled" ? t("chat_stopped") : "..."),
-        reasoning: response.reasoning || this.chatReasoningLive || undefined,
-        prompt: text,
-        toolCalls: response.toolCalls,
-        steps: response.steps,
-        autoContinues: response.autoContinues,
-        stepLimitHit: response.stepLimitHit,
-        paused: stopReason === "paused" || undefined,
-        cancelled: stopReason === "cancelled" || undefined,
-        stopReason,
-        goal,
-      });
-      this.saveChatGoal(stopReason === "cancelled" ? null : goal);
-      this.saveChatHistory();
-    } catch (err) {
-      if (gate.aborted || (err instanceof Error && err.name === "AbortError")) {
-        this.chatHistory.push({
-          role: "assistant",
-          content: gate.pause ? t("chat_paused") : t("chat_stopped"),
-          reasoning: this.chatReasoningLive || undefined,
-          prompt: text,
-          paused: gate.pause || undefined,
-          goal: gate.pause ? this.loadChatGoal() : null,
-        });
-      } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.chatHistory.push({
-          role: "assistant",
-          content: `${t("chat_error")}: ${msg}`,
-          isError: true,
-          prompt: text,
-        });
-      }
-      this.saveChatHistory();
-    } finally {
-      this.chatAbort = null;
-      this.chatThinking = false;
-      if (!gate.pause) this.chatPaused = false;
-      this.chatStatus = gate.pause ? t("chat_paused") : "";
-      this.chatReasoningLive = "";
-      this.chatFocusOnRender = true;
-      void this.renderActiveTab();
-    }
+    } catch (error) { new Notice(error instanceof Error ? error.message : String(error)); }
   }
 
   private formatChatProgress(ev: { kind: string; step: number; maxSteps: number; tool?: string; autoContinues?: number }): string {
@@ -1662,80 +1576,9 @@ export class SidebarDockView extends ItemView {
     return `${stepPart} · ${t("chat_working")}${elapsed}`;
   }
 
-  /** Regenerate the AI response for a given prompt */
-  private async regenerateResponse(prompt: string): Promise<void> {
-    if (this.chatThinking) return;
-
-    const gate = { aborted: false };
-    this.chatAbort = gate;
-    this.chatThinking = true;
-    this.chatStartedAt = Date.now();
-    this.chatStatus = t("chat_working");
-    this.chatReasoningLive = "";
-    void this.renderActiveTab();
-
-    try {
-      // Context = history up to (excluding) the user message being regenerated,
-      // so the prompt is sent exactly once as the final turn.
-      let lastUserIdx = -1;
-      for (let i = this.chatHistory.length - 1; i >= 0; i--) {
-        const m = this.chatHistory[i];
-        if (m.role === "user" && m.content === prompt) {
-          lastUserIdx = i;
-          break;
-        }
-      }
-      const history = lastUserIdx >= 0
-        ? this.chatHistory.slice(0, lastUserIdx)
-        : [...this.chatHistory];
-      const response = await this.plugin.kernelService.chat(prompt, history, {
-        shouldAbort: () => gate.aborted,
-        contextLimit: this.chatContextLimit,
-        priorGoal: this.loadChatGoal(),
-        onProgress: (ev) => {
-          this.chatStatus = this.formatChatProgress(ev);
-          if (ev.reasoning) this.chatReasoningLive = ev.reasoning;
-          this.patchChatWorkingRow();
-        },
-      });
-      this.chatHistory.push({
-        role: "assistant",
-        content: response.content || (gate.aborted ? t("chat_stopped") : "..."),
-        reasoning: response.reasoning || this.chatReasoningLive || undefined,
-        prompt,
-        toolCalls: response.toolCalls,
-        steps: response.steps,
-        autoContinues: response.autoContinues,
-        stepLimitHit: response.stepLimitHit,
-        goal: (response as { goal?: ChatMessage["goal"] }).goal || null,
-      });
-      this.saveChatGoal((response as { goal?: ChatMessage["goal"] }).goal || null);
-      this.saveChatHistory();
-    } catch (err) {
-      if (gate.aborted || (err instanceof Error && err.name === "AbortError")) {
-        this.chatHistory.push({
-          role: "assistant",
-          content: t("chat_stopped"),
-          reasoning: this.chatReasoningLive || undefined,
-          prompt,
-        });
-      } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.chatHistory.push({
-          role: "assistant",
-          content: `${t("chat_error")}: ${msg}`,
-          isError: true,
-          prompt,
-        });
-      }
-      this.saveChatHistory();
-    } finally {
-      this.chatAbort = null;
-      this.chatThinking = false;
-      this.chatStatus = "";
-      this.chatReasoningLive = "";
-      void this.renderActiveTab();
-    }
+  /** Retry only the final user turn, preserving its original object. */
+  private async regenerateResponse(prompt: string, focus?: ChatFocus): Promise<void> {
+    await this.executeChat(prompt, focus || null, true);
   }
 
   // ── History Tab (AI Task History) ───────────────────────────────────────

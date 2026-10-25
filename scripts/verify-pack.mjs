@@ -91,6 +91,8 @@ if (existsSync(mainPath)) {
   check("no import.meta.url", !mainContent.includes("import.meta.url"), "shimmed to CJS");
   check("no createRequire", !mainContent.includes("createRequire"), "shimmed to static imports");
 
+  check("bundled skill catalog present", mainContent.includes("topmind-write") && mainContent.includes("shared/writeback-receipt.md"));
+
   // Check that Kernel API is embedded
   check(
     "Kernel API embedded (createKernelContext)",

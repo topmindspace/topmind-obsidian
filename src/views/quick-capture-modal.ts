@@ -13,6 +13,11 @@ import { bindImeEnterGuard, extractTags, isImeEnter, isLoneUrlCapture } from "..
 
 export class QuickCaptureModal extends Modal {
   plugin: TopmindPlugin;
+  private submitting = false;
+  private closed = false;
+  private targetChosen = false;
+  private urlAutoRouted = false;
+  private fetchBtn: HTMLButtonElement | null = null;
   textarea!: HTMLTextAreaElement;
   targetSelect!: HTMLSelectElement;
   tagInput!: HTMLInputElement;
@@ -27,6 +32,10 @@ export class QuickCaptureModal extends Modal {
 
   onOpen(): void {
     const { contentEl, modalEl } = this;
+    this.closed = false;
+    this.submitting = false;
+    this.targetChosen = false;
+    this.urlAutoRouted = false;
     modalEl.addClass("tm-quick-capture-modal");
     contentEl.empty();
     contentEl.addClass("tm-quick-capture-content");
@@ -41,7 +50,7 @@ export class QuickCaptureModal extends Modal {
     const textareaWrap = contentEl.createDiv({ cls: "tm-quick-capture-textarea-wrap" });
     this.textarea = textareaWrap.createEl("textarea", {
       cls: "tm-quick-capture-textarea",
-      attr: { placeholder: t("quick_capture_placeholder"), rows: "3", autofocus: "true" },
+      attr: { placeholder: t("quick_capture_placeholder"), rows: "3", autofocus: "true", "aria-label": t("quick_capture_title") },
     });
 
     // Character count + URL hint
@@ -54,6 +63,7 @@ export class QuickCaptureModal extends Modal {
       cls: "tm-url-fetch-btn",
       text: t("compose_url_fetch"),
     });
+    this.fetchBtn = fetchBtn;
     fetchBtn.addEventListener("click", () => {
       void this.fetchUrlToInbox(fetchBtn);
     });
@@ -69,7 +79,7 @@ export class QuickCaptureModal extends Modal {
     const leftDiv = footer.createDiv({ cls: "tm-footer-left" });
 
     const targetDiv = leftDiv.createDiv({ cls: "tm-quick-capture-target" });
-    const targetLabel = targetDiv.createSpan({ text: t("quick_capture_target"), cls: "tm-footer-label" });
+    const targetLabel = targetDiv.createEl("label", { text: t("quick_capture_target"), cls: "tm-footer-label" });
     this.targetSelect = targetDiv.createEl("select");
     this.targetSelect.id = "tm-quick-capture-target";
     targetLabel.setAttribute("for", this.targetSelect.id);
@@ -77,7 +87,7 @@ export class QuickCaptureModal extends Modal {
     this.targetSelect.createEl("option", { value: "inbox", text: t("quick_capture_target_inbox") });
 
     const tagDiv = leftDiv.createDiv({ cls: "tm-quick-capture-tags" });
-    const tagLabel = tagDiv.createSpan({ text: t("quick_capture_tags"), cls: "tm-footer-label" });
+    const tagLabel = tagDiv.createEl("label", { text: t("quick_capture_tags"), cls: "tm-footer-label" });
     this.tagInput = tagDiv.createEl("input", {
       cls: "tm-tag-input",
       attr: { type: "text", placeholder: t("quick_capture_tags_placeholder") },
@@ -97,6 +107,7 @@ export class QuickCaptureModal extends Modal {
       cls: "tm-submit-btn mod-cta",
     });
     this.submitBtn.setAttribute("aria-label", t("quick_capture_note_it"));
+    this.submitBtn.disabled = true;
 
     // Focus input
     window.setTimeout(() => this.textarea.focus(), 50);
@@ -107,6 +118,7 @@ export class QuickCaptureModal extends Modal {
       this.textarea.setCssStyles({ height: `${Math.min(this.textarea.scrollHeight, 300)}px` });
       this.updateCharCount();
       this.updateUrlHint();
+      this.updateSubmitState();
     });
 
     // Enter submits, Shift+Enter newline. IME candidate confirm must not submit.
@@ -129,6 +141,8 @@ export class QuickCaptureModal extends Modal {
 
     // Target change — manual override removes URL hint
     this.targetSelect.addEventListener("change", () => {
+      this.targetChosen = true;
+      this.urlAutoRouted = false;
       if (this.urlHintEl && this.targetSelect.value !== "inbox") {
         this.urlHintEl.addClass("tm-url-hint-hidden");
       }
@@ -150,28 +164,42 @@ export class QuickCaptureModal extends Modal {
     else this.charCountEl.setAttribute("aria-hidden", "true");
   }
 
+  private updateSubmitState(): void {
+    this.submitBtn.disabled = this.submitting || !this.textarea.value.trim();
+  }
+
+  private setBusy(busy: boolean): void {
+    this.submitting = busy;
+    this.textarea.disabled = busy;
+    this.tagInput.disabled = busy;
+    this.targetSelect.disabled = busy;
+    if (this.fetchBtn) this.fetchBtn.disabled = busy;
+    this.updateSubmitState();
+  }
+
   private updateUrlHint(): void {
     if (!this.urlHintEl) return;
-    const text = this.textarea.value.trim();
-    const isUrl = isLoneUrlCapture(text);
-    if (isUrl) {
+    const isUrl = isLoneUrlCapture(this.textarea.value.trim());
+    this.urlHintEl.classList.toggle("tm-url-hint-hidden", !isUrl);
+    if (isUrl && !this.targetChosen) {
       this.targetSelect.value = "inbox";
-      this.urlHintEl.removeClass("tm-url-hint-hidden");
-    } else if (this.targetSelect.value === "inbox") {
-      // Only hide if target is inbox but text is not URL and was auto-set
-      this.urlHintEl.addClass("tm-url-hint-hidden");
+      this.urlAutoRouted = true;
+    } else if (!isUrl && this.urlAutoRouted) {
+      this.targetSelect.value = "stream";
+      this.urlAutoRouted = false;
     }
   }
 
   /** 抓取 → Inbox 独立文章（Desktop handleFetchToInbox parity）。 */
   private async fetchUrlToInbox(btn: HTMLButtonElement): Promise<void> {
     const text = this.textarea.value.trim();
-    if (!text || !isLoneUrlCapture(text)) return;
+    if (!text || !isLoneUrlCapture(text) || this.submitting) return;
     const original = btn.textContent;
-    btn.disabled = true;
+    this.setBusy(true);
     btn.textContent = t("compose_url_fetching");
     try {
       const result = await this.plugin.kernelService.fetchUrlForCapture(text);
+      if (this.closed) return;
       if (!result.ok) {
         new Notice(`${t("compose_url_fetch_fail")}: ${result.error || ""}`);
         return;
@@ -187,18 +215,14 @@ export class QuickCaptureModal extends Modal {
       console.error("[topmind] quick-capture fetch failed:", err);
       new Notice(t("compose_url_fetch_fail"));
     } finally {
-      btn.disabled = false;
-      btn.textContent = original;
+      if (!this.closed) { this.setBusy(false); btn.textContent = original; }
     }
   }
 
   private submit(): void {
-    if (this.submitBtn.disabled) return;
+    if (this.submitting) return;
     const text = this.textarea.value.trim();
-    if (!text) {
-      this.close();
-      return;
-    }
+    if (!text) return;
 
     const target = this.targetSelect.value as CaptureTarget;
 
@@ -214,29 +238,28 @@ export class QuickCaptureModal extends Modal {
     }
 
     // Disable during write
-    this.textarea.disabled = true;
-    this.tagInput.disabled = true;
-    this.submitBtn.disabled = true;
+    this.setBusy(true);
     this.submitBtn.empty();
     this.submitBtn.createSpan({ cls: "tm-btn-spinner" });
 
-    const result = this.plugin.kernelService.capture(text, { target, tags });
-
-    if (result.ok) {
-      // kernelService.capture already toasts written/pending/failed with path.
-      this.modalEl.addClass("tm-modal-submitted");
-      window.setTimeout(() => this.close(), 120);
-    } else {
-      this.textarea.disabled = false;
-      this.tagInput.disabled = false;
-      this.submitBtn.disabled = false;
-      this.submitBtn.empty();
-      this.submitBtn.textContent = t("quick_capture_note_it");
-      this.textarea.focus();
+    try {
+      const result = this.plugin.kernelService.capture(text, { target, tags });
+      if (result.ok) {
+        this.modalEl.addClass("tm-modal-submitted");
+        window.setTimeout(() => this.close(), 120);
+        return;
+      }
+    } catch {
+      new Notice(t("notice_write_failed"));
     }
+    this.setBusy(false);
+    this.submitBtn.empty();
+    this.submitBtn.textContent = t("quick_capture_note_it");
+    this.textarea.focus();
   }
 
   onClose(): void {
+    this.closed = true;
     this.contentEl.empty();
   }
 }

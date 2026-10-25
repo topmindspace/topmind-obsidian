@@ -1,0 +1,66 @@
+{
+  "date": "2026-10-25",
+  "version": "4.19.0",
+  "tests": {
+    "passed": 216,
+    "failed": 0
+  },
+  "checks": [
+    "typecheck",
+    "lint",
+    "build",
+    "pack",
+    "pack:verify",
+    "byte-identical rebuild",
+    "zip content parity",
+    "real Obsidian mock-provider UI"
+  ],
+  "host": {
+    "userData": "/private/tmp/topmind-obsidian-smoke-BcBxz6",
+    "version": "1.12.7",
+    "runtime": {
+      "node": "22.22.1",
+      "electron": "39.8.3",
+      "chrome": "142.0.7444.265"
+    }
+  },
+  "ui": {
+    "stage": "validated",
+    "requests": 4,
+    "target": "00-Inbox/Focus-A.md",
+    "errors": []
+  },
+  "pi_core_renderer_probe": {
+    "version": "1.4.0",
+    "requests": 2,
+    "writes": 0,
+    "messages": [
+      "system",
+      "user",
+      "assistant",
+      "toolResult",
+      "assistant"
+    ],
+    "events": [
+      "agent_start",
+      "turn_start",
+      "message_start",
+      "message_end",
+      "message_start",
+      "message_end",
+      "tool_execution_start",
+      "tool_execution_end",
+      "message_start",
+      "message_end",
+      "turn_end",
+      "turn_start",
+      "message_start",
+      "message_end",
+      "turn_end",
+      "agent_end"
+    ]
+  },
+  "main_sha256": "6f86dee2838e1f1d6fa4660d4aaed2a31843903a13ffaf56dbed9d1b1fbe5354",
+  "archive_sha256": "9c89c4598abd86ad743b08d41f57e0891ca8cc2f34e5c2784564a8044e7e1089",
+  "archive_bytes": 298396
+}

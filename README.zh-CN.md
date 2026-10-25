@@ -1,256 +1,123 @@
-# topmind Stream for Obsidian
+# Topmind Stream for Obsidian
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](README.md) · 简体中文 · [更新记录](CHANGELOG.md)
 
-[![Obsidian 插件](https://img.shields.io/badge/Obsidian-%E6%8F%92%E4%BB%B6-purple?style=flat-square&logo=obsidian)](https://obsidian.md)
-[![开源协议: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![最低 Obsidian 版本](https://img.shields.io/badge/Obsidian-%E2%89%A51.13.0-informational?style=flat-square)](https://obsidian.md)
-[![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-dynamic-green.svg?style=flat-square)](manifest.json)
+在 Obsidian 里随手记录、继续处理笔记，让 AI 帮你找资料、整理待办和提出建议。内容保存在自己的 Vault；不用 AI 也可以记录和回看。
 
-> **Obsidian 的「主区域动态流 + 静默 AI 沉淀副驾」**  
-> 随手记下、AI 默认建议、用户确认后再沉淀、文件永远属于本地。
+需要 **桌面版 Obsidian 1.13.0 或更新版本**，暂不支持移动端。版本以 [manifest.json](manifest.json) 为准。
 
----
+## 三分钟开始
 
-版本说明：[CHANGELOG.md](CHANGELOG.md)。
+1. **安装并启用**插件，方法见下节。
+2. 从命令面板选择 **Topmind: 打开动态**。新工作区点击“初始化工作区”，先用默认动态模板即可；也可到设置选择其他模板。
+3. 在动态输入一件今天想记的事，按 **Enter**。记录会写入周期笔记，也能在原生文件树里打开。
+4. 需要 AI 时，打开 **设置 → Topmind Stream → AI 服务商与模型**，配置服务商和模型后测试连接；不需要时可跳过。
 
-## 界面预览
+常用入口：**动态**用于记录与回看；**AI 副驾**用于对话、建议、清单和任务历史；**记一下**弹窗用于临时捕获；**我的情况**用于查看画像与其他记忆。
 
-| 动态时间轴 | 我的情况 |
+## 安装与升级
+
+### 手动安装
+
+1. 从 [GitHub Releases](https://github.com/topmindspace/topmind-obsidian/releases) 下载同一版本的 `main.js`、`manifest.json`、`styles.css`。
+2. 放入 `<Vault>/.obsidian/plugins/topmind-stream/`。如果改过 Obsidian 配置目录，使用自己的配置目录。
+3. 重新加载 Obsidian，在 **设置 → 社区插件** 启用 **Topmind Stream**。
+
+本地构建的 `topmind-obsidian-*.zip` 可直接解压到该插件目录；确保 `main.js` 就在目录内，不要额外嵌套一层。GitHub 的 **Source code ZIP** 是源码，需要构建后才能安装。
+
+### BRAT 或社区目录
+
+已使用 BRAT 的用户可添加仓库 `topmindspace/topmind-obsidian`。若 Obsidian 社区目录中能搜到 Topmind Stream，也可从目录安装；搜不到时使用手动安装或 BRAT。
+
+### 升级
+
+社区目录/BRAT 用户使用相应更新入口。手动安装用户替换上述三份插件文件后重新加载。不要删除插件的 `data.json`，它保存设置与凭证。升级不替换内容区的笔记、`topmind.yaml` 或 `memory/`。
+
+## 配置 AI（可选）
+
+**首次打开即可配置**：没有保存密钥时，服务商和模型控件也会显示。
+
+1. 在 **AI 服务商与模型** 选择服务商。
+2. 普通服务商填写 API Key；Ollama 填 Base URL；自定义兼容服务填写 Base URL 和 API Key。
+3. 选择模型。列表中没有所需型号时填写自定义模型 ID；留空表示使用服务商默认模型。
+4. 使用设置中的连接测试。对话输入框旁的状态点也可点击测试；出现“连接异常”时检查服务地址、密钥和模型是否可用。
+
+已有配置升级后会保留。从 Desktop 导入时，由你选择一份导出文件，插件只读取这份文件，不扫描用户主目录。密钥不可解密时会拒绝导入，不会当成可用凭证。
+
+笔记在本地；使用 AI 时，相关上下文会发送到所配置的服务商。凭证默认保存在插件 `data.json`；可选的 Vault 明文备份默认关闭。共享或同步插件配置前先检查凭证。
+
+## 每天怎么用
+
+| 想做什么 | 操作 |
 |---|---|
-| ![动态时间轴](docs/images/stream-timeline-zh.png) | ![我的情况](docs/images/profile-memory-zh.png) |
+| 快速记一条 | 命令面板 → **记一下**，或点击铅笔图标；选择动态/Inbox 后提交 |
+| 回看本周 | 打开**动态**，切换周期、筛选或展开长记录 |
+| 让 AI 处理当前笔记 | 打开笔记 → AI 副驾的**对话** → 检查“发送对象” → 输入请求 |
+| 录入待办 | **清单**输入框直接添加；勾选完成，必要时清理已完成项 |
+| 审阅 AI 建议 | **建议**里看清目标和动作，再确认或忽略 |
+| 看后台进度 | **任务历史**查看排队、运行、完成或失败的操作 |
+| 修改画像 | 打开**我的情况**，或让 AI 提出可审阅的记忆更新 |
 
-| AI 建议 | 清单 |
-|---|---|
-| ![AI 建议](docs/images/suggestions-zh.png) | ![清单](docs/images/todos-zh.png) |
+对话可以这样开始：“总结这篇笔记”“找出本周还没完成的事”“把这段补充到当前笔记”。要实际修改文件时，把意图说清楚。
 
-| AI 副驾设置 | English UI |
-|---|---|
-| ![AI 副驾设置](docs/images/settings-ai-copilot.png) | ![Stream timeline (English)](docs/images/stream-timeline-en.png) |
+### 当前笔记与选区
 
-更多：[My Profile (English)](docs/images/profile-memory-en.png)。
+输入框上方的“发送对象”指向**下一次发送**要绑定的笔记或动态。选中文字后发送，可以限定处理范围。发送后切换页签不会改变本轮对象，每条回复会显示其绑定对象。
 
----
+不要把“未选定笔记”理解为无法对话：仍可检索工作区。如果要修改某篇，先打开它或明确给出路径。打开编辑器有未保存内容时，先保存再让 AI 修改；插件会检查冲突。
 
-## 这是什么？
+### 输入、暂停与继续
 
-**topmind Stream** 将 topmind 引擎的核心**低摩擦个人动态流体验**带入 Obsidian。
+- **Enter** 发送/提交，**Shift+Enter** 换行；输入法选词回车不会误发送。
+- 聊天运行时点击方块按钮，或在输入框按 **Esc**，会暂停；已经完成的文件修改保留。
+- 暂停后点击继续，沿原目标接着做；放弃任务不会撤销已经完成的修改。
+- 关闭 AI 侧栏会暂停并保存当前会话；重新打开可恢复。清空对话只清聊天状态。
+- 清单草稿在标签切换和重绘时保留；后台聊天进度不会刷新掉正在输入的待办。
+- 阅读较早的对话时，新进度和回复不会强行滚到底部；需要时点击“回到最新”。
+- 待办较多时可筛选未完成任务并加载更多；展开已完成列表，取消勾选即可恢复。清理已完成会处理全部已完成项，筛选只影响未完成列表。
 
-传统笔记往往要求在记录前先想好分类、标签与文件夹层级。topmind Stream 将其转变为顺畅的即时流式体验：
+### 哪些操作需要确认
 
-```text
-收进来 -> 继续做 -> 交付/沉淀 -> 找回/调整
-随手记下  ->  AI 后台默认建议  ->  用户确认后再沉淀  ->  文件永远属于本地
-```
+主动提出的整理/记忆建议可忽略。明确要求的内容新建和编辑会直接保存。
 
-- **零负担记录**：突发的随笔想法、网页剪藏、代码片段随意记下，不再为「放在哪里」而犹豫。
-- **本地优先与纯标准 Markdown**：无专有数据库锁定，无私有格式。所有数据均存储在 Vault 中（`topmind.yaml` + 编号分类目录）。
-- **主动而不打扰的 AI 辅助**：后台自动提取待办事项、建议专题涌现、整理我的情况，但**未经用户确认，绝对不会擅自修改本地文件**。
+“删除/归档前问我”模式会把删除/归档放到**待确认操作**；删除卡片会明确写“确认删除”和目标路径。“自动保存”模式允许已授权的生命周期操作直接执行，不代表自动接受全部建议。失败或检测到过期内容时，卡片会保留供检查和重试。
 
----
+## 常见问题
 
-## 核心能力
+**找不到插件或无法加载？** 检查 Obsidian 桌面版本、社区插件是否启用，以及三份文件是否位于正确插件目录。源码 ZIP 不能直接启用。
 
-- **记一下**：打开完整捕捉弹窗（快捷键在 Obsidian 设置 → 快捷键 自行绑定）。落点：本周动态或 Inbox。
-- **动态页签**：Obsidian 主区域时间轴；输入栏 **记下** 写入周期本；卡片流 + AI 建议。
-- **AI 副驾面板**（侧边栏）：标签式右侧面板统一汇聚全部 AI 能力 — **对话**、**建议**、**清单**、**任务历史**（对话为 agent 脊，默认打开）。模型切换唯二入口：「对话」tab + 设置。建议 tab 带计数。
-- **AI 对话**：与 AI 对话你的笔记、清单和动态。上下文感知 — 自动注入近期动态、清单和个人画像。**目标协议**（计划 + 验收项 + 任务台账）· 支持**暂停（Esc）**（已完成修改与目标台账保留，可继续/放弃）、**思考过程展开**、路径回执可点开、结果说明页脚（**Verified / Assumed / Could not**）、未完成时显示「任务未完成」而非假成功；输入法选词回车不误发，会话压缩与 Desktop 对齐（60 条 / 保最近 24 条全文）。
-- **整理本周**：一键 reconcile 周期本、AI 提取待办事项并刷新涌现建议。
-- **后台 AI 副驾**：自动提炼待办（`memory/todo.md`）、建议专题涌现、整理个人画像（`memory/profile.md`）。画像写入会**融合近重复**（保留最新表述，不堆第二条活事实），并可**整理历史同类项** — 均经「建议」确认。
-- **快速设置入口**：侧边栏头部与动态工具栏均可一键跳转设置。工具栏为 icon-only（`title` tooltip），侧栏头 icon-first（label CSS 常藏）。刷新与整理用不同图标。模型切换唯二入口：「对话」tab + 设置 — 头部/工具栏**无**模型徽章。
-- **安全写回与备份**：所有写入经由 Kernel `writeback-engine` 闸口（`open`/`locked`）；**仅高影响**（locked 覆盖、锁定/核心删除）写备份/回执。归档是迁入 `99-归档` 的新家，不是备份。
+**没有配置 AI，会影响记录吗？** 不会。记录、浏览和手动待办无需密钥；只在需要 AI 处理时配置。
 
----
+**模型选了却连接失败？** 检查服务商、Base URL、密钥和模型 ID 是否属于同一服务；再从设置测试。连接测试成功也不代表该模型支持所有任务。
 
-## 用户核心概念（≤ 5）
+**没有出现建议？** 先检查 AI 配置和自动建议开关。主动刷新可能发起模型请求；待确认卡片不依赖自动建议开关。
 
-topmind Stream 通过 5 个通俗直观的概念降低认知负担：
+**提示未保存或内容已变化？** 先保存编辑器、重新读取相关笔记，再重试。不要强行覆盖；Desktop 与 Obsidian 同时编辑同一文件仍可能发生冲突。
 
-| 概念 | 含义 | Vault 落点 |
-|------|------|------------|
-| **记一下** | 随手存一条想法/片段 | 本周动态周期本 / `00-Inbox/` |
-| **动态** | 日常流水与时间轴 | `10-动态/`（每周一本） |
-| **专题** | 长期主题归档 | `{大类}/{YYYY-主题}/` |
-| **我的情况** | 记忆平面浏览（画像 / 周期反思 / 专题记忆） | `memory/` 下的文件（默认画像 `memory/profile.md`） |
-| **交付** | 最终成品与文章 | `88-交付/` |
+**聊天/建议记录损坏？** 插件会显示错误并保留原文件。先备份 Vault，检查 `.topmind/` 文件权限或磁盘同步状态，修复后重试；不要先删除整个状态目录。
 
----
+**抓取网址和直接记录链接有何区别？** 抓取会下载正文并存入 Inbox；直接提交记录链接。抓取期间不能重复提交，关闭弹窗会阻止迟到的抓取结果继续入库。
 
-## 快速开始
+## 命令与界面
 
-### 1. 安装
+在 Obsidian 命令面板搜索 **Topmind**：记一下、打开动态、打开侧边栏、整理本周、刷新 AI 建议、AI 整理待办、专题分类、整理我的情况、打开我的情况、打开 Inbox。插件不设置默认全局快捷键，可在 **设置 → 快捷键** 自行绑定。
 
-#### 方式 A：Obsidian 官方社区插件市场（发布审核中）
-1. 打开 **Obsidian 设置** → **社区插件**。
-2. 关闭安全模式，点击 **浏览**。
-3. 搜索 **Topmind Stream**。
-4. 点击 **安装**，然后 **启用**。
+[动态预览](docs/images/stream-timeline-zh.png) · [我的情况预览](docs/images/profile-memory-zh.png) · [本轮体验检查](docs/UX-REVIEW-2026-10-25.md)
 
-#### 方式 B：使用 BRAT 插件一键安装
-1. 在 Obsidian 社区插件中安装并启用 **BRAT** (TfTHacker / obsidian-42-brat)。
-2. 打开 BRAT 设置，点击 **Add Beta plugin**。
-3. 输入仓库地址：`topmindspace/topmind-obsidian`
-4. 点击 Add Plugin，启用 **Topmind Stream**。
+## 开发与实现
 
-#### 方式 C：手动安装
-1. 从 [GitHub Releases](https://github.com/topmindspace/topmind-obsidian/releases) 下载 `main.js`、`manifest.json`、`styles.css`。Release 上只有这三份文件。
-2. 放到 `<Vault>/.obsidian/plugins/topmind-stream/`。
-3. 重新打开 Obsidian，在 **设置 → 社区插件** 中开启 **Topmind Stream**。
+内容、工具与权限边界见 [ARCHITECTURE.md](ARCHITECTURE.md)，交互约定见 [DESIGN.md](DESIGN.md)。运行时与未完成能力见[架构整改记录](docs/OBSIDIAN-REFACTOR-2026-10-25.md)。插件使用 Obsidian 原生编辑器，Desktop 使用自己的编辑器；两端共用 Kernel 内容契约，不搬入两套文件管理系统。
 
-#### 升级
-| 方式 | 操作 |
-|------|------|
-| 社区市场 / BRAT | 从插件列表更新 / BRAT「检查更新」 |
-| 手动 | 用新版的 `main.js`、`manifest.json`、`styles.css` 覆盖 `plugins/topmind-stream/` 下的同名文件，重新加载 Obsidian |
-| 从源码构建 | `npm run pack` 得到本地 zip（不会上传到 GitHub Release），解压进 `plugins/topmind-stream/` |
+完整验证在 Node 22.22.3 下运行，测试需要 TypeScript 类型擦除支持。`npm ci` 使用 lockfile，`npm run typecheck` 会同步可用的 Kernel 来源；正式 build 使用 vendored 快照。
 
-你的 Vault 文件（`topmind.yaml`、`10-动态/`、`memory/`）**不会**被插件升级替换。版本真源：[`manifest.json`](./manifest.json)。
-
----
-
-### 2. 初始化工作区
-
-首次启用时，Topmind Stream 会检查你的 Vault 是否已包含 topmind 工作区结构（`topmind.yaml` 和编号分类目录）。
-
-- **已有工作区**：自动检测，无需设置。
-- **全新 Vault**：进入 **设置 → Topmind Stream**，选择模板（`stream`、`balanced`、`research` 或 `periodic`），点击 **初始化工作区**。
-
----
-
-### 3. 配置 AI 副驾（可选）
-
-进入 **设置 → Topmind Stream → AI 服务商与模型**（写回策略在下一组「AI 副驾与写回策略」）：
-
-- **首次打开即可配置**：还没有保存任何密钥、服务商偏好为空时，设置页也会显示 AI 服务商、模型（预设 / 默认 + 自定义模型 ID）和凭证。普通服务商填 API Key，Ollama 填 Base URL，Custom 填 Base URL 加 API Key。选好后写入插件数据，重新打开仍然在，并作为已配置的服务商。
-- **已有配置的升级**：旧的单服务商字段或已经存好的多服务商密钥会迁过来，同一组控件带上已保存的服务商、模型和密钥。
-- **模型**：下拉 + 自定义模型 ID + 刷新。已配置密钥/端点时走官方 list-models，否则用 [models.dev](https://models.dev) 社区目录，再回退精选默认。模型控件不依赖「已经配好一个服务商」才出现。
-- **从 Desktop 导入**：点击后由你选择一份导出文件，只读这一份。插件不扫描用户主目录。
-- 选择**写回模式**：
-  - `confirm`（*删除/归档前问我* — 推荐）：分级——内容新建/更新/编辑直接落盘；仅删除/归档需你确认。
-  - `auto`（*自动保存*）：自动应用 AI 建议，同时自动创建后台备份。
-
-*注：AI 完全是可选的！极速捕捉、时间轴浏览和手动周整理无需 API 密钥即可流畅使用。*
-
----
-
-### 4. 日常使用
-
-- 命令面板 → **Topmind: 记一下**（在 Obsidian 设置 → 快捷键 中绑定快捷键）。
-- `Cmd/Ctrl + P` → **Topmind: 打开动态** 打开时间轴页签。
-- 点击左侧 Ribbon 栏的 **铅笔图标** 即可打开**记一下**。
-
-产品词汇（与 Desktop 对齐）：**记一下** / Note it · **记下** / Log it · 动态 · 专题 · 我的情况 · 交付。
-
----
-
-## 命令面板参考
-
-| 命令 | 说明 |
-|------|------|
-| `Topmind: 记一下` | 捕捉笔记或片段（默认：本周动态） |
-| `Topmind: 打开动态` | 打开动态时间轴页签 |
-| `Topmind: 打开侧边栏` | 打开侧边栏面板 |
-| `Topmind: 整理本周` | 整理周期本并刷新建议 |
-| `Topmind: 刷新 AI 建议` | 重新生成 AI 建议卡片 |
-| `Topmind: AI 整理待办` | 对近期活动运行 AI 待办提取 |
-| `Topmind: 主题分类` | 运行 AI 主题分类 |
-| `Topmind: 整理我的情况` | 运行 AI 整理我的情况（画像 + 周期） |
-| `Topmind: 打开我的情况` | 打开记忆平面浏览（点开条目仍落到 vault 文件） |
-| `Topmind: 打开 Inbox` | 打开 Inbox 分类目录 |
-
----
-
-## 架构与生态
-
-Topmind Stream 是 **Topmind Monorepo 生态**的一个可选表面。它与 Topmind Desktop、UTR CLI 和便携 AI Skills 共享同一套核心 Kernel 引擎和目录契约。
-
-```text
-Obsidian 表面 (TypeScript + esbuild)
-  ├── ItemView 与侧边栏面板
-  ├── 设置页签 (PluginSettingTab)
-  └── Vault 桥接与 AI Provider 层
-        │
-        ▼
-Kernel 引擎 (打包 lib/*.mjs)
-  contract · workspace-model · stream · memory
-  writeback · lifecycle · derived · ingest
-  + todo / ai-operation / suggest / activity-window
-        │
-        ▼
-Obsidian Vault (纯文件系统 = 唯一内容真源)
-  topmind.yaml + {NN-分类}/ + memory/ + .topmind/
-```
-
-### 对比：Desktop 应用 vs. Obsidian 插件
-
-| 特性 / 维度 | Topmind Desktop | Topmind Obsidian 插件 |
-|-------------|-----------------|----------------------|
-| **主要定位** | 独立富桌面应用 | Obsidian 内嵌原生视图 |
-| **编辑器类型** | Tiptap 富文本 & 所见即所得 | Obsidian 原生 Markdown 编辑器 |
-| **AI 运行时** | Vercel AI SDK v7 | Obsidian `requestUrl`（OpenAI / Anthropic / Gemini 兼容） |
-| **共享引擎** | Kernel `lib/`（同一套引擎） | Kernel `lib/`（构建时打包内联） |
-| **数据格式** | 标准 Markdown | 标准 Markdown（同一 Vault） |
-
-*你可以在 Topmind Desktop 和 Obsidian 中同时打开同一个 Vault，互不冲突。*
-
----
-
-## 安全、隐私与数据保护
-
-- **本地优先存储**：所有笔记和元数据均以标准 Markdown 文件存储在你的磁盘上。
-- **零遥测**：topmind 不追踪、不收集、不向外部服务器发送你的使用数据。
-- **API Key 安全**：密钥存放在插件本地 `data.json`。只有在设置 → 安全中**显式开启**后，才会把明文备份写入 `.topmind/ai-keys-backup.json`。请勿在共享 Vault 中配置密钥。
-- **写回保护**：所有 AI 驱动的文件变更通过 `writeback-engine`（`open`/`locked`）。备份/回执仅高影响（锁定覆盖、锁定/核心笔记删除归档），普通开放更新不造归档副本。
-
-### 社区评分卡披露（有意为之的能力）
-
-以下能力为产品所必需，范围已尽量收紧：
-
-| 能力 | 原因 | 范围 |
-|---|---|---|
-| **Node `fs`（非 vault API）** | 桌面端插件：Kernel 工作区 I/O、备份/回执；导入时只读你选中的那一份文件 | 所有写路径经 `resolveInsideVault()`（检测 `../` 逃逸即抛错）；范围 = vault 工作区根或插件目录；不扫描用户主目录；`isDesktopOnly: true` |
-| **剪贴板写入** | 对话回答 / 动态卡片的复制按钮 | 仅 `writeText`，仅在用户显式点击时；不读剪贴板、无后台访问 |
-| **网络（AI 提供商）** | 对话 / 建议 / 模型列表 | 仅 `requestUrl`（CSP 安全）；端点由你自行配置；无分析上报 |
-| **Base64 编解码** | Kernel 载荷管道 | 仅本地运行时 |
-
-`styles.css` 不含 `!important`（叶面布局靠选择器优先级）。`main.js` 由锁定依赖的 vendored 构建产出：`npm run build` 且不设置 `TOPMIND_SRC`，两次构建字节相同，可复现。发行资产附带 GitHub artifact attestation。
-
----
-
-## 开发与构建
-
-```bash
-# 安装依赖
-npm install
-
-# 启动 esbuild watch 模式
-npm run dev
-
-# 生产构建
-npm run build
-
-# TypeScript 类型检查
+```sh
+npm ci
 npm run typecheck
-
-# 运行单元测试
+npm run lint
 npm test
-
-# 验证打包完整性
-npm run pack:verify
-
-# 创建 release ZIP 包
+npm run build
 npm run pack
+npm run pack:verify
 ```
 
----
-
-## 环境要求
-
-- **Obsidian 版本**：桌面端 ≥ `v1.13.0`（暂不支持移动端；桌面优先设计）。
-- **Node.js**：≥ `v20.11`（从源码构建需要）。
-
----
-
-## 协议
-
-[MIT License](LICENSE) © [TopMindSpace](https://github.com/topmindspace)
+源码为 [topmindspace/topmind-obsidian](https://github.com/topmindspace/topmind-obsidian)；Kernel 位于 [topmindspace/topmind](https://github.com/topmindspace/topmind)。[MIT License](LICENSE)。

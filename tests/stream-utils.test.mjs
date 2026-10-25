@@ -648,7 +648,7 @@ describe("suggestion cache and todo force (Desktop parity)", () => {
   test("boot auto-maintain is quiet and not force; user commands force", () => {
     const main = fs.readFileSync(path.join(srcDir, "main.ts"), "utf8");
     assert.match(main, /force = normalized\.force \?\? !quiet/);
-    assert.match(main, /runOperation\(operation, \{ force \}\)/);
+    assert.match(main, /runOperation\(operation, \{ force, shouldAbort \}\)/);
     assert.match(main, /enqueueAiOperation\("todo_maintain".*"sidebar", true\)/);
     const dock = fs.readFileSync(path.join(srcDir, "views", "sidebar-dock-view.ts"), "utf8");
     assert.match(dock, /peekSuggestions\(\)/);

@@ -1,260 +1,123 @@
 # Topmind Stream for Obsidian
 
-English (default) | [简体中文](README.zh-CN.md)
+English · [简体中文](README.zh-CN.md) · [Changelog](CHANGELOG.md)
 
-> **Repository**: [topmindspace/topmind-obsidian](https://github.com/topmindspace/topmind-obsidian) — community plugin home.
-> Kernel engine is **inlined at build time** from [topmindspace/topmind](https://github.com/topmindspace/topmind) (`TOPMIND_SRC` / sibling `../topmind` / CI `.topmind-src`).
+Capture thoughts, continue working on notes, and ask AI to find information, organize todos, or suggest updates. Your content lives in your Vault. Capture and browsing work without AI.
 
+Requires **Obsidian desktop 1.13.0 or later**. Mobile is not supported. The version source is [manifest.json](manifest.json).
 
-[![Obsidian Plugin](https://img.shields.io/badge/Obsidian-Plugin-purple?style=flat-square&logo=obsidian)](https://obsidian.md)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![Minimum Obsidian Version](https://img.shields.io/badge/Obsidian-%E2%89%A51.13.0-informational?style=flat-square)](https://obsidian.md)
-[![Version](https://img.shields.io/badge/version-dynamic-green.svg?style=flat-square)](manifest.json)
+## Start in three minutes
 
-> **Main-area Stream + Background AI Copilot for Obsidian**  
-> Capture thoughts instantly, let AI propose organized updates in the background, review & confirm before saving — your Markdown files always remain yours.
+1. **Install and enable** the plugin using the instructions below.
+2. Choose **Topmind: Open Stream** in the command palette. For a new workspace, click **Initialize workspace**; the default stream template is enough to start. Other templates are available in Settings.
+3. Type something in Stream and press **Enter**. It is saved in the period note, which you can also open from Obsidian's file explorer.
+4. For AI, open **Settings → Topmind Stream → AI provider and model**, configure a provider and model, and test the connection. You can skip this step.
 
----
+**Stream** is for capture and review. The **AI copilot** holds Chat, Suggestions, Todos, and History. **Note it** opens a quick capture dialog. **My profile** lets you browse profile and other memory notes.
 
-Release notes: [CHANGELOG.md](CHANGELOG.md).
+## Install and upgrade
 
-## Screenshots
+### Manual installation
 
-| Stream timeline | My Profile |
+1. Download `main.js`, `manifest.json`, and `styles.css` from the same [GitHub Release](https://github.com/topmindspace/topmind-obsidian/releases).
+2. Place them in `<Vault>/.obsidian/plugins/topmind-stream/`. If you changed Obsidian's configuration directory, use that directory instead.
+3. Reload Obsidian and enable **Topmind Stream** in **Settings → Community plugins**.
+
+A locally built `topmind-obsidian-*.zip` can be extracted into that plugin directory. Make sure `main.js` is directly inside it, without an extra nested folder. GitHub's **Source code ZIP** must be built before installation.
+
+### BRAT or the community directory
+
+BRAT users can add `topmindspace/topmind-obsidian`. If Topmind Stream is searchable in Obsidian's community directory, you can install it there; otherwise use manual installation or BRAT.
+
+### Upgrade
+
+Use the corresponding update action for community/BRAT installs. For a manual install, replace the three plugin files above and reload. Keep `data.json`, which stores settings and credentials. Upgrading does not replace notes, `topmind.yaml`, or `memory/` in your content area.
+
+## Configure AI (optional)
+
+Provider and model controls are available **before any key is saved**.
+
+1. Select a provider under **AI provider and model**.
+2. Enter an API key for a hosted provider, a Base URL for Ollama, or both a Base URL and API key for a custom compatible endpoint.
+3. Select a model. Use a custom model ID if it is missing from the list; an empty model uses the provider default.
+4. Run the connection test in Settings. You can also click the status dot beside the chat input. If it fails, check the endpoint, credentials, and model availability.
+
+Upgrades retain your saved setup. Desktop import reads only the export file you select; the plugin does not scan your home directory. Undecryptable credentials are rejected rather than treated as usable keys.
+
+Notes stay local; AI requests send relevant context to your configured provider. Credentials are stored in the plugin's `data.json`. Optional plaintext credential backup in the Vault is off by default. Check credentials before sharing or syncing plugin configuration.
+
+## Everyday use
+
+| What you want to do | Where to go |
 |---|---|
-| ![Stream timeline](docs/images/stream-timeline-en.png) | ![My Profile](docs/images/profile-memory-en.png) |
+| Capture a thought | **Note it** in the command palette or the pencil icon; choose Stream or Inbox |
+| Review the week | **Stream**; switch periods, filter, or expand long entries |
+| Ask AI about a note | Open the note → **Chat** → check **Send target** → enter your request |
+| Add a todo | Type directly in **Todos**; check it off when done |
+| Review AI proposals | **Suggestions**; inspect the target and action, then accept or dismiss |
+| Check background work | **History** for queued, running, completed, or failed operations |
+| Update your profile | Open **My profile** or ask AI for a reviewable memory update |
 
-| AI Suggestions | Todos |
-|---|---|
-| ![AI Suggestions](docs/images/suggestions-zh.png) | ![Todos](docs/images/todos-zh.png) |
+Try “Summarize this note,” “Find unfinished work from this week,” or “Append this paragraph to the current note.” Make the intent explicit when you want files changed.
 
-| AI settings | Chinese UI |
-|---|---|
-| ![AI Co-pilot settings](docs/images/settings-ai-copilot.png) | ![Stream timeline (Chinese)](docs/images/stream-timeline-zh.png) |
+### Current note and selection
 
-More: [profile (Chinese)](docs/images/profile-memory-zh.png).
+**Send target** above the composer names the object for your **next send**. Select text before sending to narrow the scope. Switching tabs after sending does not change that turn's target; each reply identifies its bound object.
 
----
+With no note selected, Chat can still search the workspace. To edit a specific note, open it or name its path. Save unsaved editor changes before asking AI to edit; the plugin checks for conflicts.
 
-## What is Topmind Stream?
+### Input, pause, and resume
 
-**Topmind Stream** brings the core low-friction **Personal Stream Workflow** of the Topmind engine directly into your Obsidian Vault.
+- **Enter** sends/submits; **Shift+Enter** inserts a new line. IME candidate confirmation does not send.
+- During a chat run, click the square button or press **Esc** in the input to pause. Completed file changes are kept.
+- Resume continues the original goal. Abandoning does not undo completed changes.
+- Closing the copilot pauses and saves the conversation; reopening restores it. Clearing Chat clears conversation state only.
+- Unsent todos survive tab switches and repaints. Background chat progress does not replace a todo you are typing.
+- Reading older chat messages keeps your position when progress or a reply arrives. Use **Back to latest** when ready.
+- Filter active todos and load more when needed. Expand completed todos and uncheck one to restore it. Clearing completed affects all completed items; filtering applies to active items only.
 
-Traditional note-taking often forces you to make frustrating upfront decisions about folders, tags, and structure before writing. Topmind Stream replaces that friction with a seamless capture-and-settle workflow:
+### What needs confirmation
 
-```text
-收进来 -> 继续做 -> 交付/沉淀 -> 找回/调整
-Capture Instantly  ->  AI Proposes in Background  ->  You Review & Confirm  ->  Markdown Files Stay Yours
-```
+Proactive organization and memory suggestions can be dismissed. Requested content creation and edits save directly.
 
-- **Zero Friction Capture**: Jot down ideas, links, or quick snippets without worrying about placement.
-- **Local-First & Standard Markdown**: No custom databases or proprietary locking. Everything is stored as plain Markdown in your Vault (`topmind.yaml` + folder categories).
-- **Proactive Yet Unobtrusive AI**: AI extracts action items, suggests topic emergence, and organizes memory, but **never mutates your vault without your confirmation**.
+**Ask before deleting/archiving** places deletion/archive actions in **Pending actions**. A deletion card explicitly says **Confirm deletion** and names its target. **Auto-save** allows authorized lifecycle actions directly; it does not accept every suggestion automatically. Failed or stale actions stay available for inspection and retry.
 
----
+## Common questions
 
-## Key Features
+**The plugin is missing or will not load.** Check your desktop Obsidian version, community-plugin enablement, and the location of the three plugin files. A source ZIP cannot be enabled directly.
 
-- **Note it**: Open the capture modal (bind a hotkey in Obsidian Settings → Hotkeys). Destinations: this week's stream or Inbox.
-- **Stream view**: A tab in the Obsidian main area with a compose box (**Log it** into the period note), a timeline of cards, and AI suggestions.
-- **AI Copilot Panel** (Sidebar): A tabbed right sidebar unifying all AI capabilities — **Chat**, **Suggestions**, **Todos**, and **History** (Chat is the agent spine, default tab). Model switching lives only in Chat and Settings. Suggestions tab shows a count badge.
-- **AI Chat**: Converse with AI about your notes, todos, and stream entries. Context-aware (recent stream, todos, profile). **Goal protocol** (plan + acceptance criteria + task ledger) · **Pause (Esc)** mid-turn (finished edits + goal ledger kept; Resume / Abandon), **expandable reasoning**, clickable path receipts, an honest **Verified / Assumed / Could not** result footer, and a **Task incomplete** close (never fake success). IME-safe Enter, and Desktop-parity **session compact** (60 messages / 24 recent kept full).
-- **Weekly Reconciliation**: Reconcile your weekly logs, extract pending action items, and refresh suggestions with one click.
-- **Background AI Copilot**: Extract todos (`memory/todo.md`), suggest emergent topics, and maintain `memory/profile.md`. Profile writes **fuse near-duplicates** (keep the newest wording — never a second live copy) and can **compact history** — confirm-gated via Suggestions.
-- **Quick Settings Access**: One-click access to plugin settings from both the sidebar header and the workbench toolbar. Toolbar buttons are icon-only (`title` tooltips); sidebar header is icon-first. Refresh and Organize use distinct icons. Model switching lives only in Chat and Settings — no model badge on toolbar/sidebar chrome.
-- **Writeback Protection**: Every AI modification goes through the Kernel `writeback-engine` (`open`/`locked`). Backups and receipts are **high-impact only** (locked overwrite; delete/archive of locked/core notes). Ordinary open updates do not create Archive copies.
+**Do I need an AI key to take notes?** No. Capture, browsing, and manual todos work without it.
 
----
+**A selected model fails the connection test.** Check that the provider, Base URL, key, and model ID belong to the same service, then test again in Settings. Connectivity does not prove support for every task.
 
-## User Core Concepts (≤ 5)
+**No suggestions appear.** Check AI configuration and the automatic-suggestions option. Manual refresh may make a model request. Pending review cards remain available regardless of that option.
 
-Topmind Stream reduces mental overhead by focusing on 5 plain-language concepts:
+**The editor is unsaved or the file changed.** Save the editor, reread the relevant note, and retry. Concurrent Desktop/Obsidian edits can still conflict.
 
-| Concept | Meaning | Vault Location |
-|---------|---------|----------------|
-| **Capture** (*记一下*) | Save a quick thought / snippet | Weekly Stream Log / `00-Inbox/` |
-| **Stream** (*动态*) | Daily activity & timeline | `10-动态/` (weekly file per log) |
-| **Topic** (*专题*) | Long-term subject folder | `{Category}/{YYYY-Topic}/` |
-| **My Profile** (*我的情况*) | Memory-plane browse (profile / periodic / topic memory) | Files under `memory/` (default portrait `memory/profile.md`) |
-| **Delivery** (*交付*) | Final delivery items & published work | `88-交付/` |
+**Chat or suggestion state is damaged.** The plugin shows an error and preserves the original file. Back up your Vault, check `.topmind/` permissions or disk-sync issues, fix the problem, then retry. Do not start by deleting the whole state directory.
 
----
+**Fetch a URL or just record its link?** Fetch downloads the page content into Inbox. Submitting normally records the link. Fetch prevents duplicate submission; closing the dialog prevents a late response from being captured.
 
-## Quick Start
+## Commands and previews
 
-### 1. Installation
+Search **Topmind** in Obsidian's command palette for Note it, Open Stream, Open sidebar, Reconcile this week, Refresh AI suggestions, AI tidy todos, Classify topics, Organize my profile, Open my profile, and Open Inbox. No default global hotkeys are assigned; bind your own in **Settings → Hotkeys**.
 
-#### Option A: Obsidian Community Plugins (Recommended once listed)
-1. Open **Obsidian Settings** -> **Community plugins**.
-2. Turn off Safe Mode and click **Browse**.
-3. Search for **Topmind Stream**.
-4. Click **Install** and then **Enable**.
+[Stream preview](docs/images/stream-timeline-en.png) · [My profile preview](docs/images/profile-memory-en.png) · [UX review](docs/UX-REVIEW-2026-10-25.md)
 
-#### Option B: Obsidian BRAT (Beta Builds)
-1. Install the [Obsidian BRAT](https://github.com/obsidian-tools/obsidian-brat) plugin.
-2. Go to **BRAT Settings** -> **Add Plugin**.
-3. Enter repository: `topmindspace/topmind-obsidian`
-4. Enable **Topmind Stream**.
+## Development and implementation
 
-#### Option C: Manual Installation
-1. Download `main.js`, `manifest.json`, and `styles.css` from [Releases](https://github.com/topmindspace/topmind-obsidian/releases). Those are the only files on the Release.
-2. Put them in `<your-vault>/.obsidian/plugins/topmind-stream/`.
-3. Reload Obsidian, navigate to **Settings -> Community plugins**, and enable **Topmind Stream**.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for data, tool, privacy and permission boundaries, and [DESIGN.md](DESIGN.md) for interaction decisions. The [refactor record](docs/OBSIDIAN-REFACTOR-2026-10-25.md) explains the runtime and remaining work. Obsidian keeps its native editor; Desktop has its own editor. Both use Kernel content contracts.
 
-#### Upgrade
-| Method | How |
-|--------|-----|
-| Community / BRAT | Update from the plugin list / BRAT "Check for updates" |
-| Manual | Replace `main.js`, `manifest.json`, and `styles.css` under `plugins/topmind-stream/`, then reload Obsidian |
-| From source | `npm run pack` writes a local zip (it is not uploaded to the GitHub Release). Unzip it into `plugins/topmind-stream/` |
+The full verification runs on Node 22.22.3; tests need TypeScript type-stripping support. `npm ci` uses the lockfile. `npm run typecheck` syncs an available Kernel source; production builds use the vendored snapshot.
 
-Your vault files (`topmind.yaml`, `10-动态/`, `memory/`) are **not** replaced by the plugin upgrade. Version truth: [`manifest.json`](./manifest.json) .
-
----
-
-### 2. Workspace Initialization
-
-When first enabled, Topmind Stream checks if your vault already contains a Topmind workspace structure (`topmind.yaml` and standard numbered folders).
-
-- **Existing Workspace**: Automatically detected; no setup needed.
-- **New Vault**: Go to **Settings -> Topmind Stream**, select a template (`stream`, `balanced`, `research`, or `periodic`), and click **Initialize Workspace**.
-
----
-
-### 3. Configure AI Copilot (Optional)
-
-Navigate to **Settings -> Topmind Stream -> AI provider and model** (writeback policy is the next group, AI Co-pilot & Save):
-
-- **Shown before any key is saved**: On a fresh enable (no saved keys, empty provider preference) the settings page still shows an AI provider chooser, a model chooser (preset / default plus a custom model id), and a credential field. A normal provider asks for an API key, Ollama asks for a base URL, and Custom asks for a base URL plus an API key. The choice is what the plugin treats as configured, and it is still there after you reopen settings.
-- **Upgrades keep the saved setup**: A legacy single-provider install or an existing multi-provider key set loads into the same controls with the saved provider, model, and key.
-- **Model**: dropdown + custom model ID + refresh. Official `list-models` when keyed, then the [models.dev](https://models.dev) community catalog via Obsidian `requestUrl`, then curated defaults. The model control is on screen even when no provider has been configured yet.
-- **Import from Desktop**: Click the button and choose an export file. Only that file is read. The plugin does not scan your home directory. Encrypted exports are refused — export a plaintext file from Desktop first.
-- Choose **Writeback Mode**:
-  - `confirm` (*Ask before saving* — Recommended): Preview changes in the Suggestion Popover before writing.
-  - `auto` (*Auto Save*): Automatically apply AI suggestions with automatic background backups.
-
-*Note: AI is completely optional! Quick capture, timeline browsing, and manual weekly reconciliation work seamlessly without an API key.*
-
----
-
-### 4. Daily Usage
-
-- Command palette -> **Topmind: Note it** (*bind a hotkey in Obsidian Settings -> Hotkeys*).
-- `Cmd/Ctrl + P` -> **Topmind: Open Stream** to open the timeline tab.
-- Left ribbon (Activity Bar): **Pencil** opens **Note it**; **Waves** opens the **Stream** workbench.
-
-Product vocabulary (aligned with Desktop): **Note it** / 记一下 · **Log it** / 记下 · stream · topic · My profile · delivery.
-
----
-
-## Command Palette Reference
-
-| Command Name | Description |
-|--------------|-------------|
-| `Topmind: Note it` | Capture a note or snippet (default: this week's stream) |
-| `Topmind: Open Stream` | Open the Stream timeline tab |
-| `Topmind: Open Sidebar` | Open the sidebar dock widget |
-| `Topmind: Organize This Week` | Reconcile weekly log & refresh suggestions |
-| `Topmind: Refresh AI Suggestions` | Regenerate AI suggestion cards |
-| `Topmind: AI Maintain Todos` | Run AI todo extraction on recent activities |
-| `Topmind: Classify Topics` | Run AI topic classification |
-| `Topmind: Organize My Profile` | Run AI organization of My profile (profile + periodic) |
-| `Topmind: Open My Profile` | Open the memory-plane browse (rows still open vault files) |
-| `Topmind: Open Inbox` | Open the inbox category directory |
-
----
-
-## Architecture & Ecosystem
-
-Topmind Stream is an optional surface of the **Topmind Monorepo Ecosystem**. It shares the exact same core Kernel engine and directory contract with Topmind Desktop, UTR CLI, and Portable AI Skills.
-
-```text
-Obsidian Surface (TypeScript + esbuild)
-  ├── ItemView & Sidebar Widgets
-  ├── Settings Tab (PluginSettingTab)
-  └── Vault Bridge & AI Provider Layer
-        │
-        ▼
-Kernel engine (bundled lib/*.mjs)
-  contract · workspace-model · stream · memory
-  writeback · lifecycle · derived · ingest
-  + todo / ai-operation / suggest / activity-window
-        │
-        ▼
-Obsidian Vault (Plain Filesystem = Single Source of Truth)
-  topmind.yaml + {NN-Category}/ + memory/ + .topmind/
-```
-
-### Comparison: Desktop App vs. Obsidian Plugin
-
-| Feature / Aspect | Topmind Desktop | Topmind Obsidian Plugin |
-|------------------|-----------------|-------------------------|
-| **Primary Focus** | Standalone rich desktop app | Native embedded view inside Obsidian |
-| **Editor Type** | Tiptap rich text & WYSIWYG | Obsidian native Markdown editor |
-| **AI Runtime** | Vercel AI SDK v7 | Obsidian `requestUrl` (OpenAI / Anthropic / Gemini compat) |
-| **Shared Engine** | Kernel `lib/` (shared engines) | Kernel `lib/` (bundled at build) |
-| **Data Format** | Standard Markdown | Standard Markdown (Same Vault) |
-
-*You can open the exact same Vault in both Topmind Desktop and Obsidian simultaneously without conflicts.*
-
----
-
-## Security, Privacy & Data Safety
-
-- **Local-First Storage**: All notes and metadata reside in standard Markdown files on your disk.
-- **Zero Telemetry**: Topmind does not track, collect, or send your usage data to external servers.
-- **API Key Security**: Keys live in the plugin's local `data.json`. A vault backup (`.topmind/ai-keys-backup.json`, plaintext) is written **only if you opt in** under Settings → Security. Avoid shared vaults when keys are configured.
-- **Writeback Protection**: All AI-driven file changes pass through `writeback-engine` (`open`/`locked`). Backups/receipts only for locked overwrite and locked/core delete-archive — not every write.
-
-### Community scorecard disclosures (intentional)
-
-These capabilities are required by the product and scoped as tightly as we can:
-
-| Capability | Why | Scope |
-|---|---|---|
-| **Node `fs` outside the vault API** | Desktop-only plugin: Kernel workspace I/O, backups/receipts; import reads only the file you choose | Every write path resolves through `resolveInsideVault()` (throws on `../` escape); scope = vault workspace root or the plugin directory; no home-directory scan; `isDesktopOnly: true` |
-| **Clipboard write** | Copy button on chat answers / stream cards | `writeText` only, on explicit user click — no clipboard read, no background access |
-| **Network (AI providers)** | Chat / suggestions / model list | `requestUrl` only (CSP-safe); provider endpoints you configure; no analytics |
-| **Base64 encode/decode** | Kernel payload plumbing | Local runtime only |
-
-`styles.css` has no `!important` (leaf layout is held by selector specificity). `main.js` is a lockfile-vendored reproducible build: `npm run build` with `TOPMIND_SRC` unset bundles the committed `lib/` and two consecutive builds are byte-identical. Release assets ship with GitHub artifact attestations.
-
----
-
-## Development & Building
-
-```bash
-# Install dependencies
-npm install
-
-# Start esbuild watch mode
-npm run dev
-
-# Production build
-npm run build
-
-# Run TypeScript type check
+```sh
+npm ci
 npm run typecheck
-
-# Run unit tests
+npm run lint
 npm test
-
-# Verify package integrity
-npm run pack:verify
-
-# Create release ZIP package
+npm run build
 npm run pack
+npm run pack:verify
 ```
 
----
-
-## Requirements
-
-- **Obsidian Version**: Desktop ≥ `v1.13.0` (Mobile currently unsupported; desktop-first design).
-- **Node.js**: ≥ `v20.11` (for building from source).
-
----
-
-## License
-
-[MIT License](LICENSE) © [TopMindSpace](https://github.com/topmindspace)
+Plugin: [topmindspace/topmind-obsidian](https://github.com/topmindspace/topmind-obsidian). Kernel: [topmindspace/topmind](https://github.com/topmindspace/topmind). [MIT License](LICENSE).

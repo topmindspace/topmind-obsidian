@@ -33,6 +33,7 @@ declare module "node:fs" {
   export function readdirSync(path: string, options: { withFileTypes: true }): Dirent[];
   export function mkdirSync(path: string, options?: { recursive?: boolean }): void;
   export function statSync(path: string): Stats;
+  export function realpathSync(path: string): string;
   export function unlinkSync(path: string): void;
   export function chmodSync(path: string, mode: number): void;
 }

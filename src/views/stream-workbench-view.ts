@@ -62,6 +62,12 @@ export class StreamWorkbenchView extends ItemView {
   private urlHintEl: HTMLElement | null = null;
   private cardComponents: Component[] = [];
 
+  /** The selected period is the current object even while the dock owns focus. */
+  getChatFocus(): { path: string } | null {
+    const selected = this.periodSelect?.value;
+    return selected ? { path: selected } : null;
+  }
+
   private clearCardComponents(): void {
     for (const c of this.cardComponents) {
       try { c.unload(); } catch { /* ignore */ }
@@ -191,7 +197,7 @@ export class StreamWorkbenchView extends ItemView {
     const composeFoot = compose.createDiv({ cls: "tm-wb-compose-foot" });
     composeFoot.createSpan({
       cls: "tm-wb-compose-hint",
-      text: `${t("quick_capture_hint_enter_note")} · ${t("quick_capture_hint_shift_enter")}`,
+      text: `${t("quick_capture_hint_enter")} · ${t("quick_capture_hint_shift_enter")}`,
     });
 
     const composeActions = composeFoot.createDiv({ cls: "tm-wb-compose-actions" });
@@ -203,16 +209,20 @@ export class StreamWorkbenchView extends ItemView {
     polishBtn.createSpan({ text: t("stream_btn_polish"), cls: "tm-btn-ghost-label" });
     polishBtn.addEventListener("click", () => { void (async () => {
       const val = this.inputEl.value.trim();
-      if (!val) return;
+      if (!val || polishBtn.disabled) return;
+      polishBtn.disabled = true;
       polishBtn.addClass("tm-btn-spinning");
       try {
         const polished = await this.plugin.kernelService.polishText(val);
-        if (polished) {
+        if (polished && this.inputEl.value.trim() !== val) {
+          new Notice(t("stream_polish_stale"));
+        } else if (polished) {
           this.inputEl.value = polished;
           this.autoGrowTextarea(this.inputEl);
           new Notice(t("stream_polish_success"));
         }
       } finally {
+        polishBtn.disabled = false;
         polishBtn.removeClass("tm-btn-spinning");
       }
     })(); });

@@ -233,7 +233,7 @@ export default class TopmindPlugin extends Plugin {
     }
 
     // ── Auto-maintain todos if enabled ──
-    if (this.settings.autoMaintainTodos && this.kernelService.isWorkspaceReady()) {
+    if (this.settings.autoMaintainTodos && hasConfiguredProvider(this.settings.ai) && this.kernelService.isWorkspaceReady()) {
       this.app.workspace.onLayoutReady(() => {
         if (this._unloaded) return;
         // Queued (not direct) so the task badge/history observes boot work too
@@ -540,8 +540,9 @@ export default class TopmindPlugin extends Plugin {
       if (!quiet) new Notice(`${label} ${t("task_running")}`);
       return;
     }
-    aiTaskManager.enqueue(operation, label, async () => {
-      const result = await this.kernelService.runOperation(operation, { force });
+    aiTaskManager.enqueue(operation, label, async ({ shouldAbort }) => {
+      const result = await this.kernelService.runOperation(operation, { force, shouldAbort });
+      if (shouldAbort()) return result;
       if (!quiet) {
         if (result.ok) {
           new Notice(result.summary || t(doneKey));

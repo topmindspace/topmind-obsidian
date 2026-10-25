@@ -5,11 +5,13 @@
 // All writes go through Kernel `executeWrite` (unique write gate).
 
 import fs from "node:fs";
+import { normalizeAgentToolCall } from "#kernel/agent-tool-catalog.mjs";
+import { bundledSkills, bundledSkillResource } from "./skill-resources.ts";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import type { KernelApi } from "../bridge/kernel-loader.ts";
 import { stripFrontmatter, sanitizeFileName, isRecord, isUnknownArray } from "../utils.ts";
-import { stashPendingWrite } from "./pending-writes.ts";
+import { listPendingWrites, stashPendingWrite } from "./pending-writes.ts";
 import { sanitizeAiWriteBody } from "#kernel/ai-content-sanitize.mjs";
 import {
   ddgSearchUrl,
@@ -105,7 +107,19 @@ function statSafe(p: string): fs.Stats | null {
 
 /** Escaping link, or any existing path whose real target sits outside the vault. */
 function leavesVault(workspaceRoot: string, abs: string): boolean {
-  return isEscapingSymlinkSync(workspaceRoot, abs) || resolvesOutsideVaultSync(workspaceRoot, abs);
+  const root = path.resolve(workspaceRoot);
+  const target = path.resolve(abs);
+  const relative = path.relative(root, target);
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return true;
+  // A new target may not exist yet; check each parent before mkdir or a read.
+  let candidate = target;
+  while (candidate !== root) {
+    if (isEscapingSymlinkSync(root, candidate) || resolvesOutsideVaultSync(root, candidate)) return true;
+    const parent = path.dirname(candidate);
+    if (parent === candidate) return true;
+    candidate = parent;
+  }
+  return false;
 }
 
 function resolveCategoryDirs(kernel: KernelApi, workspaceRoot: string, engineRoot?: string): Array<{
@@ -464,7 +478,6 @@ export function listOutputs(ctx: AgentToolContext): AgentToolResult {
 
 export function listTodos(ctx: AgentToolContext, opts: { completed?: boolean; limit?: number } = {}): AgentToolResult {
   try {
-    ctx.kernel.ensureTodoFile?.(ctx.workspaceRoot);
     // Kernel readTodoList returns `{ items, rawContent, relPath, … } | null`
     // (Desktop pathOps.listTodos parity) — never a bare array.
     const parsed = ctx.kernel.readTodoList(ctx.workspaceRoot);
@@ -541,6 +554,7 @@ export function saveFile(
       note: "Write blocked: path resolves outside the workspace.",
     };
   }
+  if (leavesVault(ctx.workspaceRoot, targetPath)) return { ok: false, tool, error: "path-escapes-workspace" };
   const isUpdate = fs.existsSync(targetPath);
   try {
     const contract = ctx.kernel.loadContract(ctx.workspaceRoot);
@@ -563,7 +577,7 @@ export function saveFile(
     if (result.pending) {
       let pendingId: string | undefined;
       try {
-        pendingId = stashPendingWrite({ relativePath: rel, content, toolName: tool }).id;
+        pendingId = stashPendingWrite({ workspaceRoot: ctx.workspaceRoot, relativePath: rel, content, toolName: tool }).id;
       } catch {
         pendingId = undefined;
       }
@@ -642,7 +656,7 @@ export function addTodo(ctx: AgentToolContext, opts: { text: string; dueDate?: s
   }
 }
 
-export function toggleTodo(ctx: AgentToolContext, opts: { id?: string; text?: string }): AgentToolResult {
+export function toggleTodo(ctx: AgentToolContext, opts: { id?: string; text?: string; completed?: boolean }): AgentToolResult {
   const tool = "toggle_todo";
   try {
     ctx.kernel.ensureTodoFile?.(ctx.workspaceRoot);
@@ -652,10 +666,10 @@ export function toggleTodo(ctx: AgentToolContext, opts: { id?: string; text?: st
     let id = opts.id ? String(opts.id) : "";
     if (!id && opts.text) {
       const needle = String(opts.text).trim().toLowerCase();
-      const hit = list.find(
-        (t) => String(t.text || "").trim().toLowerCase() === needle || String(t.text || "").toLowerCase().includes(needle),
-      );
-      id = hit?.id ? String(hit.id) : "";
+      const exact = list.filter(t => String(t.id || "") === opts.text || String(t.text || "").trim().toLowerCase() === needle);
+      const hits = exact.length ? exact : list.filter(t => String(t.text || "").toLowerCase().includes(needle));
+      if (hits.length > 1) return { ok: false, tool, error: "ambiguous-todo", hint: "Use the exact id from list_todos." };
+      id = hits[0]?.id ? String(hits[0].id) : "";
     }
     if (!id) {
       return {
@@ -665,6 +679,9 @@ export function toggleTodo(ctx: AgentToolContext, opts: { id?: string; text?: st
         hint: "Call list_todos first and pass id= (or an exact text snippet).",
       };
     }
+    const existing = list.find(item => item.id === id);
+    if (!existing) return { ok: false, tool, error: "todo-not-found" };
+    if (typeof opts.completed === "boolean" && Boolean(existing.done) === opts.completed) return { ok: true, tool, id, unchanged: true };
     const updated = ctx.kernel.toggleTodoItem(ctx.workspaceRoot, id, contract, {
       actor: ctx.actor || "ai",
       // Content writes always land (graded-confirm Desktop parity).
@@ -800,6 +817,7 @@ export function deletePath(
     const rel = normalizeRel(opts.relativePath);
     if (!rel || !isSafeRel(rel)) return { ok: false, tool, error: "invalid relativePath" };
     const abs = absOf(ctx.workspaceRoot, rel);
+    if (leavesVault(ctx.workspaceRoot, abs)) return { ok: false, tool, error: "path-escapes-workspace" };
     if (!fs.existsSync(abs)) return { ok: false, tool, error: `not found: ${rel}` };
     const mode = ctx.writebackMode === "confirm" ? "confirm" : "auto";
     // LIFECYCLE: AI never self-confirms. Only an explicit host/user confirm
@@ -820,6 +838,7 @@ export function deletePath(
       confirmed,
       writebackModeOverride: mode,
     });
+    const pendingId = r?.pending ? stashPendingWrite({ workspaceRoot: ctx.workspaceRoot, relativePath: rel, toolName: tool, operation: "delete", content: isTextNotePath(rel) ? fs.readFileSync(abs, "utf8").slice(0, 20000) : "" }).id : undefined;
     const reversible = Boolean(r?.backupPath);
     return {
       ok: r?.wroteFiles !== false && !r?.pending,
@@ -827,6 +846,7 @@ export function deletePath(
       summary: rel,
       relativePath: rel,
       reversible,
+      pendingId,
       pending: Boolean(r?.pending),
       needsConfirm: Boolean(r?.needsConfirm || r?.pending),
       note: r?.note
@@ -857,6 +877,7 @@ export function renamePath(
     }
     const abs = absOf(ctx.workspaceRoot, rel);
     const destAbs = absOf(ctx.workspaceRoot, dest);
+    if (leavesVault(ctx.workspaceRoot, abs) || leavesVault(ctx.workspaceRoot, destAbs)) return { ok: false, tool, error: "path-escapes-vault" };
     if (!fs.existsSync(abs)) return { ok: false, tool, error: `not found: ${rel}` };
     if (fs.existsSync(destAbs)) return { ok: false, tool, error: `dest exists: ${dest}` };
     const content = fs.readFileSync(abs, "utf8");
@@ -903,6 +924,12 @@ export function renamePath(
         note: "rename pending — accept in Suggest",
       };
     }
+    // A refused or failed destination write must never delete the source.
+    if (ev?.wroteFiles === false || ev?.wrote_files === false || ev?.operation === "skip" ||
+        !fs.existsSync(destAbs) || fs.readFileSync(destAbs, "utf8") !== content) {
+      return { ok: false, tool, relativePath: rel, error: "destination-write-not-verified" };
+    }
+    if (fs.readFileSync(abs, "utf8") !== content) return { ok: false, tool, relativePath: rel, error: "source-changed-during-move" };
     fs.unlinkSync(abs);
     return {
       ok: true,
@@ -918,17 +945,22 @@ export function renamePath(
 }
 
 /** Glob-like name match (simple * / ** on relative paths; no shell). */
-export function globFiles(ctx: AgentToolContext, opts: { pattern?: string; limit?: number } = {}): AgentToolResult {
+export function globFiles(ctx: AgentToolContext, opts: { pattern?: string; limit?: number; scope?: string; includeArchive?: boolean } = {}): AgentToolResult {
   const tool = "glob_files";
   try {
     const pattern = String(opts.pattern || "").trim();
     if (!pattern) return { ok: false, tool, error: "pattern required" };
-    const limit = Math.min(Math.max(opts.limit || 80, 1), 200);
+    const limit = Math.min(Math.max(opts.limit || 100, 1), 500);
     const esc = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-    const rxSource = "^" + esc.split("**").join("\u0000").split("*").join("[^/]*").split("\u0000").join(".*") + "$";
+    const rxSource = "^" + esc.split("**/").join("\u0001").split("**").join("\u0000").split("*").join("[^/]*").split("\u0000").join(".*").split("\u0001").join("(?:.*/)?") + "$";
     const rx = new RegExp(rxSource, "u");
-    const hits = walkFiles(ctx.workspaceRoot, { maxFiles: 4000, workspaceRoot: ctx.workspaceRoot })
-      .filter((rel) => rx.test(rel))
+    const scope = normalizeRel(opts.scope || "");
+    if (scope && !isSafeRel(scope)) return { ok: false, tool, error: "invalid scope" };
+    const skipDirs = new Set([".topmind", ".git", "node_modules"]);
+    if (!opts.includeArchive) skipDirs.add(resolveArchiveDir(ctx.kernel, ctx.workspaceRoot, ctx.engineRoot));
+    const hits = walkFiles(ctx.workspaceRoot, { maxFiles: 4000, workspaceRoot: ctx.workspaceRoot, skipDirs })
+      .map(absolute => path.relative(ctx.workspaceRoot, absolute).replace(/\\/gu, "/"))
+      .filter((rel) => (!scope || rel.startsWith(`${scope}/`)) && rx.test(rel))
       .slice(0, limit);
     return { ok: true, tool, summary: `${hits.length} match(es)`, files: hits };
   } catch (err) {
@@ -979,7 +1011,7 @@ export async function webSearch(
 /** fetch_url via host-injected HTTP (Obsidian requestUrl). http(s) only. */
 export async function fetchUrl(
   ctx: AgentToolContext,
-  opts: { url?: string },
+  opts: { url?: string; maxLen?: number },
 ): Promise<AgentToolResult> {
   const tool = "fetch_url";
   const url = String(opts.url || "").trim();
@@ -1002,7 +1034,8 @@ export async function fetchUrl(
     if (r.ok && githubRef) {
       text = rewriteGithubMarkdownImages(text, githubRef);
     }
-    const clipped = text.slice(0, 12000);
+    const maxLen = Math.max(1, Math.min(50000, opts.maxLen || 12000));
+    const clipped = text.slice(0, maxLen);
     return {
       ok: Boolean(r.ok),
       tool,
@@ -1010,7 +1043,7 @@ export async function fetchUrl(
       url,
       status: r.status,
       content: clipped,
-      truncated: text.length > 12000,
+      truncated: text.length > maxLen,
       error: r.error,
     };
   } catch (err) {
@@ -1027,11 +1060,12 @@ export function createTopic(
   try {
     const category = normalizeRel(opts.category);
     const name = String(opts.name || "").trim();
-    if (!category || !name) return { ok: false, tool, error: "category and name required" };
+    if (!category || !isSafeRel(category) || !name) return { ok: false, tool, error: "category and name required" };
     const year = new Date().getFullYear();
     const topicDir = `${category}/${year}-${sanitizeFileName(name)}`;
     const homeRel = `${topicDir}/topic.md`;
     const abs = absOf(ctx.workspaceRoot, homeRel);
+    if (leavesVault(ctx.workspaceRoot, abs)) return { ok: false, tool, error: "path-escapes-vault" };
     if (fs.existsSync(abs)) return { ok: false, tool, error: `topic exists: ${homeRel}` };
     const body =
       String(opts.content || "") ||
@@ -1073,39 +1107,12 @@ export function moveToTopic(
   ctx: AgentToolContext,
   opts: { relativePath?: string; targetTopicId?: string },
 ): AgentToolResult {
-  const tool = "move_to_topic";
-  try {
-    const rel = normalizeRel(opts.relativePath);
-    const topicId = normalizeRel(opts.targetTopicId);
-    if (!rel || !topicId) return { ok: false, tool, error: "relativePath and targetTopicId required" };
-    const abs = absOf(ctx.workspaceRoot, rel);
-    if (!fs.existsSync(abs)) return { ok: false, tool, error: `not found: ${rel}` };
-    const base = rel.split("/").pop() || rel;
-    const dest = `${topicId.replace(/\/+$/, "")}/${base}`;
-    const destAbs = absOf(ctx.workspaceRoot, dest);
-    if (fs.existsSync(destAbs)) return { ok: false, tool, error: `dest exists: ${dest}` };
-    const content = fs.readFileSync(abs, "utf8");
-    const kernel = ctx.kernel;
-    const contract = kernel.loadContract(ctx.workspaceRoot);
-    const mode = ctx.writebackMode || "auto";
-    const ev = kernel.executeWrite({
-      targetPath: destAbs,
-      content,
-      workspaceRoot: ctx.workspaceRoot,
-      contract,
-      operation: "create",
-      actor: ctx.actor || "ai",
-      confirmed: true,
-      writebackModeOverride: mode === "confirm" ? "confirm" : "auto",
-    });
-    if (ev?.pending) {
-      return { ok: false, tool, summary: rel, relativePath: rel, pending: true, needsConfirm: true };
-    }
-    fs.unlinkSync(abs);
-    return { ok: true, tool, summary: `${rel} → ${dest}`, relativePath: dest, from: rel, topicId };
-  } catch (err) {
-    return { ok: false, tool, error: err instanceof Error ? err.message : String(err) };
-  }
+  const rel = normalizeRel(opts.relativePath);
+  const topicId = normalizeRel(opts.targetTopicId);
+  if (!isSafeRel(rel) || !isSafeRel(topicId)) return { ok: false, tool: "move_to_topic", error: "invalid path" };
+  const base = path.basename(rel);
+  const moved = renamePath(ctx, { relativePath: rel, newPath: `${topicId}/${base}`, confirmed: false });
+  return { ...moved, tool: "move_to_topic", topicId };
 }
 
 /** Publish a delivery snapshot into the delivery role dir (Desktop publish_to_outputs parity). */
@@ -1116,23 +1123,16 @@ export function publishToOutputs(
   const tool = "publish_to_outputs";
   try {
     const rel = normalizeRel(opts.relativePath);
-    if (!rel) return { ok: false, tool, error: "relativePath required" };
+    if (!rel || !isSafeRel(rel)) return { ok: false, tool, error: "relativePath required" };
     const abs = absOf(ctx.workspaceRoot, rel);
+    if (leavesVault(ctx.workspaceRoot, abs)) return { ok: false, tool, error: "path-escapes-vault" };
     if (!fs.existsSync(abs)) return { ok: false, tool, error: `not found: ${rel}` };
-    // Resolve delivery dir from contract role if possible.
-    let delivery = "88-交付";
-    try {
-      const model = ctx.kernel.buildDefaultContract?.(ctx.workspaceRoot) as unknown;
-      const contract = ctx.kernel.loadContract(ctx.workspaceRoot) as {
-        categories?: Array<{ role?: string; directory?: string }>;
-      };
-      const hit = (contract?.categories || []).find((c) => c?.role === "delivery" && c?.directory);
-      if (hit?.directory) delivery = String(hit.directory);
-      else void model;
-    } catch { /* default */ }
+    const delivery = resolveDeliveryDir(ctx.kernel, ctx.workspaceRoot, ctx.engineRoot);
     const base = rel.split("/").pop() || rel;
     const dest = `${delivery.replace(/\/+$/, "")}/${base}`;
     const destAbs = absOf(ctx.workspaceRoot, dest);
+    if (leavesVault(ctx.workspaceRoot, destAbs)) return { ok: false, tool, error: "path-escapes-vault" };
+    if (fs.existsSync(destAbs)) return { ok: false, tool, error: `dest exists: ${dest}` };
     const content = fs.readFileSync(abs, "utf8");
     const kernel = ctx.kernel;
     const contract = kernel.loadContract(ctx.workspaceRoot);
@@ -1162,66 +1162,18 @@ export function publishToOutputs(
 }
 
 
-/** List portable skills from engineRoot/skills (SKILL.md frontmatter). */
-export function listSkills(ctx: AgentToolContext): AgentToolResult {
-  const tool = "list_skills";
-  try {
-    const roots = [
-      path.join(ctx.engineRoot || ctx.workspaceRoot, "skills"),
-      path.join(ctx.engineRoot || "", "topmind-skills"),
-      ctx.engineRoot || "",
-    ].filter(Boolean);
-    const skills: Array<{ id: string; name?: string; description?: string; path: string }> = [];
-    for (const root of roots) {
-      if (!root || !fs.existsSync(root)) continue;
-      for (const entry of listDirSafe(root)) {
-        const dir = path.join(root, entry);
-        const md = path.join(dir, "SKILL.md");
-        if (!fs.existsSync(md)) continue;
-        const body = fs.readFileSync(md, "utf8");
-        const fm = body.match(/^---\n([\s\S]*?)\n---/u);
-        const meta = fm?.[1] || "";
-        const name = (meta.match(/^name:\s*(.+)$/mu) || [])[1]?.trim() || entry;
-        const desc = (meta.match(/^description:\s*(.+)$/mu) || [])[1]?.trim() || "";
-        skills.push({ id: entry, name, description: desc.slice(0, 200), path: `${entry}/SKILL.md` });
-      }
-      if (skills.length) break;
-    }
-    return { ok: true, tool, summary: `${skills.length} skill(s)`, skills };
-  } catch (err) {
-    return { ok: false, tool, error: err instanceof Error ? err.message : String(err) };
-  }
+/** Discovery returns compact metadata; bodies and linked references are loaded on demand. */
+export function listSkills(_ctx: AgentToolContext): AgentToolResult {
+  const skills = bundledSkills();
+  return { tool: "list_skills", ok: true, summary: `${skills.length} skill(s)`, skills };
 }
 
-/** Load a skill body (progressive disclosure activation). */
-export function loadSkill(ctx: AgentToolContext, opts: { skillId?: string }): AgentToolResult {
-  const tool = "load_skill";
-  try {
-    const id = String(opts.skillId || "").trim();
-    if (!id || !isSafeRel(id)) return { ok: false, tool, error: "skillId required" };
-    const roots = [
-      path.join(ctx.engineRoot || ctx.workspaceRoot, "skills"),
-      path.join(ctx.engineRoot || "", "topmind-skills"),
-      ctx.engineRoot || "",
-    ].filter(Boolean);
-    for (const root of roots) {
-      const md = path.join(root, id, "SKILL.md");
-      if (fs.existsSync(md)) {
-        const body = fs.readFileSync(md, "utf8");
-        return {
-          ok: true,
-          tool,
-          summary: id,
-          skillId: id,
-          content: body.slice(0, 20000),
-          truncated: body.length > 20000,
-        };
-      }
-    }
-    return { ok: false, tool, error: `skill not found: ${id}` };
-  } catch (err) {
-    return { ok: false, tool, error: err instanceof Error ? err.message : String(err) };
-  }
+export function loadSkill(_ctx: AgentToolContext, opts: { skillId?: string }): AgentToolResult {
+  const id = String(opts.skillId || "");
+  const content = bundledSkillResource("SKILL.md", id);
+  return content === null
+    ? { tool: "load_skill", ok: false, error: `skill not found: ${id}` }
+    : { tool: "load_skill", ok: true, skillId: id, content, truncated: false };
 }
 
 /**
@@ -1232,7 +1184,8 @@ export async function runAgentTool(
   ctx: AgentToolContext,
   call: Record<string, unknown>,
 ): Promise<AgentToolResult | null> {
-  const tool = String(call.tool || call.name || "");
+  call = normalizeAgentToolCall(call);
+  const tool = String(call.tool);
   switch (tool) {
     case "search":
       return searchWorkspace(ctx, {
@@ -1263,7 +1216,9 @@ export async function runAgentTool(
     case "glob_files":
       return globFiles(ctx, {
         pattern: typeof call.pattern === "string" ? call.pattern : undefined,
-        limit: typeof call.limit === "number" ? call.limit : undefined,
+        limit: typeof call.maxResults === "number" ? call.maxResults : undefined,
+        scope: typeof call.scope === "string" ? call.scope : undefined,
+        includeArchive: call.includeArchive === true,
       });
     case "web_search":
       return webSearch(ctx, {
@@ -1271,7 +1226,7 @@ export async function runAgentTool(
         limit: typeof call.limit === "number" ? call.limit : undefined,
       });
     case "fetch_url":
-      return fetchUrl(ctx, { url: typeof call.url === "string" ? call.url : undefined });
+      return fetchUrl(ctx, { url: typeof call.url === "string" ? call.url : undefined, maxLen: typeof call.maxLen === "number" ? call.maxLen : undefined });
     case "create_topic":
       return createTopic(ctx, {
         category: typeof call.category === "string" ? call.category : undefined,
@@ -1281,7 +1236,7 @@ export async function runAgentTool(
       });
     case "move_to_topic":
       return moveToTopic(ctx, {
-        relativePath: typeof call.relativePath === "string" ? call.relativePath : undefined,
+        relativePath: typeof call.relativePath === "string" ? call.relativePath : typeof call.inboxRelativePath === "string" ? call.inboxRelativePath : undefined,
         targetTopicId: typeof call.targetTopicId === "string" ? call.targetTopicId : undefined,
       });
     case "publish_to_outputs":
@@ -1294,6 +1249,10 @@ export async function runAgentTool(
       return listSkills(ctx);
     case "load_skill":
       return loadSkill(ctx, { skillId: typeof call.skillId === "string" ? call.skillId : undefined });
+    case "load_skill_resource": {
+      const content = bundledSkillResource(String(call.path || call.relativePath || ""), typeof call.skillId === "string" ? call.skillId : undefined);
+      return content === null ? { tool, ok: false, error: "skill-resource-not-found" } : { tool, ok: true, content, truncated: false };
+    }
     case "delete_path":
       // Never accept model-supplied confirmed — AI cannot self-approve deletes.
       return deletePath(ctx, {
@@ -1303,7 +1262,7 @@ export async function runAgentTool(
     case "rename_path":
       return renamePath(ctx, {
         relativePath: String(call.relativePath || ""),
-        newPath: String(call.newPath || call.destRelativePath || ""),
+        newPath: String(call.newPath || call.destRelativePath || (call.newName && !/[\\/]/u.test(String(call.newName)) ? path.join(path.dirname(String(call.relativePath || "")), String(call.newName)) : "")),
         confirmed: false,
       });
     case "list_inbox":
@@ -1315,21 +1274,65 @@ export async function runAgentTool(
         completed: Boolean(call.completed),
         limit: typeof call.limit === "number" ? call.limit : undefined,
       });
-    case "save_file":
     case "save_note":
+      return saveFile(ctx, { relativePath: `${String(call.topicId || "")}/${String(call.filename || "")}`, content: String(call.content ?? "") });
+    case "save_file":
       return saveFile(ctx, {
         relativePath: String(call.relativePath || ""),
         content: String(call.content ?? ""),
       });
     case "add_todo":
+      if (Array.isArray(call.items)) {
+        if (!call.items.length || call.items.length > 20 || call.items.some(item => typeof item !== "string" || !item.trim())) return { tool, ok: false, error: "invalid-todo-batch" };
+        const results = call.items.map(item => addTodo(ctx, { text: String(item), dueDate: typeof call.dueDate === "string" ? call.dueDate : undefined }));
+        return { tool, ok: results.every(result => result.ok), results, count: results.filter(result => result.ok).length, relativePath: ctx.kernel.resolveTodoRelPath?.(ctx.workspaceRoot) || "memory/todo.md" };
+      }
       return addTodo(ctx, {
         text: String(call.text || ""),
         dueDate: typeof call.dueDate === "string" ? call.dueDate : undefined,
       });
+    case "update_todo":
+    case "set_todo_due":
+    case "delete_todo": {
+      const needle = String(call.idOrText || "").trim();
+      const parsed = ctx.kernel.readTodoList(ctx.workspaceRoot);
+      const items = (parsed?.items || []).filter(isRecord);
+      const exact = items.filter(item => item.id === needle || String(item.text || "").toLowerCase() === needle.toLowerCase());
+      const matches = exact.length ? exact : items.filter(item => needle && String(item.text || "").toLowerCase().includes(needle.toLowerCase()));
+      if (matches.length > 1) return { ok: false, tool, error: "ambiguous-todo", hint: "Use the exact id from list_todos." };
+      const id = String(matches[0]?.id || "");
+      if (!id) return { ok: false, tool, error: "todo-not-found", hint: "Call list_todos and use its exact id." };
+      const contract = ctx.kernel.loadContract(ctx.workspaceRoot);
+      const options = { actor: ctx.actor || "ai" as const, confirmed: true, writebackModeOverride: ctx.writebackMode };
+      let result;
+      if (tool === "delete_todo") result = ctx.kernel.deleteTodoItem?.(ctx.workspaceRoot, id, contract, options);
+      else if (tool === "set_todo_due") {
+        if (call.dueDate === "") call.dueDate = null;
+        if (call.dueDate !== null && (typeof call.dueDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(call.dueDate))) return { ok: false, tool, error: "dueDate-must-be-ISO-date-or-null" };
+        result = ctx.kernel.setTodoDueDate?.(ctx.workspaceRoot, id, call.dueDate as string | null, contract, options);
+      } else {
+        const text = String(call.newText || call.text || "").trim();
+        if (!text) return { ok: false, tool, error: "newText-required" };
+        // Kernel update clears absent due dates; explicitly preserve the live date.
+        const existing = items.find(item => item.id === id);
+        const dueDate = call.dueDate === null || typeof call.dueDate === "string" ? call.dueDate : typeof existing?.dueDate === "string" ? existing.dueDate : null;
+        result = ctx.kernel.updateTodoItem?.(ctx.workspaceRoot, id, text, contract, { ...options, dueDate });
+      }
+      return { tool, ok: result?.ok === true, items: result?.items, relativePath: result?.targetPath, error: result ? undefined : "kernel-tool-unavailable" };
+    }
+    case "list_pending_writes":
+      return { tool, ok: true, items: listPendingWrites(ctx.workspaceRoot).map(({ content: _content, ...item }) => item) };
+    case "list_recent_memories":
+      return { tool, ok: true, content: (ctx.kernel.readProfileActiveBody?.(ctx.workspaceRoot) || "").slice(0, 6000), truncated: true };
+    case "list_recent_stream": {
+      const periods = await ctx.kernel.listStreamPeriods({ workspaceRoot: ctx.workspaceRoot, engineRoot: ctx.engineRoot, limit: typeof call.limit === "number" ? Math.max(1, Math.min(50, call.limit)) : 8 });
+      return { tool, ok: true, periods, hint: "Use read_file on a returned relPath to read entries." };
+    }
     case "toggle_todo":
       return toggleTodo(ctx, {
         id: typeof call.id === "string" ? call.id : undefined,
-        text: typeof call.text === "string" ? call.text : undefined,
+        text: String(call.idOrText || ""),
+        completed: typeof call.completed === "boolean" ? call.completed : undefined,
       });
     default:
       return null;

@@ -360,7 +360,7 @@ async function callAnthropic(
       continue;
     }
     if (typeof block.text === "string" && (block.type === "text" || !text)) {
-      text = block.text;
+      text += block.text;
     }
   }
   if (!text && !reasoning) {
@@ -437,6 +437,22 @@ async function fetchWithRetry(
   operation: string,
   shouldAbort?: () => boolean,
 ): Promise<Record<string, unknown>> {
+  // Provider error bodies and network errors may echo credential headers/URLs.
+  const secrets = Object.entries(init.headers)
+    .filter(([name]) => /authorization|api[-_]key/iu.test(name))
+    .map(([, value]) => value.replace(/^Bearer\s+/iu, ""));
+  try {
+    for (const [name, value] of new URL(url).searchParams) {
+      if (/^(?:key|api_key|token|access_token)$/iu.test(name)) secrets.push(value);
+    }
+  } catch { /* malformed endpoint is reported by requestUrl */ }
+  const safeMessage = (value: string) => {
+    let message = value;
+    for (const secret of secrets.filter(value => value.length >= 4)) {
+      message = message.replaceAll(secret, "[redacted]").replaceAll(encodeURIComponent(secret), "[redacted]");
+    }
+    return message.slice(0, 1200);
+  };
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -453,6 +469,7 @@ async function fetchWithRetry(
       });
 
       let timeoutTimer: number | undefined;
+      let abortTimer: number | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutTimer = window.setTimeout(() => reject(new Error("AI request timeout")), resolveTimeoutMs(operation));
       });
@@ -462,13 +479,11 @@ async function fetchWithRetry(
       ];
       if (shouldAbort) {
         racers.push(new Promise<never>((_, reject) => {
-          const timer = window.setInterval(() => {
+          abortTimer = window.setInterval(() => {
             if (shouldAbort()) {
-              window.clearInterval(timer);
               reject(abortError());
             }
           }, 200);
-          void requestPromise.finally(() => window.clearInterval(timer));
         }));
       }
 
@@ -477,10 +492,11 @@ async function fetchWithRetry(
         res = await Promise.race(racers);
       } finally {
         if (timeoutTimer !== undefined) window.clearTimeout(timeoutTimer);
+        if (abortTimer !== undefined) window.clearInterval(abortTimer);
       }
 
       if (res.status < 200 || res.status >= 300) {
-        const errText = res.text || `HTTP ${res.status}`;
+        const errText = safeMessage(res.text || `HTTP ${res.status}`);
         // Retry on 5xx (transient server errors) and 429 (rate limit)
         if ((res.status >= 500 || res.status === 429) && attempt < MAX_RETRIES) {
           // For 429, respect Retry-After header if present
@@ -500,15 +516,16 @@ async function fetchWithRetry(
       return isRecord(json) ? json : {};
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") throw err;
+      const safeError = new Error(safeMessage(err instanceof Error ? err.message : String(err)));
       // Retry on network errors and timeouts
       if (attempt < MAX_RETRIES && isTransientError(err)) {
-        lastError = err instanceof Error ? err : new Error(String(err));
+        lastError = safeError;
         await sleep(RETRY_BASE_DELAY * Math.pow(2, attempt));
         continue;
       }
       // Real failures only — avoid success-path console spam
-      console.error(`[topmind] AI ${operation} failed:`, err);
-      throw err;
+      console.error(`[topmind] AI ${operation} failed:`, safeError);
+      throw safeError;
     }
   }
 

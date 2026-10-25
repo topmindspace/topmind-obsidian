@@ -321,9 +321,8 @@ test("no black-bar hover artifacts: no fixed bg, no global clickable-icon", () =
     .map((m) => m[1].trim())
     .filter((sel) => /(^|,)\s*button\.clickable-icon\s*(,|$)/.test(sel) && !sel.includes("tm-") && !sel.includes("topmind-"));
   assert.deepEqual(bare, [], "button.clickable-icon must not be styled globally");
-  // Right-split tab header stays a light chrome band (not min-height:0).
-  assert.match(css, /mod-right-split" \.workspace-tab-header-container|\.mod-right-split \.workspace-tab-header-container/);
-  assert.match(css, /workspace-tab-header-container[\s\S]{0,400}background-color:\s*var\(--tm-bg-chrome\)/);
+  // Native split chrome must keep its theme; plugin CSS only owns its views.
+  assert.doesNotMatch(css, /body\s+\.mod-(?:right|left)-split\s+\.workspace-tab/);
 });
 
 test("chat input pins to sidebar bottom (flex chain)", () => {

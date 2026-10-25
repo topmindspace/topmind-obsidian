@@ -1411,13 +1411,14 @@ select.tm-tag-input:focus,
   margin-top: 0;
   padding-top: 6px;
   border-top: none;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 
 .tm-wb-compose-hint {
   font-size: var(--tm-type-meta);
   color: var(--tm-ink-faint);
-  flex: 1;
+  flex: 1 1 10rem;
+  white-space: nowrap;
   min-width: 0;
   font-weight: 450;
   opacity: .85;
@@ -2056,7 +2057,7 @@ select.tm-tag-input:focus,
 }
 
 .tm-todo-checkbox {
-  margin-top: 3px;
+  margin: 0;
   width: 15px;
   height: 15px;
   flex-shrink: 0;
@@ -2077,6 +2078,8 @@ select.tm-tag-input:focus,
 }
 
 .tm-todo-delete {
+  min-width: var(--tm-hit-sm);
+  min-height: var(--tm-hit-sm);
   opacity: 0;
   transition: opacity var(--tm-transition);
 }
@@ -2117,25 +2120,9 @@ select.tm-tag-input:focus,
   height: var(--tm-icon-xs);
 }
 
-.tm-view-all {
-  margin-top: var(--tm-gap-sm);
-  width: 100%;
-  text-align: center;
-  color: var(--tm-accent-ink);
-  font-size: var(--tm-type-meta);
-  font-weight: 550;
-  height: var(--tm-btn-h-sm);
-  border-radius: var(--tm-radius-ctl);
-  border: 1px dashed var(--tm-line);
-  background: transparent;
-  cursor: pointer;
-  transition: var(--tm-transition-ui);
-}
 
-.tm-view-all:hover {
-  background: var(--tm-bg-hover);
-  border-style: solid;
-}
+
+
 
 /* ═══════════════════════════════════════════════════════════════════════
    11. SUGGESTIONS
@@ -2927,6 +2914,8 @@ button.tm-suggestion-path:focus-visible {
 .tm-empty-action {
   display: flex;
   justify-content: center;
+  gap: var(--tm-gap-sm);
+  flex-wrap: wrap;
   margin-top: var(--tm-gap-md);
 }
 
@@ -4670,8 +4659,6 @@ button.tm-feed-layout-btn:hover {
 .tm-task-progress-inline,
 .tm-task-progress-inline span,
 .tm-suggestion-summary,
-.tm-empty-title,
-.tm-empty-hint,
 .tm-status-label,
 .tm-entry-count,
 .tm-day-label,
@@ -4808,7 +4795,7 @@ body .workspace-leaf-content .tm-wb-compose-foot {
   display:flex;
   align-items:center;
   gap:8px;
-  flex-wrap:nowrap;
+  flex-wrap:wrap;
 }
 
 body .workspace-leaf-content button {
@@ -5091,8 +5078,9 @@ body .workspace-leaf-content .tm-chat-input-foot .tm-footer-right {
 }
 
 body .workspace-leaf-content .tm-footer-status {
-  width:18px;
-  height:18px;
+  width:var(--tm-hit-sm);
+  height:var(--tm-hit-sm);
+  padding:0;
   border-radius:50%;
   display:inline-flex;
   align-items:center;
@@ -5271,16 +5259,14 @@ body .workspace-leaf-content .tm-empty-title {
 
 body .workspace-leaf-content .tm-empty-hint {
   font-size:var(--font-ui-smaller);
-  color:var(--text-faint);
+  color:var(--text-muted);
   max-width:32ch;
   margin:0 auto;
 }
 
 body .workspace-leaf-content .tm-chat-role,
 body .workspace-leaf-content .tm-task-progress-inline span,
-body .workspace-leaf-content .tm-suggestion-summary,
-body .workspace-leaf-content .tm-empty-title,
-body .workspace-leaf-content .tm-empty-hint {
+body .workspace-leaf-content .tm-suggestion-summary {
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
@@ -5354,8 +5340,6 @@ body .workspace-leaf-content,body .workspace-leaf-content * {
 body .workspace-leaf-content .tm-chat-role,
 body .workspace-leaf-content .tm-task-progress-inline span,
 body .workspace-leaf-content .tm-suggestion-summary,
-body .workspace-leaf-content .tm-empty-title,
-body .workspace-leaf-content .tm-empty-hint,
 body .workspace-leaf-content .tm-tab-label,
 body .workspace-leaf-content .tm-day-label {
   white-space:nowrap;
@@ -5530,29 +5514,24 @@ body .workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-heade
   border:0;
 }
 
-/* Compact product-aligned tab header — keep icons on the light chrome band.
-   Never zero-height: collapsed chrome paints as a black strip on hover. */
-body .mod-right-split .workspace-tab-header-container,
-body .mod-right-split .workspace-tabs-header,
-body .mod-left-split .workspace-tab-header-container {
-  background-color: var(--tm-bg-chrome);
-  min-height: var(--tm-hit-sm);
-  padding-top: 0;
-  margin-top: 0;
-}
+/* Native Obsidian split/tab chrome keeps its own theme and geometry. */
 
-body .mod-right-split .workspace-tab-header-container .workspace-tab-header,
-body .mod-right-split .workspace-tab-header-container .clickable-icon {
-  background-color: transparent;
-  color: var(--tm-ink-soft);
-}
+/* Direct todo capture remains usable in a narrow dock. */
+.tm-todo-add-row { display: flex; gap: var(--size-4-2); margin-block: var(--size-4-2); }
+.tm-todo-add-input { min-width: 0; flex: 1; }
 
-body .mod-right-split .workspace-tab-header-container .workspace-tab-header:hover,
-body .mod-right-split .workspace-tab-header-container .clickable-icon:hover {
-  background-color: var(--tm-bg-hover);
-  color: var(--tm-ink);
-}
+.tm-chat-object { display: block; max-width: 100%; min-height: 24px; margin-block-end: var(--size-4-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.tm-todo-clear-done { min-width: 24px; min-height: 24px; }
 
-body .mod-right-split .workspace-leaf.mod-topmind-flush {
-  padding-top:0;
-}
+.tm-chat-input-hint { font-size: var(--font-ui-smaller); color: var(--text-muted); line-height: var(--line-height-tight); }
+
+.tm-todo-filter-input { width: 100%; margin-block: var(--tm-gap-sm); }
+.tm-todo-load-more { margin-block: var(--tm-gap-sm); }
+.tm-todo-completed > summary { cursor: pointer; color: var(--text-muted); padding-block: var(--tm-gap-sm); }
+.tm-todo-completed .tm-todo-text { color: var(--text-muted); text-decoration: line-through; }
+.tm-chat-jump { flex-shrink: 0; align-self: center; min-height: var(--tm-hit-sm); }
+.tm-chat-jump[hidden] { display: none; }
+
+.tm-suggestions-surface { display: flex; flex-direction: column; gap: var(--tm-gap-sm); min-width: 0; }
+
+.tm-todo-toggle { display: flex; align-items: flex-start; padding-block-start: 3px; box-sizing: border-box; justify-content: center; min-width: var(--tm-hit-sm); min-height: var(--tm-hit-sm); flex-shrink: 0; align-self: flex-start; cursor: pointer; }

@@ -1,0 +1,38 @@
+{
+  "pluginVersion": "4.20.0",
+  "host": {
+    "userData": "/private/var/folders/4y/1rmygxyj0fl7myn44mpsr3c40000gn/T/topmind-obsidian-smoke-ugBVkO",
+    "version": "1.12.7",
+    "runtime": {
+      "node": "22.22.1",
+      "electron": "39.8.3",
+      "chrome": "142.0.7444.265"
+    }
+  },
+  "model": "local mock; no real-provider calls",
+  "checks": {
+    "focusFrozen": true,
+    "sessionRestored": true,
+    "pendingDelete": true,
+    "todoAddedAndCompleted": true,
+    "summaryRequests": 2,
+    "pageErrors": []
+  },
+  "tests": {
+    "obsidian": 234,
+    "kernelAndCrossSurface": 692,
+    "utr": 151,
+    "desktopMain": 1461,
+    "desktopAdditional": 67
+  },
+  "integration": {
+    "rootValidate": true,
+    "obsidianTypes": true,
+    "obsidianLint": true,
+    "obsidianPackVerify": true,
+    "desktopSourcePackVerify": true,
+    "installerTested": false,
+    "declaredMinimumHostTested": false
+  },
+  "releaseSha256": "c1171435e51e70fb0adf87aaec01b7b08ebbb0e5ebf39b7c39a58cb006d5a8db"
+}

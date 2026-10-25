@@ -13,7 +13,7 @@ import {
 export async function openStreamWorkbench(app: App): Promise<void> {
   const existing = app.workspace.getLeavesOfType(VIEW_TYPE_STREAM_WORKBENCH);
   if (existing.length > 0) {
-    void app.workspace.revealLeaf(existing[0]);
+    await app.workspace.revealLeaf(existing[0]);
     return;
   }
   // New leaf — never replace the tab the user is currently reading.
@@ -28,7 +28,7 @@ export async function openStreamWorkbench(app: App): Promise<void> {
 export async function openSidebarDock(app: App): Promise<WorkspaceLeaf | null> {
   const existing = app.workspace.getLeavesOfType(VIEW_TYPE_SIDEBAR_DOCK);
   if (existing.length > 0) {
-    void app.workspace.revealLeaf(existing[0]);
+    await app.workspace.revealLeaf(existing[0]);
     return existing[0];
   }
   const leaf = app.workspace.getRightLeaf(false);
@@ -37,6 +37,7 @@ export async function openSidebarDock(app: App): Promise<WorkspaceLeaf | null> {
     type: VIEW_TYPE_SIDEBAR_DOCK,
     active: true,
   });
+  await app.workspace.revealLeaf(leaf);
   return leaf;
 }
 

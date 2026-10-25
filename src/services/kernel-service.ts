@@ -1,3 +1,4 @@
+import { runWorkspaceChatTurn, resolveChatDurableLocale, loadChatProfileContext, clampMaxAgentSteps, type ChatProgressEvent } from "./chat-agent.ts";
 // ── Kernel Service: wraps Kernel operations for Obsidian plugin ────────────
 //
 // All view/modal components call this service instead of directly accessing
@@ -34,23 +35,22 @@ import {
   mirrorWritebackModeToContract,
   readWorkspaceWindow,
   preciseEditWorkspace,
-  runWorkspaceChatTurn,
-  resolveChatDurableLocale,
-  loadChatProfileContext,
   createInboxNoteInWorkspace,
   appendStreamEntryToWorkspace,
   acceptPendingWrite,
   listPendingWrites,
   rejectPendingWrite,
-  clampMaxAgentSteps,
   type WorkspaceReadOpts,
   type WorkspaceEditOpts,
-  type ChatProgressEvent,
 } from "./kernel-workspace-ops.ts";
-import { setPendingWritesWorkspace } from "./pending-writes.ts";
 import { fetchUrlForCapture, buildFetchMarkdown, type FetchCaptureResult } from "./capture-fetch.ts";
 import { sanitizeAiContent } from "#kernel/ai-content-sanitize.mjs";
 import { t, getLocale } from "../i18n";
+import { buildChatContext } from "./chat-context.ts";
+import { readWorkspaceState, writeWorkspaceState } from "#kernel/workspace-state.mjs";
+import { cancellableOperationProvider } from "./operation-provider";
+import { createChatMemoryProposal } from "./chat-memory-proposal";
+import { buildFocusContext, captureChatFocus, editorWriteConflict, type ChatFocus } from "./editor-context.ts";
 import { hasConfiguredProvider, getProviderKey } from "../types.ts";
 
 // ── Node.js built-ins ──
@@ -75,8 +75,13 @@ export class KernelService {
   private suggestionSession: SuggestionCard[] = [];
   /** Last kernel suggest tick — soft path loads cache when the window has not changed. */
   private lastSuggestKernelAt = 0;
+  private suggestInFlight: Promise<SuggestionCard[]> | null = null;
+  private serviceEpoch = 0;
   /** Confirm-gated cards from memory_organize / topic_classify (survive suggest force). */
   private opSuggestionSession: SuggestionCard[] = [];
+  private chatProposalSession: SuggestionCard[] = [];
+  private proposalStoreError = "";
+  private pendingReadError = "";
   private suggestionDropped = new Set<string>();
 
   constructor(app: App, plugin: Plugin, settings: TopmindSettings) {
@@ -84,22 +89,16 @@ export class KernelService {
     this.plugin = plugin;
     this.settings = settings;
     this.applyRuntimeSettings();
-    // Durable pending-writes live under the vault workspace (.topmind/).
-    try {
-      setPendingWritesWorkspace(this.getVaultPath());
-    } catch {
-      /* vault path may be unavailable in tests */
-    }
+    this.loadChatProposals();
   }
 
   /** Update settings (rebuilds context if AI config changed) */
   updateSettings(settings: TopmindSettings): void {
-    // Hash includes both new multi-provider keys and legacy fields
-    const aiManual = settings.ai?.manual
-      ? Object.values(settings.ai.manual).join("|")
-      : "";
-    const hash = `${settings.ai?.sourcePreference || settings.aiProvider}|${aiManual}|${settings.aiApiKey}|${settings.aiBaseUrl}|${settings.aiModel}|${settings.localeOverride || ""}`;
+    // Include routing, default model and per-model options; never log this value.
+    const hash = JSON.stringify([settings.ai, settings.aiProvider, settings.aiApiKey, settings.aiBaseUrl, settings.aiModel, settings.localeOverride]);
     if (hash !== this.lastSettingsHash) {
+      this.serviceEpoch += 1;
+      this.suggestInFlight = null;
       this.context = null; // Force rebuild on next call
     }
     this.settings = settings;
@@ -114,22 +113,42 @@ export class KernelService {
 
   /** Clean up resources on plugin unload */
   dispose(): void {
+    this.serviceEpoch += 1;
+    this.suggestInFlight = null;
     this.context = null;
     this.cachedModel = null;
     this.lastSettingsHash = "";
     this.suggestionSession = [];
     this.opSuggestionSession = [];
+    this.chatProposalSession = [];
     this.suggestionDropped.clear();
     this.lastSuggestKernelAt = 0;
-    setPendingWritesWorkspace(null);
     // Do not leave keep-count overrides in the shared renderer process.
     delete process.env.BACKUP_KEEP;
     delete process.env.RECEIPT_KEEP;
   }
 
+  private loadChatProposals(): void {
+    try {
+      const raw = readWorkspaceState<unknown>(this.getVaultPath(), "chat-proposals.json", []);
+      if (!Array.isArray(raw) || raw.length > 20) throw new Error("invalid-chat-proposals");
+      const target = getKernel().globalProfileRelPath?.(this.getVaultPath()) || `${this.memoryDirRel()}/profile.md`;
+      this.chatProposalSession = raw.map(value => {
+        if (!isRecord(value) || !isRecord(value.payload) || typeof value.title !== "string") throw new Error("invalid-chat-proposal");
+        return createChatMemoryProposal({ ...value.payload, content: value.payload.content || value.payload.entry, title: value.title }, target);
+      });
+    } catch (error) { this.proposalStoreError = error instanceof Error ? error.message : String(error); }
+  }
+
   /** Drop a suggestion from the session (apply success or user dismiss). */
   dropSuggestion(id: string): void {
     if (!id) return;
+    if (this.chatProposalSession.some(card => card.id === id)) {
+      const next = this.chatProposalSession.filter(card => card.id !== id);
+      try { writeWorkspaceState(this.getVaultPath(), "chat-proposals.json", next); }
+      catch { new Notice(t("notice_proposal_state_failed")); }
+      this.chatProposalSession = next;
+    }
     this.suggestionDropped.add(id);
     this.suggestionSession = this.suggestionSession.filter((s) => s.id !== id);
     this.opSuggestionSession = this.opSuggestionSession.filter((s) => s.id !== id);
@@ -138,7 +157,7 @@ export class KernelService {
   /** Kernel session first, then op cards not already shown. */
   private visibleSuggestions(): SuggestionCard[] {
     return mergeSoftSuggestionSession(
-      this.opSuggestionSession,
+      [...this.opSuggestionSession, ...this.chatProposalSession],
       this.suggestionSession,
       this.suggestionDropped,
     );
@@ -623,10 +642,20 @@ export class KernelService {
   }
 
   listPendingWrites() {
-    return listPendingWrites();
+    try { const pending = listPendingWrites(this.getVaultPath()); this.pendingReadError = ""; return pending; }
+    catch (error) { this.pendingReadError = error instanceof Error ? error.message : String(error); return []; }
   }
+  reviewStorageError(): string { return this.pendingReadError || this.proposalStoreError; }
 
   acceptPendingWrite(id: string): { ok: boolean; path?: string; error?: string } {
+    const item = this.listPendingWrites().find(entry => entry.id === id);
+    if (item) {
+      const conflict = editorWriteConflict(this.app.workspace, this.getVaultPath(), [item.relativePath]);
+      if (conflict) {
+        new Notice(`${t("notice_execute_failed")}: ${conflict}`);
+        return { ok: false, error: conflict };
+      }
+    }
     const result = acceptPendingWrite(getKernel(), this.getVaultPath(), id);
     if (result.ok) {
       new Notice(t("notice_pending_accepted"));
@@ -637,9 +666,11 @@ export class KernelService {
   }
 
   rejectPendingWrite(id: string): boolean {
-    const ok = rejectPendingWrite(id);
-    if (ok) new Notice(t("notice_pending_rejected"));
-    return ok;
+    try {
+      const ok = rejectPendingWrite(this.getVaultPath(), id);
+      if (ok) new Notice(t("notice_pending_rejected"));
+      return ok;
+    } catch { new Notice(t("review_storage_error")); return false; }
   }
 
   /**
@@ -665,6 +696,14 @@ export class KernelService {
    * `autoSuggest` off skips the Kernel call unless force — session/op cards still show.
    */
   async generateSuggestions(opts: { force?: boolean } = {}): Promise<SuggestionCard[]> {
+    if (this.suggestInFlight) return this.suggestInFlight;
+    const pending = this.generateSuggestionsOnce(opts);
+    this.suggestInFlight = pending;
+    try { return await pending; }
+    finally { if (this.suggestInFlight === pending) this.suggestInFlight = null; }
+  }
+
+  private async generateSuggestionsOnce(opts: { force?: boolean }): Promise<SuggestionCard[]> {
     const force = opts.force === true;
     const cached = this.visibleSuggestions();
     if (!this.settings.autoSuggest && !force) {
@@ -676,23 +715,20 @@ export class KernelService {
       return cached;
     }
 
-    try {
-      const ctx = this.getContext();
-      const raw = await ctx.generateSuggestions({ force, localeOverride: this.surfaceUiLocale() });
-      this.lastSuggestKernelAt = Date.now();
-      // Kernel returns Suggestion[] directly; normalizeSuggestionList also
-      // accepts legacy { suggestions: [] } for forward compatibility.
-      const mapped = normalizeSuggestionList(raw)
-        .map(mapKernelSuggestion)
-        .filter((s) => s.id && !this.suggestionDropped.has(s.id));
-      this.suggestionSession = force
-        ? mapped
-        : mergeSoftSuggestionSession(this.suggestionSession, mapped, this.suggestionDropped);
-      return this.visibleSuggestions();
-    } catch (err) {
-      console.error("[topmind] generateSuggestions failed:", err);
-      return this.visibleSuggestions();
-    }
+    const epoch = this.serviceEpoch;
+    const ctx = this.getContext();
+    const raw = await ctx.generateSuggestions({ force, localeOverride: this.surfaceUiLocale() });
+    if (epoch !== this.serviceEpoch) return this.visibleSuggestions();
+    this.lastSuggestKernelAt = Date.now();
+    // Kernel returns Suggestion[] directly; normalizeSuggestionList also
+    // accepts legacy { suggestions: [] } for forward compatibility.
+    const mapped = normalizeSuggestionList(raw)
+      .map(mapKernelSuggestion)
+      .filter((s) => s.id && !this.suggestionDropped.has(s.id));
+    this.suggestionSession = force
+      ? mapped
+      : mergeSoftSuggestionSession(this.suggestionSession, mapped, this.suggestionDropped);
+    return this.visibleSuggestions();
   }
 
   /**
@@ -754,17 +790,20 @@ export class KernelService {
   // ── AI Operations ──────────────────────────────────────────────────────
 
   /** Run AI operation (todo_maintain, memory_organize, topic_classify) */
-  async runOperation(id: string, opts: { force?: boolean } = {}): Promise<{
+  async runOperation(id: string, opts: { force?: boolean; shouldAbort?: () => boolean } = {}): Promise<{
     ok: boolean;
     summary: string;
     suggestions?: SuggestionCard[];
   }> {
     try {
       const ctx = this.getContext();
+      if (opts.shouldAbort?.()) return { ok: false, summary: "Operation cancelled" };
+      const aiProvider = ctx.aiProvider && opts.shouldAbort ? cancellableOperationProvider(ctx.aiProvider, opts.shouldAbort) : ctx.aiProvider;
       const result = await ctx.runOperation({
-        id,
-        options: { ...opts, localeOverride: this.surfaceUiLocale() },
+        id, aiProvider,
+        options: { force: opts.force, localeOverride: this.surfaceUiLocale() },
       });
+      if (opts.shouldAbort?.()) return { ok: false, summary: "Operation cancelled" };
       const suggestions = normalizeSuggestionList(result.suggestions)
         .map(mapKernelSuggestion)
         .filter((s) => s.id && !this.suggestionDropped.has(s.id));
@@ -813,28 +852,38 @@ export class KernelService {
     }
   }
 
-  /** Delete a todo item by ID */
-  deleteTodo(id: string): void {
+  /** User gestures use the same Kernel mutation path and report failures. */
+  private mutateTodo(action: () => unknown): { ok: boolean; error?: string } {
     try {
-      const kernel = getKernel();
-      const workspaceRoot = this.getVaultPath();
-      const contract = this.loadContract();
-      kernel.deleteTodoItem?.(workspaceRoot, id, contract, { actor: "user" });
+      const result = action() as { ok?: boolean; error?: string; reason?: string } | undefined;
+      if (!result || result.ok === false) throw new Error(result?.error || result?.reason || "write-failed");
+      return { ok: true };
     } catch (err) {
-      console.error("[topmind] deleteTodo failed:", err);
+      const error = err instanceof Error ? err.message : String(err);
+      new Notice(`${t("notice_execute_failed")}: ${error}`);
+      return { ok: false, error };
     }
   }
 
-  /** Clear all completed todos */
-  clearCompletedTodos(): void {
-    try {
-      const kernel = getKernel();
-      const workspaceRoot = this.getVaultPath();
-      const contract = this.loadContract();
-      kernel.clearCompleted?.(workspaceRoot, contract, { actor: "user" });
-    } catch (err) {
-      console.error("[topmind] clearCompleted failed:", err);
-    }
+  addTodo(text: string): { ok: boolean; error?: string } {
+    if (!text.trim()) return { ok: false, error: "empty-todo" };
+    return this.mutateTodo(() => getKernel().addTodoItem?.(this.getVaultPath(), text.trim(), {
+      actor: "user", source: "manual", confirmed: true,
+    }));
+  }
+
+  deleteTodo(id: string): { ok: boolean; error?: string } {
+    return this.mutateTodo(() => getKernel().deleteTodoItem?.(this.getVaultPath(), id, this.loadContract(), { actor: "user" }));
+  }
+
+  clearCompletedTodos(): { ok: boolean; error?: string } {
+    return this.mutateTodo(() => getKernel().clearCompleted?.(this.getVaultPath(), this.loadContract(), { actor: "user" }));
+  }
+
+  /** Resolve actual indexed paths, including year folders and sticky streams. */
+  async todoSourcePath(period: string): Promise<string | null> {
+    const { periods } = await this.getStreamContext();
+    return periods.find((item) => item.period === period || item.relPath === period)?.relPath || null;
   }
 
   // ── AI Chat ────────────────────────────────────────────────────────────
@@ -864,6 +913,7 @@ export class KernelService {
     history: Array<{ role: "user" | "assistant"; content: string }> = [],
     opts: {
       onProgress?: (ev: ChatProgressEvent) => void;
+      focus?: ChatFocus | null;
       shouldAbort?: () => boolean;
       /** Pause keeps the ledger; cancel is the only cancelled stop. */
       stopKind?: () => "paused" | "cancelled";
@@ -885,7 +935,7 @@ export class KernelService {
     content: string;
     reasoning: string;
     steps: number;
-    toolCalls: Array<{ tool: string; ok: boolean; summary?: string }>;
+    toolCalls: Array<{ tool: string; ok: boolean; summary?: string; pending?: boolean; needsConfirm?: boolean }>;
     autoContinues: number;
     stepLimitHit: boolean;
     stopReason?: "paused" | "cancelled";
@@ -922,57 +972,25 @@ export class KernelService {
     // Capture for the generate closure — `let` narrowing does not survive capture.
     const activeAi: AiProvider = aiProvider;
 
-    const contextParts: string[] = [];
-
-    try {
-      const ctx = await this.getStreamContext();
-      if (ctx.current) {
+    const contextParts = await buildChatContext(userMessage, {
+      stream: async () => {
+        const ctx = await this.getStreamContext();
+        if (!ctx.current) return "";
         const { entries } = await this.readPeriodNoteAsync(ctx.current.relPath);
-        const recent = [...entries].reverse().slice(0, 20);
-        if (recent.length > 0) {
-          contextParts.push(
-            "## Recent Stream Entries\n" +
-              recent.map((e) => `- ${e.time} ${e.text}`).join("\n"),
-          );
-        }
-      }
-    } catch {
-      // Stream context unavailable — skip
-    }
+        return [...entries].reverse().slice(0, 20).map((e) => `- ${e.time} ${e.text}`).join("\n");
+      },
+      todos: () => this.readTodos().filter((todo) => !todo.done).slice(0, 10)
+        .map((todo) => `- ${todo.text}${todo.dueDate ? ` (due: ${todo.dueDate})` : ""}`).join("\n"),
+      profile: () => loadChatProfileContext(getKernel(), this.getVaultPath(), this.settings.localeOverride || getLocale() || "zh-CN"),
+      reflections: async () => (await this.loadRecentReflections()) || "",
+    });
 
-    try {
-      const todos = this.readTodos();
-      const active = todos.filter((todo) => !todo.done).slice(0, 10);
-      if (active.length > 0) {
-        contextParts.push(
-          "## Current Todos\n" + active.map((todo) => `- ${todo.text}${todo.dueDate ? ` (due: ${todo.dueDate})` : ""}`).join("\n"),
-        );
-      }
-    } catch {
-      // Todos unavailable — skip
-    }
-
-    try {
-      const profileCtx = loadChatProfileContext(
-        getKernel(),
-        this.getVaultPath(),
-        this.settings.localeOverride || getLocale() || "zh-CN",
-      );
-      if (profileCtx) {
-        contextParts.push("## User Profile\n" + profileCtx);
-      }
-    } catch {
-      // Profile unavailable — skip
-    }
-
-    try {
-      const reflections = await this.loadRecentReflections();
-      if (reflections) {
-        contextParts.push("## Recent Reflections (extracted insights)\n" + reflections);
-      }
-    } catch {
-      // Reflections unavailable — skip
-    }
+    const currentFocus = captureChatFocus(this.app.workspace);
+    const requestedFocus = opts.focus === undefined ? currentFocus : opts.focus;
+    const focus = buildFocusContext(this.getVaultPath(), requestedFocus && currentFocus?.path === requestedFocus.path
+      ? { ...requestedFocus, editorText: currentFocus.editorText }
+      : requestedFocus);
+    if (focus) contextParts.unshift(focus.prompt);
 
     const uiLocale = this.settings.localeOverride || getLocale() || "zh-CN";
     const kernel = getKernel();
@@ -997,6 +1015,19 @@ export class KernelService {
     const turn = await runWorkspaceChatTurn(kernel, this.getVaultPath(), {
       userMessage,
       history,
+      focus: focus ? { path: focus.focus.path, unsaved: focus.unsaved, contentHash: focus.contentHash } : null,
+      beforeWrite: paths => editorWriteConflict(this.app.workspace, this.getVaultPath(), paths),
+      onMemoryProposal: (call) => {
+        const target = kernel.globalProfileRelPath?.(this.getVaultPath()) || `${this.memoryDirRel()}/profile.md`;
+        const card = createChatMemoryProposal(call, target);
+        if (this.proposalStoreError) throw new Error(this.proposalStoreError);
+        const next = [...this.chatProposalSession.filter(existing => existing.id !== card.id), card];
+        if (next.length > 20) throw new Error("chat-proposals queue is full");
+        writeWorkspaceState(this.getVaultPath(), "chat-proposals.json", next);
+        this.chatProposalSession = next;
+        this.suggestionDropped.delete(card.id);
+        return { id: card.id, targetPath: target };
+      },
       generate: (prompt, context) => activeAi.generate(prompt, context),
       locale: uiLocale,
       // omit writebackMode — runWorkspaceChatTurn reads topmind.yaml
@@ -1029,7 +1060,7 @@ export class KernelService {
 
     // Agent writes already hit disk via the write gate — poke vault listeners now.
     this.notifyFilesChanged(
-      turn.toolCalls.filter((t) => t.ok).map((t) => t.summary),
+      turn.toolCalls.filter((t) => t.ok && ["edit_file", "save_file", "save_note", "capture", "capture_url", "append_stream_entry", "add_todo", "toggle_todo", "update_todo", "set_todo_due", "delete_todo"].includes(t.tool)).map((t) => t.summary),
     );
 
     return {
@@ -1214,6 +1245,6 @@ export class KernelService {
   }
 
   private getEngineRoot(): string {
-    return getEngineRoot(this.plugin);
+    return getEngineRoot(this.plugin, this.getVaultPath());
   }
 }

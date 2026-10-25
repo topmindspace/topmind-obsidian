@@ -9,7 +9,7 @@
  *   + 目标路径面包屑（`… / 2026 / 2026-W30.md`）
  * - 「忽略」→ 移出会话
  */
-import { setIcon } from "obsidian";
+import { Notice, setIcon } from "obsidian";
 import { t } from "../i18n";
 import type { SuggestionCard } from "../types";
 import {
@@ -102,16 +102,18 @@ export function renderSuggestionCard(
     confirmBtn.disabled = true;
     confirmBtn.empty();
     confirmBtn.createSpan({ cls: "tm-btn-spinner" });
-    const result = await cb.apply(sugg);
-    if (result.ok) {
-      card.classList.add("tm-card-removing");
-      window.setTimeout(() => card.remove(), 200);
-      if (result.openPath) {
-        await cb.openVaultPath(result.openPath);
+    try {
+      const result = await cb.apply(sugg);
+      if (result.ok) {
+        card.classList.add("tm-card-removing");
+        window.setTimeout(() => card.remove(), 200);
+        // Refresh even if navigation fails after a successful write.
+        try { if (result.openPath) await cb.openVaultPath(result.openPath); }
+        finally { await cb.refresh(); }
       }
-      await cb.refresh();
-    } else {
-      // applySuggestion already toasts the failure — just restore the button.
+    } catch (err) {
+      new Notice(`${t("notice_execute_failed")}: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
       confirmBtn.disabled = false;
       confirmBtn.empty();
       confirmBtn.textContent = primaryLabel;

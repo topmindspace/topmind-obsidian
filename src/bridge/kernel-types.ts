@@ -417,7 +417,9 @@ export interface KernelApi {
     items: unknown[];
     targetPath: string;
   };
-  deleteTodoItem?(workspaceRoot: string, id: string, contract?: unknown, options?: { actor?: "user" | "ai" }): {
+  updateTodoItem?(workspaceRoot: string, id: string, text: string, contract?: unknown, options?: { actor?: "user" | "ai"; confirmed?: boolean; dueDate?: string | null; writebackModeOverride?: string }): { ok: boolean; items: unknown[]; targetPath: string };
+  setTodoDueDate?(workspaceRoot: string, id: string, dueDate: string | null, contract?: unknown, options?: { actor?: "user" | "ai"; confirmed?: boolean; writebackModeOverride?: string }): { ok: boolean; items: unknown[]; targetPath: string };
+  deleteTodoItem?(workspaceRoot: string, id: string, contract?: unknown, options?: { actor?: "user" | "ai"; confirmed?: boolean; writebackModeOverride?: string }): {
     ok: boolean;
     items: unknown[];
     targetPath: string;

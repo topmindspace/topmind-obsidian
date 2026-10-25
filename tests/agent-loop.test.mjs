@@ -24,7 +24,7 @@ describe("Obsidian agent loop — continuous work", () => {
 
   before(async () => {
     kernel = await import(pathToFileURL(path.join(repoRoot, "lib", "kernel-api.mjs")).href);
-    ops = await importShipped("services/kernel-workspace-ops.ts");
+    ops = await importShipped("services/chat-agent.ts");
     tools = await importShipped("services/workspace-agent-tools.ts");
   });
 
@@ -130,6 +130,8 @@ describe("Obsidian agent loop — continuous work", () => {
     assert.equal(turn.stepLimitHit, true);
     assert.ok(turn.toolCalls.length >= 3, `toolCalls=${turn.toolCalls.length}`);
     assert.match(turn.body, /Done/);
+    assert.doesNotMatch(turn.body, /\[INCOMPLETE/);
+    assert.equal(turn.goal.status, "done");
     assert.ok(progress.some((p) => p.kind === "continue"));
   });
 
@@ -168,7 +170,7 @@ describe("Obsidian agent loop — continuous work", () => {
       return "All done [DONE]";
     };
     const turn = await ops.runWorkspaceChatTurn(kernel, tmp, {
-      userMessage: "list categories then close",
+      userMessage: "write a note after listing categories",
       generate,
       locale: "en",
       maxSteps: 6,
@@ -178,6 +180,24 @@ describe("Obsidian agent loop — continuous work", () => {
     assert.equal(turn.goal.blockReason, "missing-path-receipts");
     assert.equal(turn.goal.pathReceipts.length, 0);
     assert.match(turn.body, /\[INCOMPLETE/);
+  });
+
+  test("read-only checklist answer finishes without a fabricated write receipt", async () => {
+    let calls = 0;
+    const beforeTodo = fs.readFileSync(path.join(tmp, "memory", "todo.md"), "utf8");
+    const turn = await ops.runWorkspaceChatTurn(kernel, tmp, {
+      userMessage: "What are my todos?",
+      generate: async () => ++calls === 1 ? JSON.stringify({ tool: "list_todos" }) : "You have first todo on your list.",
+      locale: "en",
+      maxSteps: 8,
+    });
+    assert.equal(calls, 2);
+    assert.equal(turn.autoContinues, 0);
+    assert.equal(turn.goal.status, "done");
+    assert.equal(fs.readFileSync(path.join(tmp, "memory", "todo.md"), "utf8"), beforeTodo);
+    assert.equal(turn.edits.length, 0);
+    assert.doesNotMatch(turn.body, /\[INCOMPLETE/);
+    assert.ok(turn.toolCalls.some((call) => call.tool === "list_todos" && call.ok));
   });
 
   test("pause keeps the task ledger and is not cancelled", async () => {

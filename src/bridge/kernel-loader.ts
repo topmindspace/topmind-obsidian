@@ -71,6 +71,6 @@ export function createKernelContextFromApp(
   localeOverride?: string | null,
 ): KernelContext {
   const vaultPath = getVaultBasePath(app);
-  const engineRoot = getEngineRoot(plugin);
+  const engineRoot = getEngineRoot(plugin, vaultPath);
   return createKernelContext(vaultPath, engineRoot, aiProvider, localeOverride);
 }

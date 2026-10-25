@@ -1,607 +1,94 @@
-# topmind Obsidian Plugin — UI/UX 设计
-
-> **设计北极星**：最低摩擦个人动态流 — 在 Obsidian 中随手记下、AI 默认建议、用户确认后沉淀、文件永远是你的。  
-> **用户概念 ≤5**：记一下 · 动态 · 专题 · 我的情况 · 交付  
-> **Obsidian-native 优先**：复用 Obsidian 原生能力，不重建编辑器/文件树/命令面板。  
-> **记账**：Desktop 可选 mini-app（`memory/ledgers/`）；Obsidian **不发**记账小应用。
-
----
-
-## 1. 入口架构
-
-### 1.1 四入口设计
-
-```text
-┌──────────────────────────────────────────────────────────────┐
-│  入口 1: 主区域动态 (Stream View)                               │
-│  ────────────────────────────────────────────────────────    │
-│  Obsidian 中央主编辑区的独立页签 (ItemView)                     │
-│  承载：工具栏 + 极速输入 + 动态信息流（列表 / 单列卡片）          │
-│  建议：仅 count>0 时露出计数入口条 → 打开 Dock「建议」tab        │
-│  （完整确认面唯一在 Dock，不在画布堆第二套卡片列表）              │
-│  工具栏：动态标题 | [记一下][我的情况][建议][对话] | [侧边栏][设置][新笔记] │
-│  Hero 行：问候 · 日期 | 计数 · 周期 · 刷新 · 整理 · 列表/卡片        │
-│  输入框：单行起（44px），自增高；按钮行在下方（润色 · 记下）         │
-├──────────────────────────────────────────────────────────────┤
-│  入口 2: AI 副驾面板 (Sidebar Dock View — 标签式)              │
-│  ────────────────────────────────────────────────────────    │
-│  右侧 Leaf，标签页切换                                         │
-│  ┌──────┬──────┬──────┬──────┐                                │
-│  │ 对话 │ 建议 │ 清单 │ 历史 │  ← 4 标签（动态流的家在主区）    │
-│  └──────┴──────┴──────┴──────┘                                │
-│  顶栏：仅任务徽章（极简）                                       │
-│  对话输入底行：●状态点 · 模型 ──── [新建会话] [发送]              │
-│  （状态只留圆点无文字；点击=测速/设置；底部不再放记一下/整理）    │
-├──────────────────────────────────────────────────────────────┤
-│  入口 3: 记一下弹窗                                            │
-│  ────────────────────────────────────────────────────────    │
-│  Activity Bar（左栏 ribbon）：✏ 记一下 在上，≋ 动态 在下          │
-│  零阻碍输入 → Enter 提交 → 静默写入周期本 → 关闭                │
-├──────────────────────────────────────────────────────────────┤
-│  入口 4: Obsidian 状态栏项 (Status Bar Item)                   │
-│  ────────────────────────────────────────────────────────    │
-│  空闲 = sparkles 安静图标；AI 通道运行 = spinner + 任务标签     │
-│  点击 = 打开/恢复 AI 副驾面板（与 Desktop 状态栏 toggle 对齐）  │
-└──────────────────────────────────────────────────────────────┘
-```
-
-> **能力单家**：动态流的家是主区 Stream View，**不进** Dock 标签（对齐 Desktop：AI 列不复读内容导航）。  
-> **建议单确认面**：画布只计数开门；确认 / 忽略 / 待确认写入全在 Dock「建议」tab。
-
-> **AI 操作单通道**：命令面板、侧栏底部按钮、开机自动整理全部经 `aiTaskManager`
-> 共享串行队列（徽章 + 历史可观测每一次 AI 调用），无直跑旁路。取消为
-> stop-tracking 语义：任务立即标记已取消、结果丢弃；底层 provider 调用无法
-> 中断（requestUrl 无 signal 支持），UI 不暗示引擎级中断。
->
-> **对话线程**：可见回答是正文；思考/推理默认折叠（`<details class="tm-chat-reasoning">`，不设 `open`）；
-> Kernel `splitAssistantVisible` 把 `<think>` / 思考围栏 / 未标注 CoT 从答案拆出。
-> 写回经 Kernel writeback / `precise-edit`（`edit_file`）。**无 Pi**（不依赖 `pi-agent-core`）。
-> Host HTTP 可能不 token-stream；折叠 + 可见正文仍成立。**不发**记账 mini-app。
-
-### 1.2 面板可恢复性
-
-| 场景 | 恢复方式 |
-|------|----------|
-| 关闭动态页签 | ⌘P → "Topmind: 打开动态" 或 侧边栏头部 动态（`waves`）按钮 |
-| 关闭侧边栏 | ⌘P → "Topmind: 打开侧边栏" 或 动态工具栏 🔮 按钮 |
-| 两者都关了 | Ribbon 图标 → 记一下 → ⌘P 恢复 |
-| 启动时 | `autoOpenWorkbench` 设置 → 自动打开动态 + 侧边栏 |
-
-### 1.3 信息架构降噪
-
-| 噪音源 | 规则 |
-|--------|------|
-| AI 状态 | **单点语义、多点呈现**：状态栏任务态 · 侧栏状态点（可点测速）· 设置页完整态。工具栏**不再**复读状态/模型。 |
-| 模型选择 | **唯一切换面**：对话 tab 紧凑切换器 + 设置页。工具栏/侧栏头**不展示**模型徽章。 |
-| 流头部操作 | 图标优先：`[刷新] [整理] [布局] [我的情况]`；文字标签仅宽容器 + 容器查询。 |
-| 侧栏底部 | **3 格**：记一下 · 整理 · AI 菜单。不再平铺 6 按钮。 |
-| 布局开关 | 紧挨周期区（不是远侧工具栏），`list/card` 同源 `settings.feedLayout`。 |
-
----
-
-## 2. 动态主表面 (Stream View)
-
-动态页提供两种可切换布局（`settings.feedLayout`）：开关在**动态列表旁**（周期区，不是远侧工具栏）。记下输入框与卡片/列表共用 `tm-feed-column` 单列宽。**列表**为 X 式单列紧凑帖（细线分隔），**卡片式**为同一套分块的单列等宽卡片（不是多列瀑布）。分块规则与 Desktop 对齐：日/周期段若是 markdown 列表（`-` / `*` / `1.`）仍按条目拆帖；无列表标记的长散文换行是一条帖；timed 条目后续段落留在同一帖。切换布局不重拆内容。
-
-**我的情况**：工具栏、动态列表旁按钮、命令「打开我的情况」打开记忆浏览（画像 / 周期反思 / 专题记忆分层标签）。点开条目仍落到 vault 文件。不是第六用户概念。**整理我的情况**走已有 `CMD_MEMORY_ORGANIZE` / `enqueueAiOperation("memory_organize")` 确认面，不静默写画像。
-
-### 2.1 布局
-
-```text
-┌─────────────────────────────────────────────────────────────────────┐
-│  🟢 AI 就绪  DeepSeek · deepseek-chat  ⏳整理中 ✕  侧边栏 设置 新笔记 我的情况 │  ← 工具栏 + 任务徽章
-├─────────────────────────────────────────────────────────────────────┤
-│  ⚡ 随手写一条…                                            [记下]  │  ← 周期本「记下」（不是「记一下」弹窗）
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ── 动态 (2026-W32) · 12 条 ───────────── [切换周期] [整理]         │
-│                                                                      │
-│  ── 今天 ── 3 条 ──────────────────────────────────────────────     │  ← 日分组
-│                                                                      │
-│  ┌───────────────────────────────────────────────────────────┐     │
-│  │ 15:30 · · · · · · · · · · · · · · · · · · · · · 📋 ✏     │     │  ← 卡头：时间 · 快捷按钮
-│  │ 讨论了 Obsidian 插件架构设计                               │     │  ← 正文整行拉通
-│  │ • 确立主区域为 Stream 核心界面                             │     │
-│  │ • 标签: #插件架构 #Topmind                                │     │
-│  └───────────────────────────────────────────────────────────┘     │
-│                                                                      │
-│  ── 昨天 ── 5 条 ─────────────────────────────────────────────      │
-│                                                                      │
-│  ── AI 建议 ─ 3 条 ────────────────────────────────── 打开确认 →│  ← 计数入口（非完整卡片列表）
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-完整确认面 = Dock「建议」tab（接受 / 忽略 / 待确认写入）。画布不再复读整套卡片。
-
-### 2.2 工具栏
-
-| 元素 | 功能 |
-|------|------|
-| 侧边栏 | `panel-right` + 文本「侧边栏」，打开/恢复 AI 副驾面板 |
-| 设置 | `settings` + 文本「设置」，跳转插件设置页 |
-| 新笔记 | `file-plus` + 文本「新笔记」，在 Inbox 建 Untitled |
-| 我的情况 | `user` + 文本「我的情况」，打开记忆浏览（画像 + 周期反思 + 专题记忆；点开条目仍落文件） |
-| 列表 / 卡片 | 动态列表旁切换：X 式单列信息流 vs 单列等宽卡片（`settings.feedLayout`，不是多列瀑布） |
-
-> **AI 状态 / 模型徽章不在工具栏**（能力单家 · 对齐 Desktop）：状态在状态栏 / Dock 头；模型唯一切换面 = 对话 tab + 设置。
-
-工具栏为 **icon-only**（`.tm-toolbar-btn`，`aria-label` / `title` 必填）。侧栏头可用 `.tm-sidebar-btn-labeled`（宽容器出字，窄容器 CSS 藏字）。工具栏 `overflow: visible` + 可换行，不用 `overflow: hidden` 裁字。
-
-周期区：**刷新**（`refresh-cw`，icon-only）与 **整理**（`list-tree` + 「整理」）是不同动作、不同图标，不重复。
-
-### 2.3 交互细节
-
-| 元素 | 交互 |
-|------|------|
-| 输入栏 | 多行 textarea；`Enter` **记下**（`Shift+Enter` 换行）；提交后清空 + 刷新流 |
-| 动态卡片 | 卡头一行「时间居左 · 快捷按钮悬停居右」，正文次行整行拉通（不被时间列挤偏）；正文走 `prepareStreamEntryTextForDisplay`（剥 `<!-- topmind:append -->`）；增补 `#### 续` 并入同一条目；长文才折叠。无列表标记的换行散文保持一条帖；列表项才拆帖 |
-| 周期切换 | 下拉选择历史周期本；保留用户选择跨刷新 |
-| AI 建议卡片 | 多种类型；动作词汇与 Desktop 对齐（2026-08-30）：write 类主按钮 **确认执行** → Kernel `applySuggestion`，`open_profile` 主按钮 **打开**；write 类卡片可解析出目标文件时附 **打开** 次按钮（先查看再决定）+ 目标路径面包屑（`… / 2026 / 2026-W30.md`）；`忽略` → 移出会话。↻ 手动刷新 `force:true` 清指纹；idle 为 soft 合并（指纹 skip 不丢卡）。`memory_organize` / `topic_classify` 确认卡进建议面 |
-| 整理按钮 | reconcile + 自动待办整理 + 刷新 |
-| 自动刷新 | 监听 Vault 文件变更；450ms 防抖静默重载 |
-
-### 2.4 信息密度
-
-| 指标 | 值 |
-|------|-----|
-| max-width | 56rem（默认；`--tm-feed-max-width` 可调至 72rem） |
-| 卡片 padding | 12px 16px |
-| 卡片间距 | 8px |
-| 折叠阈值 | 仅 >600 字或 >20 非空行才折叠；短卡全文展示 |
-| 建议正文字号 | font-ui-small |
-
----
-
-## 3. AI 副驾面板 (Sidebar Dock View — 标签式)
-
-### 3.1 布局
-
-```text
-┌─────────────────────────────────┐
-│  动态  设置                        │  ← 头部: 动态/设置（icon-first；label CSS 常藏）
-├─────────────────────────────────┤
-│ 🤖│ 💡│ 📋│ 📜│  ← 标签栏 (4 标签: 对话|建议|清单|历史；动态流在主区)
-├─────────────────────────────────┤
-│                                  │
-│  ── 对话标签（agent 脊）──        │
-│  ┌── 你 ──────────────────┐     │
-│  │ 帮我总结本周动态         │     │
-│  └─────────────────────────┘     │
-│  ┌── AI ──────────────────┐     │
-│  │ 本周主要进展:            │     │
-│  │ 1. 完成了插件架构设计    │     │
-│  │ 2. 测试了 writeback     │     │
-│  └─────────────────────────┘     │
-│  [问点什么...           ] [发送] │
-│                                  │
-│  ── 建议标签（唯一确认面）──      │
-│  💡 建议专题: "插件开发"          │
-│  📝 待办提取: 2 条新待办          │
-│  👤 写入「我的情况」              │
-│                                  │
-│  ── 清单标签 ──                  │
-│  ☐ 研究插件架构                  │
-│  ☑ 写设计文档                    │
-│                                  │
-│  ── 任务历史标签 ──              │
-│  ✅ 整理待办 — 完成 · 3.2s       │
-│  ❌ 专题分类 — 失败 · API 超时   │
-│                                  │
-├─────────────────────────────────┤
-│ ⚡  ⇩  ✨                        │  ← 底部 3 格（记一下 · 整理 · AI 菜单）
-└─────────────────────────────────┘
-```
-
-### 3.2 标签功能
-
-#### 清单标签 (List)
-- 展示未完成清单项（最多 20 条）
-- 点击勾选 → `toggleTodoItem` → 刷新
-- 显示已完成数量
-- "查看全部" → 打开 `memory/todo.md`
-- 空状态：带图标，视觉友好
-
-#### 建议标签 (Suggestions)
-- AI 生成的建议卡片（同主面板建议区）
-- 建议数量徽章显示在顶部
-- 空状态：未配置 AI / 建议关闭 / 暂无建议，均带图标
-- 每张卡片有确认/忽略按钮
-- 多种类型：专题建议、待办提取、记忆提升、周期反思等
-- AI 操作进行中时显示内联进度提示
-
-#### 对话标签 (Chat)
-- 与 AI 对话用户笔记、待办和动态
-- 上下文感知：自动注入近期动态 + 当前待办 + 用户画像
-- Markdown 渲染 AI 回复
-- 对话历史（会话内保持 + 磁盘 `.topmind/chat-history.json`）
-- **会话压缩**（Desktop `ai-session-compact` 同一预算公式）：默认 `maxMessages 60 / keepRecent 24 / maxChars 240K`，按模型 `contextLimit` 经 `resolveChatCompactBudget` 动态缩放（Desktop `resolveCompactBudget` 同式）；最近全文，旧消息截断，保尾；agent prompt 同一预算
-- **思考过程**：运行中 live 折叠展示 reasoning；历史消息默认折叠
-- **暂停 / 继续**（Desktop 对齐）：`Esc` 或发送按钮（方块图标）= **暂停**；保留已产出半成品 + 已完成修改 + **目标台账**（不丢）。暂停后发送按钮变 ▶ = **继续**（`resumeChat` 带原目标/未完成验收项续跑）；`abandonPausedChat` = 真正放弃（清台账）。暂停 ≠ 停止
-- `Enter` 发送，`Shift+Enter` 换行；**输入法选词回车不发送**
-- 清空对话按钮
-
-#### 动态（主区 Stream View）
-> 能力单家：动态流的家是主区 Stream View，**不进** Dock 标签（对齐 Desktop）。
-
-#### 任务历史标签 (History)
-- AI 任务管理器的操作历史
-- 显示活跃任务 + 排队任务 + 最近 20 条历史
-- 每条显示：状态图标、标签、状态文字、摘要、耗时
-- 活跃任务可取消（stop-tracking：立即标记已取消、结果丢弃；provider 调用本身不可中断）
-- 清空历史按钮
-- 状态颜色编码：绿色=完成、红色=失败、蓝色=运行中、灰色=已取消
-
-### 3.3 底部快捷操作（3 格）
-
-| 按钮 | 功能 | AI 条件 | 默认模式 |
-|------|------|---------|----------|
-| ⚡ | 记一下弹窗 | 无需 AI | icon + 文本标签 |
-| ⇩ | 整理（reconcile；`autoMaintainTodos` 开时附 todo_maintain） | 无需 AI | icon + 文本标签 |
-| ✨ | AI 操作菜单（待办 / 分类 / 记忆） | 需要 AI | icon + 文本标签 |
-
-AI 操作按钮仅在 AI 已配置时显示（未配置点击跳设置）。底部 3 格带 `tm-sidebar-action-label` 文本（`@container` 窄栏藏字）；工具栏为 icon-only（`title` tooltip）；侧栏头 labeled 按钮见 `.tm-sidebar-btn-labeled`（label CSS 常藏）。
-
-### 3.4 头部设计
-
-| 元素 | 功能 |
-|------|------|
-| 状态灯 + 文字 | AI 就绪 / 未配置（可点击快速测试） |
-| 🖥 动态按钮 | icon-first，打开/恢复动态页签（`tm-sidebar-btn-labeled`，label CSS 常藏；`title`/`aria-label` 承载名称） |
-| ⚙ 设置按钮 | icon-first，一键跳转插件设置页（同上） |
-
-> **防溢出**：头部使用 `flex-wrap: nowrap` + `overflow: hidden`；`.tm-sidebar-header .tm-sidebar-btn-label { display:none }` — 侧栏头 **icon-first**（label 常藏，非仅窄屏）。**无模型徽章**（能力单家 · 对齐 Desktop）。
-
-> **可恢复性**：侧边栏头部始终显示「打开动态」按钮，即使动态页签被关闭也能一键恢复。
-
----
-
-## 4. 记一下弹窗
-
-### 4.1 布局
-
-```text
-┌──────────────────────────────────────────┐
-│  ⚡ 记一下                          [×]  │
-├──────────────────────────────────────────┤
-│                                           │
-│  ┌──────────────────────────────────┐    │
-│  │  （在此输入...）                  │    │
-│  │                                    │    │
-│  └──────────────────────────────────┘    │
-│                                           │
-│  目标: [本周动态 ▾]   标签: #...         │
-│                                           │
-│  ⏎ 记一下    ⇧⏎ 换行    Esc 关闭         │
-│                                           │
-└──────────────────────────────────────────┘
-```
-
-### 4.2 交互
-
-- 打开即聚焦输入框；零阻碍
-- `Enter` 提交 → `KernelService.capture(text, { target, tags })` → writeback-engine → 关闭
-- `Esc` 关闭弹窗（不保存）
-- `Shift+Enter` 换行
-- URL 提示行提供「抓取」：X 状态/文章（fxtwitter 结构化，标题=文章标题或首行）、GitHub 仓库（README H1）、普通网页（og/twitter 元标题）→ 来源头 + 正文 → Inbox 独立文章；记下仍是动态链接
-- 目标选择：本周动态（默认）/ Inbox
-- 标签解析：`#标签` 自动提取为 frontmatter tags
-- 提交后：Notice 提示写入路径；若动态页签打开则刷新
-
----
-
-## 5. 设置面板 (Plugin Setting Tab)
-
-### 5.1 布局
-
-```text
-┌──────────────────────────────────────────────────────────┐
-│  ⚙️ Topmind Stream 插件配置                               │
-├──────────────────────────────────────────────────────────┤
-│                                                           │
-│  📂 工作区与契约                                          │
-│  ──────────────────────────────────────────────────────  │
-│  模板                [Stream ▾]                          │
-│  [初始化工作区]  ← 选择模板后点击创建三平面结构          │
-│                                                           │
-│  🌊 动态                                           │
-│  ──────────────────────────────────────────────────────  │
-│  启动时自动打开      [☑]  (同时打开动态 + 侧边栏)        │
-│  时间轴排序          [最新在前 ▾]                        │
-│  自动标签解析        [☑]                                  │
-│  界面语言            [自动 ▾]                             │
-│                                                           │
-│  🤖 AI 服务商与模型                                      │
-│  ──────────────────────────────────────────────────────  │
-│  服务商              [OpenAI ▾]  ← 原生下拉，未配置也选中  │
-│  模型                [服务商默认 ▾]                        │
-│  自定义模型          [模型 ID]                             │
-│  API Key / URL       [sk-… 或 Base URL]                   │
-│  [刷新模型列表]                                           │
-│                                                           │
-│  🤖 AI 副驾与写回策略                                    │
-│  ──────────────────────────────────────────────────────  │
-│  AI 状态             未配置 / 已配置                       │
-│  [从 Desktop 导入]  ← 点击后选择一份导出文件              │
-│  [测试连接]  ← 验证 AI 连通性                            │
-│  写回模式            [删除/归档前问我 ▾]                  │
-│  自动准备 AI 建议    [☑]                                  │
-│  自动整理待办        [☐] (省 Token)                      │
-│                                                           │
-│  🛡️ 安全与归档                                           │
-│  ──────────────────────────────────────────────────────  │
-│  备份保留份数        [3]                                  │
-│  回执保留份数        [50]                                 │
-│                                                           │
-└──────────────────────────────────────────────────────────┘
-```
-
-### 5.2 AI 模型选择
-
-- **模型选择始终可见**：首次打开设置（尚未保存密钥、服务商偏好为空）也会显示模型下拉和自定义模型 ID，不依赖已经配好服务商
-- **双源模型目录**：已配置密钥/端点时刷新走官方 list-models（OpenAI 兼容 `GET {base}/models`、Google `GET /v1beta/models`、Ollama 同形）；Anthropic 与未配置浏览走 [models.dev](https://models.dev) 社区目录；两者皆失败则保留精选默认。刷新强制绕过 TTL，失败不会把空列表或默认列表写成「已同步」。
-- **自定义模型输入**：在下拉框旁提供文本输入框，可直接输入任意模型 ID
-- **未配置**：服务商偏好留空时，设置页仍选中一个具体服务商并显示其凭证；调用侧在偏好仍为空时，自动选择第一个已配置的服务商。模型选择不依赖已经配好服务商
-- **模型徽章不进 chrome**（能力单家 · 对齐 Desktop）：侧栏头/工具栏**不展示**模型徽章；唯一切换面 = 对话 tab 紧凑切换器 + 设置页（见 §1.3）
-
-遵循用户概念 ≤5 原则，不暴露技术术语：
-
-| 技术词 | UI 白话 |
-|--------|---------|
-| writeback_mode: auto | 自动保存 |
-| writeback_mode: confirm | 删除/归档前问我（分级：内容直接落，仅删/归档待确认） |
-| protection: locked | 内容可编辑（任务级首写快照）；可恢复删/归档允许；永久删仅用户 |
-| autoSuggest（= Desktop `autoPrepareSuggestions`） | 自动准备 AI 建议 |
-| autoMaintainTodos | 自动整理待办 |
-| BACKUP_KEEP | 备份保留份数 |
-| RECEIPT_KEEP | 回执保留份数 |
-
-### 5.3 快速进入设置
-
-三种方式快速进入插件设置：
-1. **侧边栏头部 ⚙ 按钮** — 一键跳转
-2. **动态工具栏 ⚙ 按钮** — 一键跳转
-3. **Obsidian Settings → Community plugins → Topmind Stream** — 传统方式
-
----
-
-## 6. 命令面板集成
-
-注册 Obsidian 命令（出现在 ⌘P 命令面板中）：
-
-| 命令 | 快捷键 | 说明 |
-|------|--------|------|
-| Topmind: 记一下 | (用户自配) | 打开记一下弹窗 |
-| Topmind: 打开动态 | — | 打开动态页签 |
-| Topmind: 打开侧边栏 | — | 打开 AI 副驾面板 |
-| Topmind: 整理本周 | — | 触发 reconcileStreamPeriod |
-| Topmind: 刷新 AI 建议 | — | 重新生成建议 |
-| Topmind: AI 整理待办 | — | 手动触发 todo_maintain |
-| Topmind: 专题分类 | — | 手动触发 topic_classify（共享队列） |
-| Topmind: 整理我的情况 | — | 手动触发 memory_organize |
-| Topmind: 打开我的情况 | — | 打开记忆浏览页（列表/卡片；点开条目落到契约解析的画像/周期/专题文件） |
-| Topmind: 打开 Inbox | — | 打开 Inbox 目录 |
-
-> **快捷键策略**：不设默认快捷键，用户在 Settings → Hotkeys 自行配置（符合 Obsidian 插件规范）。
-
----
-
-## 7. Ribbon 图标
-
-左侧 Ribbon 栏添加 `pencil` 图标，点击打开「记一下」弹窗（动态页签图标仍为 `waves`）。
-
----
-
-## 8. AI 对话设计
-
-### 8.1 上下文构建
-
-AI 对话自动注入以下上下文（无需用户手动选择）：
-
-| 上下文来源 | 限制 | 说明 |
-|------------|------|------|
-| 近期动态条目 | 最近 20 条 | 当前周期本中的条目 |
-| 当前待办 | 未完成的前 10 条 | `memory/todo.md` |
-| 用户画像 | 前 3000 字符 | `memory/profile.md` |
-| 对话历史 | 最近 10 轮 | 保持对话连贯性 |
-
-对话可经 Kernel 多步工具环（`workspace_overview` / `search` / `list_*` / `get_topic` / `list_files` / `stat_path` / `glob_files` / `workspace_health` / `fetch_url` / `list_skills` / `load_skill` / `read_file` / `save_file` / `save_note` / `edit_file` / `capture` / `add_todo` / `toggle_todo` / `delete_path` / `rename_path` / `create_topic` / `move_to_topic` / `publish_to_outputs`）持续工作直到目标完成（默认 32 步；**目标协议** `[PLAN]`/`done-when`/`[DONE]`/`[NEEDS-USER]`；步数用尽走目标感知 auto-continue：基座 2 次、验收未达最多 4 次，续跑带任务台账与路径回执；未完成时文案明确「任务未完成」而非 Finished；结构化 goal chip 禁止 `[DONE]` 正则假成功）；**结果说明页脚**（终态消息下 **Verified / Assumed / Could not** 三段 + `N done · M writes` 摘要；空段写「无」；Verified 只列真实路径回执芯片，不编造检查证据）；路径回执可点击打开；tool chip 命中高 `--tm-hit-sm`（32px）；聊天气泡圆角 `--tm-radius-bubble`、用户泡最大宽 `--tm-bubble-user-max`。**文本类可写**（engine `lib/text-note.mjs` 单源白名单，.md/.txt/.json/.yaml/.csv/代码/配置，二进制除外）；与 Desktop 同一匹配与写闸契约：匹配阶梯 + postEditWindow + **soft expectedHash**（hash 过期但 unique-span 仍匹配则放行）。写回跟随 `topmind.yaml`（**分级 confirm**：内容新建/更新/编辑直接落盘且工具层 `confirmed:true`，仅删除/归档待确认；locked 可编辑，任务级首写快照；契约未读到时**不**用默认值覆盖 yaml）。Agent 写成功后 `notifyFilesChanged` 主动 `vault.trigger("modify")`，视图即时刷新。指令语言：`en*` → 英文，否则中文。
-
-### 8.2 对话交互
-
-- 输入框：多行 textarea，`Enter` 发送，`Shift+Enter` 换行；**输入法选词回车不误发**
-- **暂停 / 继续**：`Esc`（思考中）或发送按钮 = 暂停；暂停后 ▶ = 继续（续跑原目标 + 未完成验收项），`abandonPausedChat` = 放弃。已完成修改与目标台账保留
-- AI 回复：Markdown 渲染（支持列表、代码块、加粗等）；可见正文只含结论
-- 思考过程：`<think>` / 思考围栏 / 未标注 CoT 折进默认折叠的「思考过程」
-- 思考状态：显示"思考中..."动画（生成中）
-- **结果说明页脚**：终态消息下 Verified / Assumed / Could not 三段 + `N done · M writes`；见 §8.1
-- 清空对话：✕ 按钮清空全部历史
-- 错误处理：失败时显示错误消息（不中断对话）
-
-### 8.3 System Prompt
-
-System prompt 跟随 UI locale：
-
-- **中文模式**（zh-CN）：使用中文 system prompt，AI 回复中文
-- **英文模式**（en-US）：使用英文 system prompt，AI 回复英文
-- locale 由 `settings.localeOverride` 控制，留空时跟随 Obsidian 语言
-
-```text
-你是嵌入在 topmind Obsidian 插件中的 AI 助手。
-你帮助用户反思笔记、规划任务、整理思路。
-回答简洁实用，引用用户的真实数据时要有针对性。
-
-以下是用户当前的上下文：
-## 近期动态
-- 15:30 ...
-- 14:00 ...
-
-## 当前待办
-- ...
-
-## 用户画像
-...
-```
-
----
-
-## 9. 响应式设计
-
-- 动态页签：最小宽度 400px；max-width **56rem**（`--tm-feed-max-width`）；卡片宽度自适应
-- 侧边栏：固定窄宽度，标签内容自适应
-- 弹窗：居中，最大宽度 600px
-- 字体大小跟随 Obsidian CSS 变量（`--font-ui-small` / `--font-ui-smaller`），不使用硬编码 px
-- 小屏适配：600px 以下输入栏纵向排列
-
-> **文件树**：Vault 侧栏沿用 Obsidian 原生文件浏览器（collapse/expand 语义）。插件不重建第二套文件树。若未来提供自定义树，采用渐进展开（每层默认 8 条 +「更多」），与 Desktop TreeView 对齐。
-
----
-
-## 10. 暗色模式
-
-所有颜色使用 Obsidian CSS 变量，自动适配暗色模式：
-
-```css
-.tm-card {
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  border: 1px solid var(--background-modifier-border);
-}
-.tm-card:hover {
-  background: var(--background-modifier-hover);
-}
-```
-
----
-
-## 11. 视觉风格
-
-- 使用 Obsidian CSS 变量（`--text-normal`, `--font-interface`, `--font-ui-*`, `--background-primary`, `--background-secondary`, `--interactive-accent`）
-- **三层表面**：页面 `--background-secondary`（和侧栏、设置页同一层灰底），卡片 `--background-primary`，顶栏/页签 `--background-secondary-alt`。侧栏叶子本身已是灰轨，卡片仍用 primary 浮起。不要整页同一张白底。正文字体是 `--font-interface`，字号走 `--font-ui-*`，行高走 `--line-height-normal`
-- **单一 Design Token 面**：`styles.css` 顶部 token 块作用于全部 `tm-*` 表面（workbench · sidebar · memory · capture）
-- 卡片样式：圆角 `--tm-radius-card`（16px · Desktop 4.3 软语言）+ 发丝描边 + 微阴影 + hover 高亮（控件 4/10 · 胶囊 999）
-- 输入栏：单行高度起，自适应增长
-- AI 建议卡片：左侧带彩色边条（蓝=create_topic/inbox_organize/ai_summary/stream_digest，橙=stale_topic/catch_all，绿=promote_memory/open_profile）。**不用 purple**（Desktop 禁止紫作产品 AI 身份）。`promote_memory` 的 `payload.action` 为 `append_profile` / `update_profile` / `retire_profile` / `compact_history`（不是只追加）；**近重复事实融合为 update（保留最新），历史区可 compact 合并同类项**。聊天注入画像走 Kernel `readProfileActiveBody`（历史段折叠为计数，不 dump 全文）。Inbox 超期走 `inbox_organize` 归位（移入/新建专题），不再发 `inbox_review` 归档卡。模糊命中 update/retire 成功提示「相似命中」。
-- AI 对话：用户消息右对齐（强调色背景），AI 消息左对齐（卡片背景）
-- 全中文 UI（可切英文）
-- **Hero 标题（2026-09-30）**：`tm-wb-hero-title` 升到 UI medium × 1.45（ViewHero 大标题档）。
-- **建议卡**：kind 左边框**保留**（产品合同：suggestion kind borders stay）；圆角 16 + 软阴影。
-- **控件档（2026-09-30 对齐 Desktop）**：hit 36 / sm 32 / lg 42；input 默认 36px。禁止用 CSS 把 `size` 档按钮压到 24px。
-- **建议忽略合同（2026-09-30 对齐 Desktop）**：忽略 = 常显文字按钮（`tm-btn-dismiss`，禁止 hover-only X）；待写确认不提供一键拒绝，进确认面。卡片 hover 动作触屏/焦点可达。
-- **与 Desktop 的有意差异**：主 CTA 用宿主 `--interactive-accent`（非 ink）；图标库 Lucide（非 Remix，语义映射见 Desktop DESIGN §0.0.2）；圆角 4/10/16/999（`--tm-radius-*`，2026-09-30 对齐 Desktop 软语言）；信息流默认宽 `56rem`（对齐 Desktop feed）
-
-### 11.0 Design Token 与几何（唯一真源 `styles.css`）
-
-| 令牌 | 值 | 用途 |
-|------|----|------|
-| `--tm-hit` / `--tm-hit-sm` / `--tm-hit-lg` / `--tm-hit-xs` | 36 / 32 / 42 / 24 px | 标准控件 / 区块栏 / 主 CTA / chip·mini（2026-09-30 对齐 Desktop） |
-| `--tm-icon` / `--tm-icon-lg` / `--tm-icon-xs` | 16 / 18 / 14 px | 控件图标 / 底部主操作 / 内联 |
-| `--tm-radius-sm` / `--tm-radius-ctl` / `--tm-radius-card` / `--tm-radius-pill` | 4 / 10 / 16 / 999 px | mini / 控件 / 卡片 / 胶囊 |
-| `--tm-type-display/title/body/label/meta` | `--font-ui-large/medium/small/smaller` | 字号阶梯（禁止硬编码 px；Title=medium/600，Body=small，Meta=smaller） |
-| `--tm-gap-xs/sm/md/lg` | 4 / 6 / 10 / 14 px | 间距节奏 |
-
-**Chrome 对齐**：`.tm-toolbar` · `.tm-section-header` · `.tm-sidebar-header` · `.tm-feed-chrome` · `.tm-suggestion-refresh-bar` · `.tm-todo-open-file-bar` 共用 `min-height: var(--tm-hit)` 与 `gap: var(--tm-gap-sm)`，多层标题栏不再错位。
-
-**样式加载（社区规范）**：Obsidian 自动加载插件目录 `styles.css`，这是**唯一** CSS 通道。社区插件审查**禁止** `createElement("style")` / `document.head` 注入（Error）。全部 token、组件样式与宿主覆盖写在 `styles.css`；`styles.css` 与 `src/` 都不使用 `!important`，宿主覆盖靠选择器优先级（测试 `src/: no runtime style injection` 守护）。
-
-**工作区底色（2026-09-28 冷调渐变）**：动态页与我的情况页使用上冷下暖的极轻渐变——顶部 `color-mix(--color-blue 6%, --background-secondary)`，中部 `color-mix(--color-cyan 4%, --background-primary-alt)`，底部 `--background-primary` 纸白。`background-attachment: fixed` 保证滚动稳定。取色走主题 `--color-blue/--color-cyan`，明暗主题自动适配；`color-mix` 不可用时回退纯 `--background-secondary`。**不用死色值**。
-
-**Quiet Knowledge UI（UI/UX 2.0 吸收，2026-09-28）**：在既有 token / 按钮角色之上追加收敛规则——
-
-1. **Tab 是文字不是胶囊**：`.tm-tab-btn` 透明底 + `::after` 下划线指示；禁止 `nav-item-background-active` 色块选中。
-2. **动态 = Timeline，不是 Card List**：`tm-day-group` 无底色、行间发丝线；内容是视觉主体。每条卡片为两行结构——首行「时间 · 快捷按钮」（时间居左、按钮悬停居右），次行正文整行拉通（左右与卡头对齐），正文不被时间列挤偏。
-3. **Pill 只留给语义对象**（tag / status / filter / tool-chip）；导航、快捷条、工具栏 nav 一律 `radius-ctl`，不用 999。
-4. **AI 渐进披露**：思考/推理默认 `<details>` 折叠（含 live thinking）；状态一行文案 + 轻 spinner，不展示字数/步数仪表盘。
-5. **Quick Capture 字数默认隐藏**，仅在 ≥80% 限额时出现，超限变 warning。
-6. **Empty state 必答三件事**：现在是什么、为什么空、下一步能做什么（尽量给一个行动按钮）。
-7. **CSS scope**：交互光标等宿主级规则限定在 `.tm-*` 工作区根内；禁止全局 `button {}`。
-8. **无装饰动效**：去掉 `translateY` 抬起、重阴影 pop；动画只服务状态解释（≤200ms）。
-
-
-### 11.1 按钮系统规范（互斥角色）
-
-| 角色 | 类名 | 用途 | 几何 |
-|------|------|------|------|
-| **Primary** | `tm-submit-btn` / `tm-btn-primary` / `tm-btn-init-workspace` / `tm-btn-confirm` | 提交、确认执行、初始化 — **每区仅一个** | h36（compose 内 h32）· accent 填充 |
-| **Secondary** | `tm-btn-secondary` / `tm-btn-open` | 整理、全部确认、预览/拒绝、弹窗次操作 | h32（`tm-btn-sm` h28）· 描边 |
-| **Ghost tool** | `tm-btn-ghost` / `tm-toolbar-btn` / `tm-sidebar-icon-btn` | 工具栏/卡片工具，**icon-first** | 方形 h32/h28 · 透明底 |
-| **Labeled ghost** | `tm-sidebar-btn-labeled` | 侧栏头 labeled 按钮（CSS 藏字，icon-first）；工具栏**不用** — 工具栏为 icon-only `tm-toolbar-btn` | width:auto · 侧栏头 label 常藏 |
-| **Chip / Segment** | `tm-feed-layout-btn`（外层 `tm-feed-layout-toggle`） | 列表/卡片、记忆分层筛选 | h24 · 分段控件 |
-| **Mini** | `tm-btn-mini` / `tm-card-action-btn` | 卡片内联操作 | 24 / 28 方 · tooltip |
-
-**关键原则**：
-1. 工具类一律 icon + `title`/`aria-label`；文字只留给「会改变内容/状态」的命令（记下 · 确认执行 · 全部确认 · 整理）。
-2. 同一 chrome 行内禁止混用多种高度；区块工具统一 `tm-btn-sm`。
-3. 底部操作固定 **3 格**（记一下 · 整理 · AI 菜单），等宽 `tm-sidebar-action-label`。
-4. 建议操作栏 `flex-wrap: nowrap`，避免「按钮挤成多行」。
-
-### 11.2 图标尺寸规范
-
-| 上下文 | 尺寸 | 令牌 |
-|--------|------|------|
-| 控件 / 工具栏 / 标签 / 卡片操作 | 16px | `--tm-icon` |
-| 底部主操作 | 18px | `--tm-icon-lg` |
-| 内联（时间戳、mini） | 14px | `--tm-icon-xs` |
-| 弹窗标题 | 20px | 仅 modal title |
-| 空状态装饰 | 28px / 18px | empty / chat empty |
-
-### 11.3 加载状态规范
-
-所有加载状态使用 CSS spinner，不使用 "..." 文本：
-
-| 场景 | Spinner 类型 | 说明 |
-|------|-------------|------|
-| 主按钮（提交/确认） | `tm-btn-spinner` | accent 底上的浅色 spinner |
-| 次要按钮 | `tm-btn-spinning` / `tm-btn-spinner-dark` | 按钮自旋或深色 spinner |
-| 区域加载 | `tm-loading-spinner` | accent border spinner |
-| 内联进度 | `tm-loading-spinner-sm` | 小尺寸 spinner |
-
-### 11.4 字体规范
-
-### 设置页版式（对齐 Obsidian 原生）
-
-- 渲染路径：`getSettingDefinitions()` 声明式分组（Obsidian 1.13+）—— 让 Obsidian 自带的
-  `.setting-group` / `.setting-items` / `.setting-item` 样式生效（卡片 + info|control 两栏横排，
-  与 Settings → 编辑器 一致）；**禁止** override 废弃的 `display()`
-- 服务商、模型、自定义模型 ID、密钥 / URL 必须是原生 `control`（下拉或文本）。`render` 回调不是这些行在打开时画出来的东西
-- 分组标题 = `SettingDefinitionGroup.heading`。服务商与模型单独一组，写在「AI 副驾与写回策略」上面
-- **禁止**把多行设置塞进同一个 Setting 的 `settingEl`（那是 flex 行，会把中文压成竖排）
-- 字号/颜色一律走 `--tm-*` 与 Obsidian 变量，禁止硬编码 px / hex
-
-### MD3 色阶 × Obsidian 变量（2026-09 UI）
-
-| MD3 | Obsidian | 用途 |
-|---|---|---|
-| surface / page | `--background-secondary` | 页面画布 |
-| surface-container | `--background-primary` | 分组面 / 输入 / 对话卡（白，抬升） |
-| surface-container-high | `--background-primary-alt` | chips / 次级面 |
-| primary | `--interactive-accent` | 主按钮 |
-| primary-container | accent 14% + primary | 用户气泡 |
-| on-surface / variant | `--text-normal` / `--text-muted` | 正文 / 辅助 |
-| state layer | `--background-modifier-hover` | hover / pressed |
-
-**不用描边做层次**（`--setting-items-border-width: 0`），靠色阶 + 微阴影 `--tm-elev-1/2`。
-按钮 hover = 亮度/状态层，focus = `--tm-focus-ring`。字体只用 `--font-ui-*` / `--font-interface`。
-
-所有字体大小使用 Obsidian CSS 变量（经 `--tm-type-*` 令牌派生），**禁止**硬编码 px：
-
-| 变量 | 用途 |
-|------|------|
-| `--tm-type-display` ← `--font-ui-large` | Hero 标题 |
-| `--tm-type-title` ← `--font-ui-medium` | 区块标题、空状态标题 |
-| `--tm-type-body` ← `--font-ui-small` | 卡片正文、列表正文 |
-| `--tm-type-label` ← `--font-ui-small` | 按钮、标签、控件文字 |
-| `--tm-type-meta` ← `--font-ui-smaller` | 时间戳、徽章、辅助 |
-
----
-
-## 12. 无障碍设计
-
-- 所有交互元素有 `aria-label` 和 `title`（tooltip）
-- 键盘可达：`focus-visible` 样式 + `tabindex` + `role` 属性
-- 动态卡片支持 `Enter`/`Space` 展开/折叠
-- 状态灯标记 `aria-hidden`（装饰性元素）
-- 尊重 `prefers-reduced-motion`：禁用动画
-- icon-only 按钮必须有 `title` 属性提供 tooltip
-- 防溢出：工具栏 `flex-wrap: nowrap` + `overflow: hidden`；工具栏按钮 icon-only（`title` tooltip），侧栏头 label CSS 常藏（icon-first）
-- 焦点可见性：所有交互类有 `focus-visible` 样式（2px outline + 2px offset）
+# Topmind Obsidian 交互设计
+
+当前行为与实现边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。几何、颜色和动画的数值真源是 [`styles.css`](styles.css)，本文件保留交互原则和关键约束，避免成为另一份 CSS 或历史方案合集。
+
+## 用户路径与入口
+
+日常路径是「收进来 → 继续做 → 交付/沉淀 → 找回/调整」。用户无需理解技能路由、写闸或 Agent 框架。
+
+| 入口 | 用户要做什么 |
+|---|---|
+| 主区域动态 | 记下、回看、筛选与整理当前周期 |
+| 右侧 AI 副驾 | 对话执行；查看建议、待办和后台任务历史 |
+| 记一下弹窗 | 临时捕获到动态或 Inbox |
+| 我的情况 | 活跃画像、周期与专题的记忆浏览 |
+
+沿用 Obsidian 文件树、Markdown 编辑器、链接导航与快捷键配置。**不发**记账 mini-app，不把 Desktop 全套导航与窗口搬进 Vault。我的情况不是额外的数据模型。
+
+## 动态与捕获
+
+动态是单列时间线，内容为主体，工具在悬停/键盘焦点时可达。每条首行放时间和操作，正文独占下一行。长内容超过 600 字符或 20 行时折叠，展开后可完整阅读。复制干净正文，隐藏内部 append 标记。
+
+动态主输入动词为「记下」，弹窗为「记一下」；默认少选项，只有需要时选择 Inbox。支持 `Enter` 提交、`Shift+Enter` 换行，输入法选词不误提交。空白提交保留弹窗；抓取时禁止重复提交，失败保留草稿，关闭后不消费迟到结果。手动目的地选择优先于网址自动路由。AI 润色不得覆盖等待期间的新输入。字数接近限制时才显示警示。无 AI 时捕获、浏览与普通待办仍能使用。
+
+动态只在主区域展示；侧栏不再复制一份动态流。全局命令不设默认快捷键，用户在 Obsidian Settings → Hotkeys 自行绑定。
+
+## AI 副驾
+
+侧栏默认 Chat；另有 Suggestions / Todos / History。模型选择集中在 Chat 和设置，不在每层 chrome 重复展示。窄侧栏不堆叠多行全宽主按钮。
+
+### 对话与当前对象
+
+发送前显示对象路径或选区摘要，让“这篇”“这里”有可见指向。发送时固定对象；运行中切换页签不改变目标。重试和继续带回原对象。只注入有边界的磁盘窗口和专题信息，更多内容按需读。
+
+未保存编辑与磁盘不一致时先保存再写；执行前检查所有打开的 Markdown 编辑器，待确认操作同样检查。错误应说明具体路径和下一步，不显示虚假的成功提示。
+
+思考过程放可展开区域；历史默认折叠，正文保留结论、路径和必要解释。工具回执可点击打开。结果页区分已完成工具、待确认动作和引用路径；读取路径不能计为写入次数。已验证、假设、未完成仅在有内容时展示，实际未完成不能显示 Finished。
+
+- `Esc` 或运行中的发送按钮：暂停，保留已经完成的修改与目标。
+- 继续：沿原目标、对象和未完成项继续；放弃清除活动目标，保留真实已做修改。
+- 关闭侧栏：活动会话暂停并保存；重开恢复，旧回复不能覆盖新运行。
+- 清空对话：只清聊天状态，不删除内容文件。
+- 本地历史损坏：明确报错，提供重试入口；保留原文件，不显示成“全新空会话”。
+
+阅读历史时保持消息区滚动位置；新回复不强制拉到底部，提供“回到最新”。切换标签保持位置，已移除容器的迟到滚动事件不得影响当前视图。
+
+会话压缩由共享预算控制，用户无需手工管理聊天长度。状态归 ChatController，视图只渲染和发动作；不再各自保存历史和目标。
+
+### 建议与待确认操作
+
+主动建议可以忽略，不自动变成授权。卡片说明动作、目标、依据和影响；生成建议、等待确认、实际执行是不同状态。
+
+建议异步返回只更新其所属显示区域。离开后不覆盖当前标签，切回可接住正在运行的请求，错误保留当前卡片。
+
+聊天记忆建议与后台建议合并展示，重载不会丢失待确认卡片。profile 更新采用融合、更新、退役与 `compact_history`，避免只追加；近似匹配成功时提示「相似命中」。Inbox 整理使用 `inbox_organize`，不通过新增无用归档卡增加任务。
+
+待确认队列标题为「待确认操作」。删除卡片明确写“删除整个文件”和「确认删除」，不能伪装成保存；展示路径与内容预览。冲突或执行失败保留卡片和重试机会；取消卡片不改原文。状态文件损坏在此区域可见。
+
+直接授权的普通编辑不重复确认；删除/归档遵守工作区模式。当前聊天长期记忆仍采用卡片确认，这是尚待完善的直接授权路径，不能把它写成已经完成的能力。
+
+### 待办与任务历史
+
+待办支持直接录入、完成、更新正文、截止日、删除及清理已完成。较多未完成任务提供文字/日期/来源筛选和分批加载；已完成使用可展开列表，可取消勾选恢复。筛选不限制“清理全部已完成”的范围。复选框使用原生 label 扩大点击区域。模型按 id 或唯一文本定位，歧义时要求进一步定位；设置 completed 是幂等操作，不把已完成任务再翻回未完成。保留来源与周期跳转。
+
+后台任务串行，展示排队、运行、完成、失败与已取消；失败不记成成功。取消后阻止迟到的生成结果进入写入或建议；已经完成的动作不会自动撤销，底层网络连接可能继续到返回。空历史说明当前没有任务并给出可做的下一步。
+
+## 设置
+
+使用 Obsidian 原生 `getSettingDefinitions()` 和 control 行；服务商、模型、自定义模型 id 与 Key / URL 首次打开即显示。无密钥时也能选模型。提供单文件 Desktop 导入和配置测试，导入失败显示原因。
+
+写回选项用用户语言：“自动保存”“删除/归档前问我”。内部枚举、任务台账格式、步数算法不作为日常必选项。高级参数集中到设置，运行结果只展示影响用户决策的信息。
+
+## 视觉与无障碍
+
+沿用宿主字体、主题与强调色；明暗主题均通过 Obsidian CSS 变量适配。页面、卡片、次级面用色阶区分，避免重描边。AI 不额外建立一套紫色品牌。
+
+| Token | 当前基准 |
+|---|---|
+| `--tm-radius-sm/ctl/card/pill` | 4 / 10 / 16 / 999 px |
+| `--tm-hit` / `--tm-hit-sm` / `--tm-hit-lg` / `--tm-hit-xs` | 36 / 32 / 42 / 24 px |
+| display | `--font-ui-medium * 1.45` |
+| body / label / meta | 宿主 `--font-ui-*` |
+| feed 最大宽度 | 56rem |
+
+按钮分主操作、次操作、图标工具和内联 chip；每个操作区只保留一个主操作。图标按钮必须有 `title` 与 `aria-label`；删除等后果用文字表达。工具栏高度一致，小宽度保持可操作，不能用裁切隐藏必要动作。
+
+Tabs 用文字与下划线，pill 留给标签、筛选和状态。加载使用 spinner 与简短状态，避免字数/步数仪表盘。无装饰抬起动画，尊重 reduced motion。
+
+键盘切换标签时焦点留在标签；后台进度不重绘其他标签，完成时不抢走编辑器焦点。键盘焦点可见，点击目标有足够面积；悬停动作也能通过 focus 与触屏访问。卡片展开支持 Enter/Space。空状态解释“现在是什么、为什么空、下一步能做什么”。
+
+所有样式写在根 `styles.css`，CSS 选择器限于插件表面；不向 document 注入 style，不使用 `!important` 或修改全库 button/svg。
+
+## 维护与验收
+
+行为以执行测试为主，像素与宿主交互用真实 Obsidian 验收。设计约束测试只守关键事实与兼容性，不把每句旧文案固定成产品规约。修改 UI 时同步中英 locale；删除替代后的实现、伪代码和重复规范。

@@ -7,9 +7,9 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-const docs = ["README.zh-CN.md", "README.md", "ARCHITECTURE.md", "CHANGELOG.md"];
+const docs = ["ARCHITECTURE.md"];
 
-test("README, ARCHITECTURE, and CHANGELOG match first-run AI setup and review fixes", () => {
+test("architecture is the canonical home for implementation and community-review disclosures", () => {
   for (const name of docs) {
     const text = fs.readFileSync(path.join(root, name), "utf8");
     assert.match(text, /首次打开即可配置|before any key is saved/, name);
@@ -28,4 +28,27 @@ test("README, ARCHITECTURE, and CHANGELOG match first-run AI setup and review fi
     assert.match(text, /main\.js/, name);
     assert.match(text, /lockfile|vendored/, name);
   }
+});
+
+// User READMEs explain real paths and recovery without repeating every internal rule.
+test("user READMEs explain first use, confirmation, current target and common recovery", () => {
+ for (const name of ["README.md","README.zh-CN.md"]) {
+  const text=fs.readFileSync(path.join(root,name),"utf8");
+  assert.match(text,/首次打开即可配置|before any key is saved/);
+  assert.match(text,/当前笔记与选区|Current note and selection/);
+  assert.match(text,/哪些操作需要确认|What needs confirmation/);
+  assert.match(text,/常见问题|Common questions/);
+  assert.match(text,/ARCHITECTURE\.md/);
+  assert.doesNotMatch(text,/绝对不会|without conflicts|Vercel AI SDK v7|agent 脊/);
+ }
+});
+
+test("README and current UX review local links resolve", () => {
+ for(const name of ["README.md","README.zh-CN.md","docs/UX-REVIEW-2026-10-25.md"]) {
+  const text=fs.readFileSync(path.join(root,name),"utf8");
+  for(const match of text.matchAll(/\[[^\]]*\]\(([^)]+)\)/gu)) {
+   const link=match[1].split('#')[0];if(!link||/^[a-z]+:/iu.test(link)) continue;
+   assert.ok(fs.existsSync(path.resolve(root,path.dirname(name),decodeURIComponent(link))),`${name}: ${link}`);
+  }
+ }
 });

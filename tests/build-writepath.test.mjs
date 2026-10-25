@@ -165,23 +165,25 @@ describe("write-path contract (structural)", () => {
 describe("pending-writes queue (shipped)", () => {
   test("stash / list / take / reject / restore", async () => {
     const pw = await importShipped("services/pending-writes.ts");
-    pw.clearPendingWrites();
+    const root = fs.mkdtempSync("/private/tmp/tm-pending-test-");
     const e = pw.stashPendingWrite({
+      workspaceRoot: root,
       relativePath: "20-专题/a.md",
       content: "hello",
       toolName: "edit_file",
     });
-    assert.equal(pw.listPendingWrites().length, 1);
-    assert.equal(pw.listPendingWrites()[0].id, e.id);
-    assert.equal(pw.listPendingWrites()[0].relativePath, "20-专题/a.md");
-    assert.equal(pw.rejectPendingWrite("missing"), false);
-    const taken = pw.takePendingWrite(e.id);
+    assert.equal(pw.listPendingWrites(root).length, 1);
+    assert.equal(pw.listPendingWrites(root)[0].id, e.id);
+    assert.equal(pw.listPendingWrites(root)[0].relativePath, "20-专题/a.md");
+    assert.equal(pw.rejectPendingWrite(root, "missing"), false);
+    const taken = pw.takePendingWrite(root, e.id);
     assert.equal(taken?.content, "hello");
-    assert.equal(pw.listPendingWrites().length, 0);
-    pw.restorePendingWrite(taken);
-    assert.equal(pw.listPendingWrites().length, 1);
-    assert.equal(pw.rejectPendingWrite(e.id), true);
-    assert.equal(pw.listPendingWrites().length, 0);
+    assert.equal(pw.listPendingWrites(root).length, 0);
+    pw.restorePendingWrite(root, taken);
+    assert.equal(pw.listPendingWrites(root).length, 1);
+    assert.equal(pw.rejectPendingWrite(root, e.id), true);
+    assert.equal(pw.listPendingWrites(root).length, 0);
+    fs.rmSync(root, { recursive: true, force: true });
   });
 });
 
@@ -228,7 +230,7 @@ describe("chat session compact + render error boundaries", () => {
       assert.match(src, /render failed:|refresh failed:/, rel);
       assert.match(src, /console\.error\("\[topmind\]/, rel);
     }
-    const ops = fs.readFileSync(path.join(srcDir, "services", "kernel-workspace-ops.ts"), "utf8");
+    const ops = fs.readFileSync(path.join(srcDir, "services", "chat-agent.ts"), "utf8");
     assert.match(ops, /compactChatMessages\(/, "agent prompt uses session compact");
     assert.doesNotMatch(ops, /\.slice\(-10\)/, "no hard 10-turn window");
   });

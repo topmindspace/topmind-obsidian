@@ -4,7 +4,9 @@
 // suggest) with:
 // - Serial queue (one AI operation at a time, matches Desktop's background lane)
 // - Progress tracking (pending → running → done/error/aborted)
-// - Abort = stop-tracking semantics: the task is marked aborted immediately and
+// - Abort marks the task immediately and cooperatively abandons model results.
+//   Late results are discarded; an already-running synchronous Kernel write may finish.
+//   The task is marked aborted immediately and
 //   its result is discarded when the underlying call settles. The provider call
 //   itself cannot be cancelled mid-flight (Obsidian requestUrl has no signal
 //   support) — honest UI must not imply otherwise.
@@ -41,7 +43,7 @@ export interface TaskProgress {
 
 type TaskListener = (progress: TaskProgress) => void;
 
-type TaskExecutor = () => Promise<{ ok: boolean; summary: string; suggestions?: SuggestionCard[] }>;
+type TaskExecutor = (control: { shouldAbort: () => boolean }) => Promise<{ ok: boolean; summary: string; suggestions?: SuggestionCard[] }>;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -69,11 +71,12 @@ function nextId(): string {
  * `ai-background-lane` serial strategy). This prevents concurrent AI API
  * calls from exhausting rate limits and keeps the UI responsive.
  */
-class AiTaskManager {
+export class AiTaskManager {
   private queue: InternalTask[] = [];
   private active: InternalTask | null = null;
   /** True while a provider call is in flight (survives abort — keeps the lane serial). */
   private inFlight = false;
+  private epoch = 0;
   private history: AiTask[] = [];
   private listeners: Set<TaskListener> = new Set();
 
@@ -151,6 +154,7 @@ class AiTaskManager {
    * a hot-reload does not keep stale executors or a half-dead lane.
    */
   reset(): void {
+    this.epoch += 1;
     this.queue = [];
     this.active = null;
     this.inFlight = false;
@@ -173,6 +177,7 @@ class AiTaskManager {
     if (!task) return;
 
     this.inFlight = true;
+    const epoch = this.epoch;
     this.active = task;
     task.status = "running";
     task.startedAt = Date.now();
@@ -180,13 +185,14 @@ class AiTaskManager {
 
     let abortedMidFlight = false;
     try {
-      const result = await task.executor();
+      const result = await task.executor({ shouldAbort: () => this.active !== task || epoch !== this.epoch });
       // Abort raced the executor: abort() already moved this task to
       // history — discard the late result instead of resurrecting the task.
       if (this.active !== task) {
         abortedMidFlight = true;
       } else {
-        task.status = "done";
+        task.status = result.ok ? "done" : "error";
+        if (!result.ok) task.error = result.summary;
         task.result = result;
         task.finishedAt = Date.now();
       }
@@ -199,8 +205,11 @@ class AiTaskManager {
         task.finishedAt = Date.now();
       }
     } finally {
-      this.inFlight = false;
+      if (epoch === this.epoch) this.inFlight = false;
     }
+
+    // A late completion from an unloaded plugin must not release a new lane.
+    if (epoch !== this.epoch) return;
 
     if (!abortedMidFlight) {
       // Move to history

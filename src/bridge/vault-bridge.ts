@@ -6,7 +6,7 @@
 // Electron renderer with Node.js integration.
 // esbuild platform:'node' keeps these as external require() calls.
 
-import { resolve as pathResolve } from "node:path";
+import { resolve as pathResolve, isAbsolute } from "node:path";
 import type { App } from "obsidian";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -33,12 +33,15 @@ export function getVaultBasePath(app: App): string {
 
 /**
  * Get the engine root for template loading.
- * In the Obsidian plugin, the engine root is the plugin's directory,
- * where templates/ are copied alongside main.js.
+ * Obsidian normally provides a vault-relative manifest.dir; tests may supply
+ * an absolute directory. templates/ is copied beside main.js.
  */
-export function getEngineRoot(plugin: { manifest: { dir?: string } }): string {
-  // plugin.manifest.dir is set by Obsidian to the plugin's absolute path
-  return plugin.manifest.dir || "";
+export function getEngineRoot(plugin: { manifest: { dir?: string } }, vaultRoot?: string): string {
+  const dir = plugin.manifest.dir;
+  if (!dir) throw new Error("Plugin resource directory is unavailable");
+  if (isAbsolute(dir)) return dir;
+  if (!vaultRoot) throw new Error("Vault root is required for a relative plugin directory");
+  return resolveInsideVault(vaultRoot, dir);
 }
 
 /**

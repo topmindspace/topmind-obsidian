@@ -68,8 +68,10 @@ describe("i18n locale key alignment", () => {
     assert.match(zhContent, /quick_capture_log_it:\s*"记下"/);
     assert.match(zhContent, /toolbar_btn_profile:\s*"我的情况"/);
     assert.match(enContent, /toolbar_btn_profile:\s*"My profile"/);
-    assert.match(zhContent, /pending_writes_title:\s*"待确认写入"/);
-    assert.match(enContent, /pending_writes_title:\s*"Pending writes"/);
+    assert.match(zhContent, /pending_writes_title:\s*"待确认操作"/);
+    assert.match(enContent, /pending_writes_title:\s*"Pending actions"/);
+    assert.match(zhContent, /pending_delete_accept:\s*"确认删除"/);
+    assert.match(enContent, /pending_delete_accept:\s*"Confirm deletion"/);
     assert.doesNotMatch(zhContent, /notice_write_pending:\s*"[^"]*审阅/);
     assert.doesNotMatch(zhContent, /quick_capture_submit:/);
     assert.doesNotMatch(enContent, /quick_capture_submit:/);
