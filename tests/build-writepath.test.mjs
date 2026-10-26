@@ -2,6 +2,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
 import {
   fs,
   path,
@@ -163,9 +164,10 @@ describe("write-path contract (structural)", () => {
 });
 
 describe("pending-writes queue (shipped)", () => {
-  test("stash / list / take / reject / restore", async () => {
+  test("stash / list / take / reject / restore", async (t) => {
     const pw = await importShipped("services/pending-writes.ts");
-    const root = fs.mkdtempSync("/private/tmp/tm-pending-test-");
+    const root = fs.mkdtempSync(path.join(tmpdir(), "tm-pending-test-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const e = pw.stashPendingWrite({
       workspaceRoot: root,
       relativePath: "20-专题/a.md",
@@ -183,7 +185,6 @@ describe("pending-writes queue (shipped)", () => {
     assert.equal(pw.listPendingWrites(root).length, 1);
     assert.equal(pw.rejectPendingWrite(root, e.id), true);
     assert.equal(pw.listPendingWrites(root).length, 0);
-    fs.rmSync(root, { recursive: true, force: true });
   });
 });
 
