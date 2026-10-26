@@ -5,7 +5,8 @@ import { runAgentTool } from '../src/services/workspace-agent-tools.ts';
 test('the standalone plugin discovers skills and resolves their shared rules without sibling repositories', async () => {
   const ctx = { kernel: {}, workspaceRoot: '/nonexistent', engineRoot: '/nonexistent' };
   const skills = await runAgentTool(ctx, { tool: 'list_skills' });
-  assert.equal(skills.skills.length, 8);
+  assert.equal(skills.skills.length, 16);
+  assert.equal(skills.skills.filter(skill => skill.packId === 'topmind-writing-skills').length, 8);
   for (const skill of bundledSkills()) {
     const body = await runAgentTool(ctx, { tool: 'load_skill', skillId: skill.id });
     assert.equal(body.ok, true, skill.id);

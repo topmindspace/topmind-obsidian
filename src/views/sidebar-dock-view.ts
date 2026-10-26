@@ -1538,6 +1538,11 @@ export class SidebarDockView extends ItemView {
     input.setCssStyles({ height: "auto" });
     await this.sendChatMessageText(text);
   }
+  async startWriting(text: string): Promise<void> {
+    this.activeTab = "chat";
+    await this.renderActiveTab();
+    await this.sendChatMessageText(text);
+  }
 
   private async sendChatMessageText(text: string, boundFocus?: ChatFocus | null): Promise<void> {
     const focus = boundFocus === undefined ? captureChatFocus(this.app.workspace) : boundFocus;

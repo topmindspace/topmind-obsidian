@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import { normalizeAgentToolCall } from "#kernel/agent-tool-catalog.mjs";
 import { bundledSkills, bundledSkillResource } from "./skill-resources.ts";
+import { prepareWritingDelivery } from "./writing-delivery.ts";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import type { KernelApi } from "../bridge/kernel-loader.ts";
@@ -1173,7 +1174,7 @@ export function loadSkill(_ctx: AgentToolContext, opts: { skillId?: string }): A
   const content = bundledSkillResource("SKILL.md", id);
   return content === null
     ? { tool: "load_skill", ok: false, error: `skill not found: ${id}` }
-    : { tool: "load_skill", ok: true, skillId: id, content, truncated: false };
+    : { tool: "load_skill", ok: true, skillId: id, content: `${content}\n\n${bundledSkillResource("../runtime/host-guide.md", id) || ""}`, truncated: false };
 }
 
 /**
@@ -1187,6 +1188,12 @@ export async function runAgentTool(
   call = normalizeAgentToolCall(call);
   const tool = String(call.tool);
   switch (tool) {
+    case "render_article": {
+      try {
+        const result = await prepareWritingDelivery(ctx.workspaceRoot, String(call.sourcePath || ""), (call.platform || "wechat") as "wechat" | "x" | "text", (call.theme || "minimal-ink") as "minimal-ink");
+        return { tool, ok: true, ...result.delivery, sourceHash: result.sourceHash };
+      } catch (error) { return { tool, ok: false, error: error instanceof Error ? error.message : String(error) }; }
+    }
     case "search":
       return searchWorkspace(ctx, {
         query: String(call.query || ""),

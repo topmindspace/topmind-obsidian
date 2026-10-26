@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.21.0 — 2026-10-26
+
+- Bundle a reviewed independent writing release and shared HTML/text renderer. No Desktop, Python or sibling checkout is required at runtime.
+- Add Writing & delivery to the command palette and note menu: eight AI actions, WeChat/X/text, themes, sandboxed preview, copy and Kernel-backed export.
+- Add render_article, source/image freshness checks, image delivery lists and realpath fences. Preserve existing notes and plugin identity.
+- Update core snapshot, shared tool contract, bilingual documentation and reproducible release assets. Executable writing code follows normal plugin releases.
+
 ## 4.20.1 — Focus, capture, and clearer results
 
 - 显式统一构建 strict-mode 配置，修复安装产物的字节差异；CI 与发布增加不同目录三次构建的 SHA-256 校验。

@@ -36,6 +36,7 @@ import { StreamWorkbenchView } from "./views/stream-workbench-view";
 import { SidebarDockView } from "./views/sidebar-dock-view";
 import { MemoryBrowseView } from "./views/memory-browse-view";
 import { QuickCaptureModal } from "./views/quick-capture-modal";
+import { WritingModal } from "./views/writing-modal.ts";
 import { setLocale, t, detectObsidianLocale, type LocaleKey } from "./i18n";
 
 // ── AI Key Backup / Restore ───────────────────────────────────────────────
@@ -213,6 +214,9 @@ export default class TopmindPlugin extends Plugin {
 
     // ── Commands ──
     this.registerCommands();
+    this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
+      if (file.path.endsWith(".md")) menu.addItem(item => item.setTitle(t("writing_title")).setIcon("file-text").onClick(() => new WritingModal(this, file.path).open()));
+    }));
 
     // ── Settings tab ──
     this.settingTab = new TopmindSettingTab(this.app, this);
@@ -249,6 +253,7 @@ export default class TopmindPlugin extends Plugin {
    */
   private registerCommands(): void {
     const defs: Array<{ id: string; name: string; run: () => void }> = [
+      { id: "writing-delivery", name: t("writing_title"), run: () => new WritingModal(this, this.app.workspace.getActiveFile()?.path || "").open() },
       { id: CMD_QUICK_CAPTURE, name: t("cmd_quick_capture"), run: () => this.openQuickCapture() },
       { id: CMD_OPEN_WORKBENCH, name: t("cmd_open_workbench"), run: () => { void this.openWorkbench(); } },
       { id: CMD_OPEN_SIDEBAR, name: t("cmd_open_sidebar"), run: () => { void this.openSidebar(); } },
@@ -291,6 +296,7 @@ export default class TopmindPlugin extends Plugin {
       CMD_MEMORY_ORGANIZE,
       CMD_OPEN_PROFILE,
       CMD_OPEN_INBOX,
+      "writing-delivery",
     ]) {
       try {
         commands?.removeCommand?.(`${this.manifest.id}:${id}`);

@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import * as kernel from '../lib/kernel-api.mjs';
+import { prepareWritingDelivery, exportWritingDelivery } from '../src/services/writing-delivery.ts';
+test('writing exports via the real Kernel, preserves source and rejects stale content', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-writing-vault-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'topmind.yaml'), 'contract_version: 4\nwriteback:\n  mode: auto\n');
+  fs.mkdirSync(path.join(root, 'articles'));
+  const raw = '# 标题\n\n测试 3 次，通过 2 次。';
+  fs.writeFileSync(path.join(root, 'articles/旧公众号稿.md'), raw);
+  const { delivery, sourceHash } = await prepareWritingDelivery(root, 'articles/旧公众号稿.md', 'wechat', 'minimal-ink');
+  const result = exportWritingDelivery({ kernel, workspaceRoot: root }, 'articles/旧公众号稿.md', sourceHash, delivery);
+  assert.equal(result.ok, true); assert.match(fs.readFileSync(path.join(root, result.relativePath), 'utf8'), /通过 2 次/);
+  assert.equal(fs.readFileSync(path.join(root, 'articles/旧公众号稿.md'), 'utf8'), raw);
+  fs.writeFileSync(path.join(root, 'articles/旧公众号稿.md'), 'edited');
+  assert.throws(() => exportWritingDelivery({ kernel, workspaceRoot: root }, 'articles/旧公众号稿.md', sourceHash, delivery), /source-changed/);
+});
+test('source and local image symlinks cannot leave the vault', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-writing-fence-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-writing-outside-'));
+  t.after(() => { fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true }); });
+  fs.writeFileSync(path.join(outside, 'secret.md'), 'secret'); fs.symlinkSync(outside, path.join(root, 'escape'));
+  await assert.rejects(prepareWritingDelivery(root, 'escape/secret.md', 'wechat', 'minimal-ink'), /outside/);
+  fs.writeFileSync(path.join(root, 'note.md'), '![secret](escape/secret.md)');
+  const { delivery } = await prepareWritingDelivery(root, 'note.md', 'wechat', 'minimal-ink');
+  assert.equal(delivery.images[0].status, 'missing'); assert.doesNotMatch(delivery.html, /c2VjcmV0/);
+});

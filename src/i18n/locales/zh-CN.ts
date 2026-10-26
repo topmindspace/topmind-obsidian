@@ -1,6 +1,22 @@
 // ── zh-CN locale strings ───────────────────────────────────────────────────
 
 export const zhCN = {
+  writing_title: "写作与交付",
+  writing_choose_source: "请先打开一篇 Markdown 笔记。",
+  writing_format: "交付格式",
+  writing_wechat: "公众号",
+  writing_text: "文本",
+  writing_theme: "主题",
+  writing_preview: "生成预览",
+  writing_copy: "复制正文",
+  writing_export: "导出文件",
+  writing_review: "有 {{count}} 处需要检查，最终粘贴效果以目标平台为准。",
+  writing_ready: "预览已生成。",
+  writing_stale: "源稿或图片已改变，请重新生成。",
+  writing_copied: "已复制，请检查粘贴效果。",
+  writing_exported: "已导出",
+  writing_boundary: "独立写作技能包默认内置。源稿保持原位；生图、PNG 和发布需要相应工具。",
+
   // ── Plugin ──
   plugin_name: "Topmind Stream",
   plugin_description: "Obsidian 的「主区域动态流 + 静默 AI 沉淀副驾」",

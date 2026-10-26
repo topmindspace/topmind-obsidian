@@ -3,6 +3,22 @@
 import type { zhCN } from "./zh-CN";
 
 export const enUS: typeof zhCN = {
+  writing_title: "Writing & delivery",
+  writing_choose_source: "Open a Markdown note first.",
+  writing_format: "Delivery format",
+  writing_wechat: "WeChat",
+  writing_text: "Text",
+  writing_theme: "Theme",
+  writing_preview: "Generate preview",
+  writing_copy: "Copy content",
+  writing_export: "Export file",
+  writing_review: "{{count}} items need review. Check the pasted result on the target platform.",
+  writing_ready: "Preview ready.",
+  writing_stale: "Source or images changed. Generate again.",
+  writing_copied: "Copied. Check the pasted result.",
+  writing_exported: "Exported",
+  writing_boundary: "The independent writing pack is bundled. Sources stay in place; images, PNG and publishing require their respective tools.",
+
   // ── Plugin ──
   plugin_name: "Topmind Stream",
   plugin_description: "Personal stream + AI co-pilot for Obsidian",
