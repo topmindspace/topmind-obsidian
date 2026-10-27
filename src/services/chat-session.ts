@@ -3,8 +3,10 @@ import { readWorkspaceState, writeWorkspaceState } from "#kernel/workspace-state
 import { compactChatMessages, resolveChatCompactBudget } from "../utils.ts";
 import { persistableChatFocus, type ChatFocus } from "./editor-context.ts";
 import type { ChatProgressEvent } from "./chat-agent.ts";
+import type { TaskContract } from "#kernel/agent-task-contract.mjs";
 
 export interface ChatGoal {
+  task?: TaskContract;
   goal?: string; plan?: string[]; criteria?: string[]; openCriteria?: string[];
   pathReceipts?: string[]; status?: string; blockReason?: string | null;
   autoContinues?: number; checksRun?: string[]; assumptions?: string[];

@@ -98,3 +98,9 @@ Tabs 用文字与下划线，pill 留给标签、筛选和状态。加载使用 
 写作仓独立发布；显式 `npm run sync:skills` 更新 core/writing 两份资源快照和共享排版模块，日常 build 使用提交内容，不依赖姊妹仓或 Desktop。技能资源按激活包解析，`render_article` 生成本地 HTML/文本并返回诊断；图片 realpath 围栏与源稿 hash 防止越界和过期导出。
 
 命令面板“写作与交付”打开原生弹窗，八个动作进入现有 AI 副驾；格式、主题、预览、复制和导出在同一处，原稿继续使用原生编辑器。导出经 Kernel，编辑器未保存时阻止读取旧稿，成功通知 Vault。HTML 使用禁止脚本的 iframe，缺图和扩展格式明确显示限制。执行代码随插件正常发行升级，不做远程代码热更新。
+
+## 写作入口与有限任务执行
+
+「写作与交付」可从 Ribbon、工作台工具栏、侧栏文章上下文、文件/编辑器菜单和命令面板打开，原生源稿选择器绑定目标。选类型仅展示设置，明确开始后才发送；预览/复制/导出不调用 AI。先解析任务再加载文章窗口，侧栏焦点不替代文章身份；非活动编辑器的未保存修改也会阻止执行。
+
+Kernel 快照中的 `agent-task-contract.mjs` 与 Desktop 同源，区分目标/参考/结果模式/实际能力，约束总预算与重复无进展。`request_clarification` 停止执行等待回答，续接时保留原目标。单篇任务不使用模型 PLAN/DONE 续跑，写入成功须有真实回执。详见 [文章任务执行整改](https://github.com/topmindspace/topmind/blob/main/docs/ARTICLE-TASK-EXECUTION-2026-10-27.md)。

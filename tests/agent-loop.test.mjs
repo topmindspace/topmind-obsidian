@@ -67,13 +67,13 @@ describe("Obsidian agent loop — continuous work", () => {
     assert.equal(ops.parseToolCall(JSON.stringify({ tool: "invent_tool" }))?.tool, "invent_tool");
   });
 
-  test("buildObsidianChatToolGuide demands continuous multi-step work", () => {
+  test("buildObsidianChatToolGuide describes work within host stop conditions", () => {
     for (const loc of ["zh-CN", "en-US"]) {
       const guide = ops.buildObsidianChatToolGuide(loc, "auto");
       assert.match(guide, /search/);
       assert.match(guide, /save_file/);
       assert.match(guide, /workspace_overview/);
-      assert.match(guide, /连续调用工具|CONTINUOUS|until the goal is fully done/i);
+      assert.match(guide, /达到宿主上限时停止|Stop on completion/i);
     }
   });
 
@@ -114,7 +114,7 @@ describe("Obsidian agent loop — continuous work", () => {
     const generate = async () => {
       calls += 1;
       if (calls <= 3) {
-        return JSON.stringify({ tool: "list_categories" });
+        return JSON.stringify({ tool: "read_file", relativePath: "20-专题/2026-主题/note.md", offset: calls, limit: 1 });
       }
       return "Done. Path: 20-专题/2026-主题/note.md";
     };

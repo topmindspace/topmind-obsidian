@@ -3,9 +3,12 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import type { Workspace } from "obsidian";
 import { resolveInsideVault } from "../bridge/vault-bridge.ts";
+import type { TaskIntent } from "#kernel/agent-task-contract.mjs";
+import { VIEW_TYPE_SIDEBAR_DOCK } from "../constants.ts";
 
 /** Identity and intent are frozen at Send; never silently follow a later tab. */
 export interface ChatFocus {
+  taskIntent?: TaskIntent;
   path: string;
   selection?: string;
   startLine?: number;
@@ -22,14 +25,19 @@ export interface FocusContext {
 }
 
 interface FocusView {
+  getViewType?: () => string;
   file?: { path: string } | null;
   editor?: { getSelection(): string; getValue(): string; getCursor(which?: "from" | "to"): { line: number } };
   getChatFocus?: () => ChatFocus | null;
 }
 
+const lastDocumentView = new WeakMap<Workspace, FocusView>();
 /** Most recent main leaf stays meaningful while the right dock has keyboard focus. */
 export function captureChatFocus(workspace: Workspace): ChatFocus | null {
-  const view = workspace.getMostRecentLeaf?.()?.view as FocusView | undefined;
+  let view = workspace.getMostRecentLeaf?.()?.view as FocusView | undefined;
+  if (view?.getViewType?.() === VIEW_TYPE_SIDEBAR_DOCK) view = lastDocumentView.get(workspace);
+  else if (view?.file?.path || view?.getChatFocus) lastDocumentView.set(workspace, view);
+  else lastDocumentView.delete(workspace);
   if (view?.getChatFocus) return view.getChatFocus();
   const file = view?.file || (!view ? workspace.getActiveFile?.() : null);
   if (!file?.path || !/\.md$/iu.test(file.path)) return null;
@@ -40,6 +48,14 @@ export function captureChatFocus(workspace: Workspace): ChatFocus | null {
     ...(editor ? { editorText: editor.getValue(), startLine: editor.getCursor("from").line + 1 } : {}),
     ...(selection ? { selection: selection.slice(0, 4000), endLine: (editor?.getCursor("to").line || 0) + 1 } : {}),
   };
+}
+
+/** Refresh only the bound article's buffer; never replace its identity or selection. */
+export function refreshBoundFocus(workspace: Workspace, focus: ChatFocus | null): ChatFocus | null {
+  if (!focus) return null;
+  const views = [...(workspace.getLeavesOfType?.("markdown") || []).map(leaf => leaf.view as FocusView), workspace.getMostRecentLeaf?.()?.view as FocusView | undefined];
+  const view = views.find(candidate => candidate?.file?.path === focus.path && candidate.editor);
+  return view?.editor ? { ...focus, editorText: view.editor.getValue() } : focus;
 }
 
 export function persistableChatFocus(focus: ChatFocus | null | undefined): ChatFocus | undefined {

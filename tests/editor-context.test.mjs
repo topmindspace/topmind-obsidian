@@ -23,6 +23,20 @@ test("a non-document main view does not inherit an unrelated previous file", () 
   assert.deepEqual(captureChatFocus({ getMostRecentLeaf: () => ({ view: { getChatFocus: () => ({ path: "10-动态/2026/2026-W43.md" }) } }) }), { path: "10-动态/2026/2026-W43.md" });
 });
 
+test('moving focus to the AI dock retains the live article view, not a stale text snapshot', () => {
+  let buffer = 'first';
+  let view = { file: { path: 'A.md' }, editor: { getValue: () => buffer, getSelection: () => '', getCursor: () => ({ line: 0 }) } };
+  const workspace = { getMostRecentLeaf: () => ({ view }) };
+  assert.equal(captureChatFocus(workspace).path, 'A.md');
+  view = { getViewType: () => 'topmind-sidebar-dock' };
+  buffer = 'new unsaved text';
+  assert.equal(captureChatFocus(workspace).editorText, buffer);
+  view = {};
+  assert.equal(captureChatFocus(workspace), null);
+  view = { getViewType: () => 'topmind-sidebar-dock' };
+  assert.equal(captureChatFocus(workspace), null);
+});
+
 test("focus evidence includes the actual file, selection, nearest topic and dirty status", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tm-focus-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

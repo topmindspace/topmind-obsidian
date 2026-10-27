@@ -69,7 +69,7 @@ describe("writeback + agent-step policy parity with Desktop", () => {
     assert.equal(ops.MAX_AUTO_CONTINUES, 2);
   });
 
-  test("tool guide keeps unique-span edit contract and continuous-work mandate", async () => {
+  test("tool guide keeps unique-span edits and explicit host stopping conditions", async () => {
     const ops = await import(
       pathToFileURL(path.join(pluginSrc, "services/chat-agent.ts")).href
     );
@@ -79,7 +79,7 @@ describe("writeback + agent-step policy parity with Desktop", () => {
       assert.match(guide, /expectedHash|contentHash/);
       assert.match(guide, /workspace_overview|search/);
       assert.match(guide, /save_file/);
-      assert.match(guide, /CONTINUOUS|连续调用工具|until the goal is fully done/i);
+      assert.match(guide, /达到宿主上限时停止|Stop on completion/i);
     }
   });
 

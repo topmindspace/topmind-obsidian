@@ -20,6 +20,7 @@
 
 import { ItemView, WorkspaceLeaf, Notice, MarkdownRenderer, setIcon, Component } from "obsidian";
 import type TopmindPlugin from "../main";
+import { WritingModal } from "./writing-modal";
 import { t } from "../i18n";
 import { VIEW_TYPE_STREAM_WORKBENCH, VIEW_TYPE_SIDEBAR_DOCK } from "../constants";
 import type { StreamEntry, SuggestionCard } from "../types";
@@ -334,6 +335,8 @@ export class StreamWorkbenchView extends ItemView {
     // the sidebar header + chat switcher — never repeat them here.
     // 我的情况 lives here as the single entry (not also in the section bar).
     const actionsDiv = toolbar.createDiv({ cls: "tm-toolbar-actions" });
+    const writingBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn", text: t("writing_title"), attr: { type: "button", title: t("writing_title") } });
+    writingBtn.addEventListener("click", () => new WritingModal(this.plugin, this.getChatFocus()?.path || "").open());
 
     const sidebarBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn clickable-icon" });
     setIcon(sidebarBtn, "panel-right");

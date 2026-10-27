@@ -1256,6 +1256,8 @@ export async function runAgentTool(
       return listSkills(ctx);
     case "load_skill":
       return loadSkill(ctx, { skillId: typeof call.skillId === "string" ? call.skillId : undefined });
+    case "request_clarification":
+      return String(call.question || "").trim() ? { tool, ok: true, needsUser: true, question: String(call.question).trim(), choices: call.choices } : { tool, ok: false, error: "question-required" };
     case "load_skill_resource": {
       const content = bundledSkillResource(String(call.path || call.relativePath || ""), typeof call.skillId === "string" ? call.skillId : undefined);
       return content === null ? { tool, ok: false, error: "skill-resource-not-found" } : { tool, ok: true, content, truncated: false };

@@ -190,6 +190,7 @@ class DropdownComponent {
     this.selectEl.appendChild(option);
     return this;
   }
+  addOptions(values) { for (const [value, label] of Object.entries(values)) this.addOption(value, label); return this; }
 
   setValue(value) {
     this.selectEl.value = value == null ? "" : String(value);
@@ -244,6 +245,7 @@ class ButtonComponent {
     this.buttonEl.textContent = text == null ? "" : String(text);
     return this;
   }
+  setCta() { this.buttonEl.addClass("mod-cta"); return this; }
 
   setDisabled(disabled) {
     this.buttonEl.disabled = Boolean(disabled);
@@ -323,6 +325,8 @@ export class Setting {
     cb(text);
     return this;
   }
+  addTextArea(cb) { cb(new TextComponent(this.controlEl)); return this; }
+  addToggle(cb) { const control = new TextComponent(this.controlEl); control.inputEl.type = 'checkbox'; cb(control); return this; }
 
   addButton(cb) {
     const button = new ButtonComponent(this.controlEl);
@@ -377,6 +381,8 @@ export class Modal {
 
   onClose() {}
 }
+
+export class FuzzySuggestModal extends Modal {}
 
 export class ItemView {
   constructor(leaf) {

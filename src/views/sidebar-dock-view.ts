@@ -18,6 +18,7 @@ import { confirmAction } from "./confirm-modal";
 import { openStreamWorkbench, openPluginSettings } from "../services/view-openers";
 import { captureChatFocus, type ChatFocus } from "../services/editor-context";
 import { ChatController, type ChatMessage } from "../services/chat-session";
+import { WritingModal } from "./writing-modal";
 import { buildResultFooter } from "#kernel/agent-goal-protocol.mjs";
 
 let sidebarSequence = 0;
@@ -124,6 +125,7 @@ export class SidebarDockView extends ItemView {
     );
 
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
+      captureChatFocus(this.app.workspace);
       const strip = this.contentContainer?.querySelector(".tm-chat-context-bar");
       if (this.activeTab !== "chat" || !strip?.parentElement) return;
       const parent = strip.parentElement;
@@ -1091,7 +1093,9 @@ export class SidebarDockView extends ItemView {
     const bar = container.createDiv({ cls: "tm-chat-context-bar", attr: { role: "status" } });
     bar.createSpan({ text: t("chat_context_label"), cls: "tm-chat-context-label" });
 
-    const focus = captureChatFocus(this.app.workspace);
+    const focus = this.chatThinking ? this.chat.focus : captureChatFocus(this.app.workspace);
+    const writing = bar.createEl("button", { cls: "tm-chip", text: t("writing_title"), attr: { type: "button" } });
+    writing.addEventListener("click", () => new WritingModal(this.plugin, focus?.path || "").open());
     if (!focus) {
       bar.createSpan({ text: t("chat_context_no_object"), cls: "tm-chat-context-empty" });
       return;
@@ -1440,7 +1444,7 @@ export class SidebarDockView extends ItemView {
             void this.app.workspace.openLinkText(item, "", false);
           });
         } else {
-          el.createSpan({ cls: "tm-goal-footer-item", text: item });
+          el.createSpan({ cls: "tm-goal-footer-item", text: item === goal.blockReason && /^[a-z][a-z_-]+$/iu.test(item) ? t("chat_task_stopped") : item });
         }
       }
     };
@@ -1538,10 +1542,11 @@ export class SidebarDockView extends ItemView {
     input.setCssStyles({ height: "auto" });
     await this.sendChatMessageText(text);
   }
-  async startWriting(text: string): Promise<void> {
+  isWritingBusy(): boolean { return this.chatThinking; }
+  async startWriting(text: string, focus: ChatFocus): Promise<void> {
     this.activeTab = "chat";
     await this.renderActiveTab();
-    await this.sendChatMessageText(text);
+    await this.sendChatMessageText(text, focus);
   }
 
   private async sendChatMessageText(text: string, boundFocus?: ChatFocus | null): Promise<void> {

@@ -50,7 +50,8 @@ import { buildChatContext } from "./chat-context.ts";
 import { readWorkspaceState, writeWorkspaceState } from "#kernel/workspace-state.mjs";
 import { cancellableOperationProvider } from "./operation-provider";
 import { createChatMemoryProposal } from "./chat-memory-proposal";
-import { buildFocusContext, captureChatFocus, editorWriteConflict, type ChatFocus } from "./editor-context.ts";
+import { buildFocusContext, captureChatFocus, refreshBoundFocus, editorWriteConflict, type ChatFocus } from "./editor-context.ts";
+import { resolveTaskContract, type TaskContract } from "#kernel/agent-task-contract.mjs";
 import { hasConfiguredProvider, getProviderKey } from "../types.ts";
 
 // ── Node.js built-ins ──
@@ -921,6 +922,7 @@ export class KernelService {
       contextLimit?: number | null;
       /** Session goal from the previous turn (same-task restore). */
       priorGoal?: {
+        task?: TaskContract;
         goal?: string;
         plan?: string[];
         criteria?: string[];
@@ -972,7 +974,11 @@ export class KernelService {
     // Capture for the generate closure — `let` narrowing does not survive capture.
     const activeAi: AiProvider = aiProvider;
 
-    const contextParts = await buildChatContext(userMessage, {
+    const currentFocus = captureChatFocus(this.app.workspace);
+    let requestedFocus = opts.focus === undefined ? currentFocus : opts.focus;
+    const taskContract = resolveTaskContract({ userText: userMessage, focusPath: requestedFocus?.path, intent: requestedFocus?.taskIntent, priorTask: opts.priorGoal?.task, capabilities: { vision: false, imageGeneration: false, imageRendering: false } });
+    if (taskContract.kind === "document" && taskContract.targetPath && taskContract.targetPath !== requestedFocus?.path) requestedFocus = { path: taskContract.targetPath };
+    const contextParts = taskContract.kind === "document" ? [] : await buildChatContext(userMessage, {
       stream: async () => {
         const ctx = await this.getStreamContext();
         if (!ctx.current) return "";
@@ -985,11 +991,7 @@ export class KernelService {
       reflections: async () => (await this.loadRecentReflections()) || "",
     });
 
-    const currentFocus = captureChatFocus(this.app.workspace);
-    const requestedFocus = opts.focus === undefined ? currentFocus : opts.focus;
-    const focus = buildFocusContext(this.getVaultPath(), requestedFocus && currentFocus?.path === requestedFocus.path
-      ? { ...requestedFocus, editorText: currentFocus.editorText }
-      : requestedFocus);
+    const focus = buildFocusContext(this.getVaultPath(), refreshBoundFocus(this.app.workspace, requestedFocus));
     if (focus) contextParts.unshift(focus.prompt);
 
     const uiLocale = this.settings.localeOverride || getLocale() || "zh-CN";
@@ -1013,9 +1015,10 @@ export class KernelService {
           : "No workspace context available yet.");
 
     const turn = await runWorkspaceChatTurn(kernel, this.getVaultPath(), {
+      taskContract,
       userMessage,
       history,
-      focus: focus ? { path: focus.focus.path, unsaved: focus.unsaved, contentHash: focus.contentHash } : null,
+      focus: focus ? { path: focus.focus.path, unsaved: focus.unsaved, contentHash: focus.contentHash, taskIntent: focus.focus.taskIntent } : requestedFocus ? { path: requestedFocus.path, taskIntent: requestedFocus.taskIntent } : null,
       beforeWrite: paths => editorWriteConflict(this.app.workspace, this.getVaultPath(), paths),
       onMemoryProposal: (call) => {
         const target = kernel.globalProfileRelPath?.(this.getVaultPath()) || `${this.memoryDirRel()}/profile.md`;

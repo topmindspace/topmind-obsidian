@@ -208,12 +208,18 @@ export default class TopmindPlugin extends Plugin {
     this.addRibbonIcon("waves", t("sidebar_open_workbench"), () => {
       void this.openWorkbench();
     });
+    this.addRibbonIcon("file-pen", t("writing_title"), () => {
+      new WritingModal(this, this.app.workspace.getActiveFile()?.path || "").open();
+    });
     this.addRibbonIcon("pencil", t("quick_capture_title"), () => {
       this.openQuickCapture();
     });
 
     // ── Commands ──
     this.registerCommands();
+    this.registerEvent(this.app.workspace.on("editor-menu", (menu, _editor, view) => {
+      if (view.file?.path.endsWith(".md")) menu.addItem(item => item.setTitle(t("writing_title")).setIcon("file-pen").onClick(() => new WritingModal(this, view.file?.path || "").open()));
+    }));
     this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
       if (file.path.endsWith(".md")) menu.addItem(item => item.setTitle(t("writing_title")).setIcon("file-text").onClick(() => new WritingModal(this, file.path).open()));
     }));

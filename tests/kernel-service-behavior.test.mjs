@@ -20,6 +20,29 @@ function fixture(t) {
   return { service, root, settings };
 }
 
+test('service resolves a clarified article before loading context and checks an inactive dirty editor', async t => {
+  const { service, root } = fixture(t);
+  const { resolveTaskContract } = await import('../lib/agent-task-contract.mjs');
+  fs.writeFileSync(path.join(root, 'A.md'), '# Actual article A\n\nOriginal source.\n');
+  fs.writeFileSync(path.join(root, 'B.md'), 'UNRELATED_B_CANARY');
+  fs.writeFileSync(path.join(root, 'memory/profile.md'), '# Profile\nUNRELATED_PROFILE_CANARY');
+  let buffer = '# Actual article A\n\nOriginal source.\n';
+  service.app.workspace = { getMostRecentLeaf: () => ({ view: { file: { path: 'B.md' } } }), getLeavesOfType: () => [{ view: { file: { path: 'A.md' }, editor: { getValue: () => buffer } } }] };
+  let calls = 0;
+  service.context = { aiProvider: { generate: async (_prompt, context) => {
+    calls++; assert.match(context.systemPrompt, /Actual article A/);
+    assert.doesNotMatch(context.systemPrompt, /UNRELATED_B_CANARY|UNRELATED_PROFILE_CANARY/);
+    return '建议保留原文事实。';
+  } } };
+  const task = resolveTaskContract({ userText: '调用 revise', intent: { targetPath: 'A.md', skillId: 'topmind-revise', output: 'review' } });
+  const priorGoal = { task: { ...task, blockReason: 'needs-clarification' }, goal: '调用 revise', status: 'blocked' };
+  const first = await service.chat('只检查逻辑', [], { focus: { path: 'B.md' }, priorGoal });
+  assert.equal(first.goal.task.targetPath, 'A.md'); assert.equal(calls, 1);
+  buffer = 'Unsaved article A';
+  const dirty = await service.chat('只检查逻辑', [], { focus: { path: 'B.md' }, priorGoal });
+  assert.equal(dirty.goal.blockReason, 'unsaved-target'); assert.equal(calls, 1);
+});
+
 test('suggestion failures remain errors, keep cached cards, coalesce requests and permit retry', async t => {
   const { service } = fixture(t);
   const card = { id: 'cached', kind: 'open_profile', title: 'Keep', summary: 'Keep', impact: 'low' };

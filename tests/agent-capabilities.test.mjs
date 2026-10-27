@@ -20,7 +20,7 @@ function fixture(t) {
 async function turn(root, call, options = {}) {
   let index = 0;
   const prompts = [];
-  const result = await runWorkspaceChatTurn(kernel, root, { userMessage: '请修改当前笔记', maxSteps: 3, autoContinue: false, generate: async prompt => { prompts.push(prompt); return index++ === 0 ? JSON.stringify(call) : '检查结果如上。'; }, ...options });
+  const result = await runWorkspaceChatTurn(kernel, root, { userMessage: '请修改指定的工作区内容', maxSteps: 3, autoContinue: false, generate: async prompt => { prompts.push(prompt); return index++ === 0 ? JSON.stringify(call) : '检查结果如上。'; }, ...options });
   return { result, prompts };
 }
 test('unqualified read binds to the frozen object, and dirty editors reject alias writes', async t => {

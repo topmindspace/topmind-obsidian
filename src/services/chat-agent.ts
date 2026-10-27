@@ -8,7 +8,8 @@ export { AGENT_STEPS_MIN, AGENT_STEPS_MAX, AGENT_STEPS_DEFAULT, MAX_AUTO_CONTINU
 import { memoryFence } from "#kernel/agent-tool-policy.mjs";
 import { buildAgentToolCatalog, formatAgentToolGuide, normalizeAgentToolCall, filterAgentToolsForTurn } from "#kernel/agent-tool-catalog.mjs";
 import { classifyTurn, type TurnKind, applyGoalUpdate, assessGoalCompletion, buildContinuePrompt, buildGoalProtocolPrompt, buildTaskLedger, decideAutoContinue, harvestPathReceipts, rejectBareDone, resolveMaxAutoContinues, restoreSessionGoal, type GoalState } from "#kernel/agent-goal-protocol.mjs";
-import { runAgentTool } from "./workspace-agent-tools.ts";
+import { runAgentTool, loadSkill } from "./workspace-agent-tools.ts";
+import { resolveTaskContract, createTaskExecutionGuard, taskContractPrompt, taskAllowsTool, taskStopMessage, documentTaskOutcome, type TaskIntent, type TaskContract } from "#kernel/agent-task-contract.mjs";
 import { captureToWorkspace, readWorkspaceWindow, preciseEditWorkspace, resolveContractWritebackMode, appendStreamEntryToWorkspace } from "./kernel-workspace-ops.ts";
 
 export type WorkspaceChatGenerate = (
@@ -18,7 +19,7 @@ export type WorkspaceChatGenerate = (
 
 export interface ChatProgressEvent {
   kind: "step" | "tool" | "continue" | "done" | "checkpoint";
-  goal?: { goal: string; plan: string[]; criteria: string[]; openCriteria: string[]; pathReceipts: string[]; status: string; blockReason: string | null; autoContinues: number };
+  goal?: { task?: TaskContract; goal: string; plan: string[]; criteria: string[]; openCriteria: string[]; pathReceipts: string[]; status: string; blockReason: string | null; autoContinues: number };
   step: number;
   maxSteps: number;
   tool?: string;
@@ -29,10 +30,11 @@ export interface ChatProgressEvent {
 }
 
 export interface WorkspaceChatTurnOpts {
+  taskContract?: TaskContract;
   configDir?: string;
   userMessage: string;
   history?: Array<{ role: "user" | "assistant"; content: string }>;
-  focus?: { path: string; unsaved?: boolean; contentHash?: string } | null;
+  focus?: { path: string; unsaved?: boolean; contentHash?: string; taskIntent?: TaskIntent } | null;
   beforeWrite?: (relativePaths: string[]) => string | null;
   onMemoryProposal?: (call: Record<string, unknown>) => { id: string; targetPath: string };
   generate: WorkspaceChatGenerate;
@@ -60,6 +62,7 @@ export interface WorkspaceChatTurnOpts {
    * Merged only when the user goal text is the same task — a new task starts clean.
    */
   priorGoal?: {
+    task?: TaskContract;
     goal?: string;
     plan?: string[];
     criteria?: string[];
@@ -248,17 +251,17 @@ export function durableChatAnswerGuide(locale: "zh" | "en"): string {
  * Chat tool + writeback/protection/edit + multi-step autonomy instructions.
  * Aligned with Desktop agent contract (tools → work until done → path receipt).
  */
-export function buildObsidianChatToolGuide(locale?: string | null, writebackMode?: "auto" | "confirm", turnKind: TurnKind = "task"): string {
+export function buildObsidianChatToolGuide(locale?: string | null, writebackMode?: "auto" | "confirm", turnKind: TurnKind = "task", allowedTools?: string[], documentTask = false): string {
   const lang = resolveChatPromptLocale(locale);
   const en = lang === "en";
   return [
-    en ? "Work CONTINUOUSLY until the goal is fully done. Use real tools for reads and writes; never claim an action from prose alone." : "连续调用工具直到目标完成并核验真实结果；读写必须依据工具结果，不用口头承诺冒充执行。",
+    en ? "Work toward the requested outcome within the host task contract. Stop on completion, a blocker, or host limits. Reads and writes require real tools." : "在宿主任务约束内完成用户所需结果。完成、遇到阻塞或达到宿主上限时停止；读写必须依据真实工具结果。",
     en ? "When native function tools are unavailable, emit one JSON object with tool plus arguments, without extra prose." : "没有原生函数工具时，每次只输出一个包含 tool 和参数的 JSON 对象，不混入其他文字。",
-    formatAgentToolGuide({ locale: en ? "en-US" : "zh-CN", host: "obsidian", turnKind }),
+    formatAgentToolGuide({ locale: en ? "en-US" : "zh-CN", host: "obsidian", turnKind, allowedTools }),
     en ? "Use read_file before editing incomplete context. edit_file performs a unique-span edit using oldText; reuse returned contentHash. No shell tool is available." : "上下文不完整时先 read_file；edit_file 使用唯一片段编辑并复用 contentHash。没有 shell 工具。",
     describeWritebackModeForPrompt(writebackMode, lang),
     en ? "Memory changes use propose_memory_change to create a real review card. Pending review is not a completed write." : "记忆变更用 propose_memory_change 生成真实审阅卡片，待确认不等于写入完成。",
-    buildGoalProtocolPrompt(en ? "en" : "zh"),
+    documentTask ? (en ? "Deliver the requested article result and stop. Do not emit PLAN/DONE markers or invent new tasks." : "交付所需文章结果后停止，不输出 PLAN/DONE 标记，不增加额外任务。") : buildGoalProtocolPrompt(en ? "en" : "zh"),
   ].join("\n\n");
 }
 
@@ -277,6 +280,7 @@ export async function runWorkspaceChatTurn(
   stopReason?: "paused" | "cancelled";
   cancelled?: boolean;
   goal?: {
+    task?: TaskContract;
     goal: string;
     plan: string[];
     criteria: string[];
@@ -287,27 +291,51 @@ export async function runWorkspaceChatTurn(
     autoContinues: number;
   };
 }> {
-  const turnKind = classifyTurn(opts.userMessage);
-  const callable = filterAgentToolsForTurn(buildAgentToolCatalog({ host: "obsidian" }), turnKind);
+  const task = opts.taskContract || resolveTaskContract({ userText: opts.userMessage, focusPath: opts.focus?.path, intent: opts.focus?.taskIntent, priorTask: opts.priorGoal?.task, capabilities: { vision: false, imageGeneration: false, imageRendering: false } });
+  const toolLimit = Math.max(1, Math.min(task.kind === "document" ? 16 : 48, Number(opts.maxSteps) || AGENT_STEPS_DEFAULT));
+  const guard = createTaskExecutionGuard(task, { maxCalls: toolLimit, maxModelCalls: toolLimit + 4 });
+  if (task.kind === "document" && opts.focus?.unsaved) guard.stop("unsaved-target");
+  if (task.kind === "document" && task.targetPath && !guard.reason) {
+    try {
+      const root = fs.realpathSync(workspaceRoot);
+      const absolute = fs.realpathSync(path.resolve(root, task.targetPath));
+      const rel = path.relative(root, absolute);
+      if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel) || !fs.statSync(absolute).isFile()) guard.stop("target-unavailable");
+    } catch { guard.stop("target-unavailable"); }
+  }
+  const turnKind = task.kind === "document" ? task.output === "review" ? "query" : "task" : classifyTurn(opts.userMessage);
+  const callable = Object.fromEntries(Object.entries(filterAgentToolsForTurn(buildAgentToolCatalog({ host: "obsidian" }), turnKind)).filter(([name]) => taskAllowsTool(task, name)));
+  if (guard.reason) return {
+    body: taskStopMessage(guard.reason, opts.locale, task.targetPath), reasoning: "", edits: [], steps: 0, toolCalls: [], autoContinues: 0, stepLimitHit: false,
+    goal: { goal: opts.userMessage.slice(0, 400), plan: [], criteria: [], openCriteria: [], pathReceipts: [], status: "blocked", blockReason: guard.reason, autoContinues: 0, task: { ...task, blockReason: guard.reason } },
+  };
   const originalKernel = kernel;
+  let targetVersion = task.targetPath && task.kind === "document" ? fs.readFileSync(path.resolve(workspaceRoot, task.targetPath), "utf8") : null;
   kernel = { ...kernel, executeWrite: args => {
+    if (opts.shouldAbort?.()) throw new Error("task-cancelled-before-write");
     const target = path.relative(workspaceRoot, String(args.targetPath)).replace(/\\/gu, "/");
     const conflict = opts.beforeWrite?.([target]);
     if (conflict) throw new Error(conflict);
-    return originalKernel.executeWrite(args);
+    if (task.kind === "document" && target === task.targetPath && fs.readFileSync(String(args.targetPath), "utf8") !== targetVersion) {
+      guard.stop("source-changed");
+      throw new Error("source-changed");
+    }
+    const result = originalKernel.executeWrite(args);
+    if (task.kind === "document" && target === task.targetPath && !result.pending && !result.needsConfirm && result.wroteFiles !== false) targetVersion = fs.readFileSync(String(args.targetPath), "utf8");
+    return result;
   } };
   const durable = resolveChatDurableLocale(kernel, workspaceRoot, opts.userMessage);
   const chromeZh = resolveChatPromptLocale(opts.locale) === "zh";
   // Settings use clampMaxAgentSteps (3–80). Explicit opts.maxSteps is trusted
   // (tests / callers may pin a short budget).
-  const maxSteps = opts.maxSteps != null
+  const maxSteps = Math.min(toolLimit, opts.maxSteps != null
     ? Math.max(1, Math.min(AGENT_STEPS_MAX, Math.floor(Number(opts.maxSteps) || 1)))
-    : clampMaxAgentSteps(undefined);
+    : clampMaxAgentSteps(undefined));
   // Contract is truth. Never force a default override that could fork topmind.yaml
   // when the contract fails to load — leave writebackMode undefined then.
   const contractMode = resolveContractWritebackMode(kernel, workspaceRoot);
   const modeHint = contractMode || opts.writebackMode || "auto";
-  const toolGuide = buildObsidianChatToolGuide(opts.locale, modeHint, turnKind);
+  const toolGuide = buildObsidianChatToolGuide(opts.locale, modeHint, turnKind, Object.keys(callable), task.kind === "document");
   const answerGuide = durableChatAnswerGuide(durable);
   const agentCtx = {
     kernel,
@@ -318,14 +346,16 @@ export async function runWorkspaceChatTurn(
     configDir: opts.configDir,
     fetchPage: opts.fetchPage,
   };
+  const skillContext = task.skillId ? loadSkill(agentCtx, { skillId: task.skillId }) : null;
+  const preloadedSkill = skillContext?.ok ? `## Host-preloaded skill: ${task.skillId}\n${String(skillContext.content || "").slice(0, 16000)}\nUse this skill directly; do not list skills to rediscover it.` : "";
 
   const conversation: string[] = [];
   // Desktop-parity session compact: scale by model contextWindow when known.
   const compactBudget = resolveChatCompactBudget(opts.contextLimit);
-  for (const msg of compactChatMessages(opts.history || [], compactBudget)) {
+  for (const msg of task.kind === "document" ? [] : compactChatMessages(opts.history || [], compactBudget)) {
     conversation.push(`${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`);
   }
-  conversation.push(`User: ${opts.userMessage}`);
+  conversation.push(`User: ${task.kind === "document" ? task.targetKind === "inline" ? task.request : `${task.request}\n\nLatest user input:\n${opts.userMessage}` : opts.userMessage}`);
 
   const edits: Array<Record<string, unknown>> = [];
   const toolCalls: Array<{ tool: string; ok: boolean; summary?: string; pending?: boolean; needsConfirm?: boolean }> = [];
@@ -336,9 +366,10 @@ export async function runWorkspaceChatTurn(
   let finished = false;
   let reasoningAcc = "";
   // "继续" and the host resume prompt keep the saved ledger. A new task does not.
-  let goalState: GoalState = restoreSessionGoal(opts.priorGoal, opts.userMessage || "");
+  let goalState: GoalState = restoreSessionGoal(task.kind === "document" ? null : opts.priorGoal, task.kind === "document" ? task.request : opts.userMessage || "");
 
   const goalPayload = () => ({
+    task: { ...task, blockReason: guard.reason },
     goal: goalState.goal || "",
     plan: goalState.plan || [],
     criteria: goalState.criteria || [],
@@ -595,6 +626,7 @@ export async function runWorkspaceChatTurn(
     let brokeOnFinalText = false;
     for (let step = 0; step < maxSteps; step++) {
       if (opts.shouldAbort?.()) return finishAborted();
+      if (!guard.beforeModel()) { finished = true; break; }
       stepCount += 1;
       emit({ kind: "step", step: stepCount, maxSteps, autoContinues, reasoning: reasoningAcc });
       const prompt = conversation.join("\n\n");
@@ -602,7 +634,7 @@ export async function runWorkspaceChatTurn(
       try {
         raw = await opts.generate(prompt, {
           operation: "chat",
-          systemPrompt: `${opts.systemExtra || ""}\n\n${answerGuide}\n\n${toolGuide}`.trim(),
+          systemPrompt: `${opts.systemExtra || ""}\n\n${answerGuide}\n\n${toolGuide}\n\n${preloadedSkill}\n\n${taskContractPrompt(task)}`.trim(),
           maxOutputTokens: 8192,
           temperature: 0.4,
           shouldAbort: opts.shouldAbort,
@@ -678,7 +710,7 @@ export async function runWorkspaceChatTurn(
           error: false,
           cancelled: false,
         });
-        if (opts.autoContinue !== false && decisionProse.continue) {
+        if (task.kind !== "document" && opts.autoContinue !== false && decisionProse.continue) {
           autoContinues += 1;
           emit({ kind: "continue", step: stepCount, maxSteps, autoContinues });
           conversation.push(`Assistant: ${lastRaw}`);
@@ -699,12 +731,20 @@ export async function runWorkspaceChatTurn(
       emit({ kind: "tool", step: stepCount, maxSteps, tool, autoContinues, reasoning: reasoningAcc });
       conversation.push(`Assistant: ${lastRaw}`);
       let toolNote: string | null;
-      try { toolNote = await execOneTool(call); }
+      const checked = guard.beforeTool(String(normalizeAgentToolCall(call).tool), normalizeAgentToolCall(call));
+      try {
+        if (!checked.ok) toolNote = toolResultForModel({ ok: false, error: checked.error });
+        else toolNote = await execOneTool(checked.args || call);
+      }
       catch (error) {
         toolCalls.push({ tool, ok: false });
         toolNote = toolResultForModel({ ok: false, error: error instanceof Error ? error.message : String(error) });
       }
       conversation.push(`Tool result (${tool}):\n${toolNote || ""}`);
+      let outcome: unknown = toolNote;
+      try { outcome = JSON.parse(toolNote || "null"); } catch { /* bounded text outcome */ }
+      guard.afterTool(tool, checked.args || call, outcome);
+      if (guard.reason) { finished = true; break; }
       if (toolNote && !toolCalls.at(-1)?.pending && !toolCalls.at(-1)?.needsConfirm) harvestPathReceipts(toolNote, goalState.pathReceipts);
       emit({ kind: "checkpoint", step: stepCount, maxSteps, tool, autoContinues });
     }
@@ -712,7 +752,7 @@ export async function runWorkspaceChatTurn(
     if (finished || brokeOnFinalText) break;
 
     // Callers that pin maxSteps can opt out of auto-continue (tests / one-shot).
-    if (opts.autoContinue === false) {
+    if (task.kind === "document" || opts.autoContinue === false) {
       stepLimitHit = true;
       break;
     }
@@ -790,6 +830,13 @@ export async function runWorkspaceChatTurn(
     }
   }
 
+  if (task.kind === "document") {
+    const outcome = documentTaskOutcome(task, guard, { text: parseToolCall(lastRaw) ? "" : stripThinking(lastRaw), stepLimitHit, locale: opts.locale });
+    goalState = { ...goalState, ...outcome, plan: [], criteria: [], doneCriteria: [] };
+    emit({ kind: "done", step: stepCount, maxSteps, autoContinues });
+    return { body: outcome.text, reasoning: reasoningAcc, edits, steps: stepCount, toolCalls, autoContinues, stepLimitHit,
+      goal: { ...goalPayload(), task: { ...task, question: guard.question, blockReason: outcome.blockReason }, status: outcome.status, blockReason: outcome.blockReason } };
+  }
   const split = typeof kernel.splitAssistantVisible === "function"
     ? kernel.splitAssistantVisible(lastRaw)
     : { body: String(lastRaw || "").trim(), reasoning: "" };
@@ -854,6 +901,10 @@ export async function runWorkspaceChatTurn(
       : "Awaiting confirmation: proposals and pending operations have not been written. Review them in Suggestions.";
     body = `${pendingNote}\n\n${body}`;
   }
+  if (guard.reason) {
+    goalState = { ...goalState, status: "blocked", blockReason: guard.reason };
+    body = guard.question || taskStopMessage(guard.reason, opts.locale, task.targetPath);
+  }
   emit({ kind: "done", step: stepCount, maxSteps, autoContinues });
   return {
     body,
@@ -866,6 +917,7 @@ export async function runWorkspaceChatTurn(
     // Structured goal snapshot (Desktop goalSummary parity) — UI must render
     // the chip from this, never from a [DONE] regex on the body.
     goal: {
+      task: { ...task, blockReason: guard.reason },
       goal: goalState.goal || "",
       plan: goalState.plan || [],
       criteria: goalState.criteria || [],

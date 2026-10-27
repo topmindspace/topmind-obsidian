@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.22.0 — 2026-10-27
+
+- Make writing discoverable from the ribbon, workbench, chat context and editor menu; choose sources with the native picker. Selecting an action only shows setup; AI starts explicitly.
+- Resolve and freeze the article before loading context. Keep the original target through clarification and focus changes; detect inactive dirty editors and changed source files.
+- Share host-owned task scope, capability checks and total execution limits with Desktop. Stop repeated successful calls and failures; single-article tasks no longer enter PLAN/DONE auto-continue.
+- Add request_clarification, resume the original task after answers, and require real write receipts before showing an edit as complete. Bundle writing 0.8.52.
+
 ## 4.21.0 — 2026-10-26
 
 - Bundle a reviewed independent writing release and shared HTML/text renderer. No Desktop, Python or sibling checkout is required at runtime.
