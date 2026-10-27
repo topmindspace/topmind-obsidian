@@ -16,6 +16,7 @@
 // Setting's `settingEl` — that is a flex row and squeezes CJK labels.
 // Do NOT fetch the model catalog inside getSettingDefinitions().
 
+import { WritingModal } from "../views/writing-modal.ts";
 import {
   PluginSettingTab,
   Setting,
@@ -306,6 +307,14 @@ export class TopmindSettingTab extends PluginSettingTab {
             },
           },
           {
+            name: t("settings_use_memory"), desc: t("settings_use_memory_desc"),
+            control: { type: "toggle", key: "useMemory", defaultValue: s.useMemory !== false },
+          },
+          {
+            name: t("settings_context_window"), desc: t("settings_context_window_desc"),
+            render: setting => { setting.addDropdown(dropdown => dropdown.addOptions({ "0": t("settings_context_auto"), "4096": "4K", "8192": "8K", "16384": "16K", "32768": "32K", "65536": "64K", "131072": "128K", "262144": "256K", ...(s.contextWindowTokens > 0 ? { [String(s.contextWindowTokens)]: `${s.contextWindowTokens / 1024}K` } : {}) }).setValue(String(s.contextWindowTokens || 0)).onChange(value => { this.plugin.settings.contextWindowTokens = Number(value); void this.save(); })); },
+          },
+          {
             name: t("settings_max_agent_steps"),
             desc: t("settings_max_agent_steps_desc"),
             control: {
@@ -327,6 +336,15 @@ export class TopmindSettingTab extends PluginSettingTab {
             desc: t("settings_auto_maintain_todos_desc"),
             control: { type: "toggle", key: "autoMaintainTodos", defaultValue: s.autoMaintainTodos },
           },
+        ],
+      },
+      {
+        type: "group", heading: t("writing_title"), items: [
+          { name: t("writing_default_theme"), desc: t("writing_default_theme_desc"), control: {
+            type: "dropdown", key: "writingTheme", defaultValue: s.writingTheme || "minimal-ink",
+            options: { "minimal-ink": t("writing_theme_minimal-ink"), "tech-blue": t("writing_theme_tech-blue"), newsprint: t("writing_theme_newsprint"), graphite: t("writing_theme_graphite") },
+          } },
+          { name: t("writing_title"), desc: t("writing_entry_desc"), render: setting => { setting.addButton(button => button.setButtonText(t("writing_open")).onClick(() => new WritingModal(this.plugin).open())); } },
         ],
       },
       {

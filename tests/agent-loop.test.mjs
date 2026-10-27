@@ -343,11 +343,12 @@ describe("chat compact budget scales with model contextLimit", () => {
   test("resolveChatCompactBudget matches Desktop window scaling", async () => {
     const utils = await importShipped("utils.ts");
     const def = utils.resolveChatCompactBudget(undefined);
-    assert.equal(def.maxMessages, 60);
+    assert.ok(def.maxChars < 50000, "unknown windows use a conservative budget");
     const big = utils.resolveChatCompactBudget(200_000);
     assert.ok(big.maxMessages > 60, `expected scaled-up maxMessages, got ${big.maxMessages}`);
-    assert.ok(big.maxChars > 240_000);
+    assert.ok(big.maxChars < 200_000 * 1.5, "CJK-aware character budget must leave room for system and output");
     const small = utils.resolveChatCompactBudget(32_000);
     assert.ok(small.maxMessages < 60);
+    assert.ok(small.maxChars < big.maxChars);
   });
 });

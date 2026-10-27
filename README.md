@@ -10,9 +10,11 @@ Requires **Obsidian desktop 1.13.0 or later**. Mobile is not supported. The vers
 
 A reviewed release snapshot of [topmind-writing-skills](https://github.com/topmindspace/topmind-writing-skills) is bundled by default: revision, formatting, briefs, social posts, WeChat, X Articles, covers and posters. The writing repository keeps its own release cadence and version.
 
-Open **Writing & delivery** from the ribbon, workbench toolbar, note/editor menu or command palette (`topmind-stream:writing-delivery`). Choose the source article. Selecting an action shows its purpose, requirements and review/edit mode; **Start AI task** begins execution explicitly. Edit the source in the main editor, choose a delivery format and theme, then preview, copy or export beside it in `out/`. Existing article folders and WeChat drafts work in place.
+Open **Writing & delivery** from the ribbon, workbench toolbar, AI note context, note/editor menu, settings or command palette (`topmind-stream:writing-delivery`). It loads the active note by default; search to choose another or return to the active note. **Write** groups revision, platform adaptation and visual concepts, with explicit requirements and suggestions/edit mode. **Start writing task** begins execution. **Layout preview** formats locally, then copies or exports to `out/` without calling AI. Set a default theme in plugin settings; existing drafts work in place.
 
 Built-in HTML/text typography requires no Python. Preview and copy use the same output; changed sources or images require regeneration. Diagnostics identify missing images, diagram source, extended containers and table paste limitations. The current chat host has no image-input, image-generation or PNG-rendering tool. Cover/poster actions prepare prompts or HTML only. Publishing requires its own tool and authorization. Copying does not publish; wording scores do not decide editorial quality.
+
+AI settings include automatic global memory and a context window ceiling. A small read-only memory window and recent same-note exchanges support writing; other resources are loaded as needed. Current instructions take priority. Context compaction preserves the task and completed writes, and does not truncate saved conversation history.
 
 The plugin updates through its normal release channel. `main.js` contains the core and writing resources, so Desktop is not required. Executable writing code is not downloaded at runtime.
 

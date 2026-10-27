@@ -1,3 +1,4 @@
+import { resolveContextBudget } from "#kernel/agent-context-policy.mjs";
 // ── Shared utility functions ───────────────────────────────────────────────
 //
 // Pure functions used across views, modals, and services.
@@ -868,22 +869,7 @@ export type ChatCompactOptions = {
  * (Desktop `resolveCompactBudget` parity). Unknown window → shipped defaults.
  */
 export function resolveChatCompactBudget(contextWindow?: number | null): Required<ChatCompactOptions> {
-  const cw = Number(contextWindow);
-  const known = Number.isFinite(cw) && cw > 0;
-  if (!known) {
-    return {
-      maxMessages: CHAT_COMPACT_DEFAULTS.maxMessages,
-      keepRecent: CHAT_COMPACT_DEFAULTS.keepRecent,
-      maxChars: CHAT_COMPACT_DEFAULTS.maxChars,
-      maxPerMessage: CHAT_COMPACT_DEFAULTS.maxPerMessage,
-    };
-  }
-  // Reserve ~40% for system + tools + response (same as Desktop).
-  const usableTokens = Math.floor(cw * 0.55);
-  const maxChars = Math.max(40_000, Math.min(1_200_000, Math.floor(usableTokens * 2.2)));
-  const maxMessages = Math.max(24, Math.min(160, Math.round(usableTokens / 900)));
-  const keepRecent = Math.max(8, Math.min(48, Math.round(maxMessages * 0.4)));
-  const maxPerMessage = Math.max(4_000, Math.min(64_000, Math.floor(maxChars / 12)));
+  const { maxMessages, keepRecent, maxChars, maxPerMessage } = resolveContextBudget(contextWindow);
   return { maxMessages, keepRecent, maxChars, maxPerMessage };
 }
 

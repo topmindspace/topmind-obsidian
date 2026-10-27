@@ -1,8 +1,9 @@
 /** Conversation/goal orchestration. Filesystem operations live in kernel-workspace-ops. */
 import fs from "node:fs";
+import { estimateTokens, resolveContextBudget, clipContext, compactPromptBlocks, articleHistory, needsActiveDocument } from "#kernel/agent-context-policy.mjs";
 import path from "node:path";
 import type { KernelApi } from "../bridge/kernel-loader.ts";
-import { stripFrontmatter, isRecord, parseJsonUnknown, compactChatMessages, resolveChatCompactBudget } from "../utils.ts";
+import { stripFrontmatter, isRecord, parseJsonUnknown, compactChatMessages } from "../utils.ts";
 import { AGENT_STEPS_MIN, AGENT_STEPS_MAX, AGENT_STEPS_DEFAULT, MAX_AUTO_CONTINUES, clampMaxAgentSteps, describeWritebackModeForPrompt } from "#kernel/agent-policy.mjs";
 export { AGENT_STEPS_MIN, AGENT_STEPS_MAX, AGENT_STEPS_DEFAULT, MAX_AUTO_CONTINUES, clampMaxAgentSteps };
 import { memoryFence } from "#kernel/agent-tool-policy.mjs";
@@ -33,7 +34,7 @@ export interface WorkspaceChatTurnOpts {
   taskContract?: TaskContract;
   configDir?: string;
   userMessage: string;
-  history?: Array<{ role: "user" | "assistant"; content: string }>;
+  history?: Array<{ role: "user" | "assistant"; content: string; focus?: {path: string} }>;
   focus?: { path: string; unsaved?: boolean; contentHash?: string; taskIntent?: TaskIntent } | null;
   beforeWrite?: (relativePaths: string[]) => string | null;
   onMemoryProposal?: (call: Record<string, unknown>) => { id: string; targetPath: string };
@@ -303,7 +304,7 @@ export async function runWorkspaceChatTurn(
       if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel) || !fs.statSync(absolute).isFile()) guard.stop("target-unavailable");
     } catch { guard.stop("target-unavailable"); }
   }
-  const turnKind = task.kind === "document" ? task.output === "review" ? "query" : "task" : classifyTurn(opts.userMessage);
+  const turnKind = task.kind === "document" ? task.output === "review" ? "query" : "task" : opts.focus?.path && needsActiveDocument(opts.userMessage) && classifyTurn(opts.userMessage) === "light" ? "query" : classifyTurn(opts.userMessage);
   const callable = Object.fromEntries(Object.entries(filterAgentToolsForTurn(buildAgentToolCatalog({ host: "obsidian" }), turnKind)).filter(([name]) => taskAllowsTool(task, name)));
   if (guard.reason) return {
     body: taskStopMessage(guard.reason, opts.locale, task.targetPath), reasoning: "", edits: [], steps: 0, toolCalls: [], autoContinues: 0, stepLimitHit: false,
@@ -347,15 +348,13 @@ export async function runWorkspaceChatTurn(
     fetchPage: opts.fetchPage,
   };
   const skillContext = task.skillId ? loadSkill(agentCtx, { skillId: task.skillId }) : null;
-  const preloadedSkill = skillContext?.ok ? `## Host-preloaded skill: ${task.skillId}\n${String(skillContext.content || "").slice(0, 16000)}\nUse this skill directly; do not list skills to rediscover it.` : "";
+  const preloadedSkill = skillContext?.ok ? `## Host-preloaded skill: ${task.skillId}\n${String(skillContext.content || "").slice(0,16000)}\nUse this skill directly; do not list skills to rediscover it.` : "";
 
-  const conversation: string[] = [];
-  // Desktop-parity session compact: scale by model contextWindow when known.
-  const compactBudget = resolveChatCompactBudget(opts.contextLimit);
-  for (const msg of task.kind === "document" ? [] : compactChatMessages(opts.history || [], compactBudget)) {
-    conversation.push(`${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`);
-  }
-  conversation.push(`User: ${task.kind === "document" ? task.targetKind === "inline" ? task.request : `${task.request}\n\nLatest user input:\n${opts.userMessage}` : opts.userMessage}`);
+  const systemPrompt = `${opts.systemExtra || ""}\n\n${answerGuide}\n\n${toolGuide}\n\n${preloadedSkill}\n\n${taskContractPrompt(task)}`.trim();
+  const compactBudget = resolveContextBudget(opts.contextLimit, { fixedTokens: estimateTokens(systemPrompt) });
+  const conversation: string[] = [`Current user request: ${task.kind === "document" ? task.request : opts.userMessage}`];
+  const history = task.kind === "document" ? articleHistory(opts.history || [], task.targetPath) : compactChatMessages(opts.history || [], compactBudget);
+  for (const msg of history) conversation.push(`Earlier ${msg.role === "user" ? "user" : "assistant"} exchange: ${msg.content}`);
 
   const edits: Array<Record<string, unknown>> = [];
   const toolCalls: Array<{ tool: string; ok: boolean; summary?: string; pending?: boolean; needsConfirm?: boolean }> = [];
@@ -626,6 +625,12 @@ export async function runWorkspaceChatTurn(
     let brokeOnFinalText = false;
     for (let step = 0; step < maxSteps; step++) {
       if (opts.shouldAbort?.()) return finishAborted();
+      const checkpoint = task.kind === "document" ? `Host execution checkpoint: ${guard.calls} tool calls consumed, ${guard.writes} successful writes. Do not repeat completed writes. Read current source windows as needed.` : clipContext(buildTaskLedger(goalState, chromeZh ? "zh-CN" : "en-US"), 600);
+      const stepSystem = `${systemPrompt}\n\n${checkpoint}`;
+      const stepBudget = resolveContextBudget(opts.contextLimit, { fixedTokens: estimateTokens(stepSystem) });
+      const fitted = compactPromptBlocks(conversation, stepBudget.maxTokens);
+      if (fitted.overflow) { guard.stop("context-budget"); lastRaw = taskStopMessage("context-budget", opts.locale, task.targetPath); finished = true; break; }
+      if (fitted.compacted) conversation.splice(0, conversation.length, ...fitted.blocks);
       if (!guard.beforeModel()) { finished = true; break; }
       stepCount += 1;
       emit({ kind: "step", step: stepCount, maxSteps, autoContinues, reasoning: reasoningAcc });
@@ -634,8 +639,8 @@ export async function runWorkspaceChatTurn(
       try {
         raw = await opts.generate(prompt, {
           operation: "chat",
-          systemPrompt: `${opts.systemExtra || ""}\n\n${answerGuide}\n\n${toolGuide}\n\n${preloadedSkill}\n\n${taskContractPrompt(task)}`.trim(),
-          maxOutputTokens: 8192,
+          systemPrompt: stepSystem,
+          maxOutputTokens: stepBudget.responseTokens,
           temperature: 0.4,
           shouldAbort: opts.shouldAbort,
         });
@@ -813,21 +818,7 @@ export async function runWorkspaceChatTurn(
     conversation.push(
       `User: ${buildContinuePrompt(chromeZh ? "zh-CN" : "en-US", goalState)}`,
     );
-    // Cap conversation growth across auto-continues (context pressure).
-    if (conversation.length > 80) {
-      const compactedTurns = compactChatMessages(
-        conversation.map((line) => {
-          const m = line.match(/^(User|Assistant|Tool result \([^)]+\)):\n?([\s\S]*)$/u);
-          return m ? { role: m[1].toLowerCase().startsWith("user") ? "user" : "assistant", content: m[2] } : { role: "user", content: line };
-        }),
-        { maxMessages: 40, keepRecent: 16 },
-      );
-      conversation.length = 0;
-      for (const msg of compactedTurns) {
-        conversation.push(`${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`);
-      }
-      conversation.push(`User: ${buildTaskLedger(goalState, chromeZh ? "zh-CN" : "en-US")}`);
-    }
+
   }
 
   if (task.kind === "document") {

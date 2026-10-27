@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.23.0 — 2026-10-27
+
+- Redesign writing around a stable active-note header and separate Write/Layout preview tabs. Group actions, support source search and return-to-active, retain requirements across tabs, and add a default layout theme in settings.
+- Restore bounded read-only global memory for article work, with a user toggle. Keep recent same-article exchanges and retrieve additional resources progressively; greetings do not load article bodies.
+- Share CJK-aware model window accounting with Desktop. Reserve system, tools and response space; apply a configurable ceiling and a conservative 32K unknown-model fallback. Recheck growing tool context every step and preserve host task/write checkpoints.
+- Separate durable chat history from transient model compaction, preserving full saved messages. Remove the old continuation-only compaction path, duplicate documentation and unused copy. Bundle writing 0.8.53.
+
 ## 4.22.0 — 2026-10-27
 
 - Make writing discoverable from the ribbon, workbench, chat context and editor menu; choose sources with the native picker. Selecting an action only shows setup; AI starts explicitly.

@@ -67,3 +67,14 @@ test('initial persistence failure is visible and never starts the provider',asyn
  let calls=0;const{root,controller}=fixture(t,async()=>{calls++;return{content:'no'};});fs.writeFileSync(path.join(root,'.topmind'),'blocked');
  await assert.rejects(controller.send('prompt',null));assert.ok(controller.storageError);assert.equal(calls,0);assert.equal(controller.thinking,false);
 });
+
+test('model context compression never truncates durable conversation history', async t => {
+ const {controller,create,file}=fixture(t);
+ const content='中文稿件。'.repeat(3000);
+ controller.messages=Array.from({length:80},(_,i)=>({role:i%2?'assistant':'user',content:`${i}: ${content}`}));
+ controller.save();
+ const restored=create();restored.load();
+ assert.equal(restored.messages.length,80);
+ assert.equal(restored.messages[0].content,controller.messages[0].content);
+ assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).messages[79].content,controller.messages[79].content);
+});

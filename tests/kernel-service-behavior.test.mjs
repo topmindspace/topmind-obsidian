@@ -31,7 +31,8 @@ test('service resolves a clarified article before loading context and checks an 
   let calls = 0;
   service.context = { aiProvider: { generate: async (_prompt, context) => {
     calls++; assert.match(context.systemPrompt, /Actual article A/);
-    assert.doesNotMatch(context.systemPrompt, /UNRELATED_B_CANARY|UNRELATED_PROFILE_CANARY/);
+    assert.doesNotMatch(context.systemPrompt, /UNRELATED_B_CANARY/);
+    assert.match(context.systemPrompt, /UNRELATED_PROFILE_CANARY/);
     return '建议保留原文事实。';
   } } };
   const task = resolveTaskContract({ userText: '调用 revise', intent: { targetPath: 'A.md', skillId: 'topmind-revise', output: 'review' } });

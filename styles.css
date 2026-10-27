@@ -5537,9 +5537,21 @@ body .workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-heade
 .tm-todo-toggle { display: flex; align-items: flex-start; padding-block-start: 3px; box-sizing: border-box; justify-content: center; min-width: var(--tm-hit-sm); min-height: var(--tm-hit-sm); flex-shrink: 0; align-self: flex-start; cursor: pointer; }
 
 /* Native writing delivery surface */
-.tm-writing-modal { width: min(920px, 95vw); }
-.tm-writing-actions { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
-.tm-writing-source { color:var(--text-muted); overflow-wrap:anywhere; }
-.tm-writing-preview { width:100%; height:52vh; border:1px solid var(--background-modifier-border); border-radius:var(--radius-m); background:var(--background-primary); }
+/* Writing uses the host surfaces and a single primary action per panel. */
+.tm-writing-modal { width:min(920px,95vw); }
+.tm-writing-source-card { padding:var(--size-4-4); background:var(--background-secondary); border-radius:var(--tm-radius-card); margin-bottom:var(--size-4-4); }
+.tm-writing-source-title { margin:var(--size-4-2) 0; overflow-wrap:anywhere; }
+.tm-writing-source { color:var(--text-muted); overflow-wrap:anywhere; font-size:var(--font-ui-small); line-height:1.6; }
+.tm-writing-tabs { display:flex; gap:var(--size-4-4); border-bottom:1px solid var(--background-modifier-border); margin-bottom:var(--size-4-4); }
+.tm-writing-tabs [role=tab] { border:0; box-shadow:none; border-radius:0; background:transparent; color:var(--text-muted); min-height:var(--tm-hit); padding:var(--size-4-2); }
+.tm-writing-tabs [aria-selected=true] { color:var(--text-normal); border-bottom:2px solid var(--interactive-accent); }
+.tm-writing-actions-grid { display:grid; gap:var(--size-4-3); margin-bottom:var(--size-4-4); }
+.tm-writing-action-group h4 { margin:0 0 var(--size-4-2); color:var(--text-muted); font-size:var(--font-ui-small); font-weight:var(--font-medium); }
+.tm-writing-actions { display:flex; flex-wrap:wrap; gap:var(--size-4-2); margin:var(--size-4-3) 0; }
+.tm-writing-actions button { min-height:var(--tm-hit); }
+.tm-writing-actions [aria-pressed=true] { background:var(--background-modifier-active-hover); color:var(--text-normal); box-shadow:inset 0 0 0 1px var(--interactive-accent); }
+.tm-writing-panel textarea { min-height:6rem; width:100%; resize:vertical; }
+.tm-writing-preview { width:100%; height:52vh; border:1px solid var(--background-modifier-border); border-radius:var(--tm-radius-card); background:var(--background-primary); }
 .tm-writing-text { white-space:pre-wrap; overflow-wrap:anywhere; }
 .tm-writing-status { min-height:1.5em; overflow-wrap:anywhere; }
+@media (min-width:700px) { .tm-writing-actions-grid { grid-template-columns:1fr 1fr 1fr; } }

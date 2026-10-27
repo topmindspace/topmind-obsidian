@@ -40,7 +40,9 @@ Obsidian Views / Commands / Settings
 |---|---|
 | `lib/agent-tool-catalog.mjs` | 工具名称、双语说明、JSON schema、读写分类、旧参数兼容；按宿主能力生成工具指南 |
 | `lib/agent-policy.mjs` | 步数范围、默认预算、写回模式说明 |
-| `lib/agent-goal-protocol.mjs` | 目标、完成判定、续跑决策与回执语义 |
+| `lib/agent-goal-protocol.mjs` | 工作区目标、完成判定、续跑决策与回执语义 |
+| `lib/agent-task-contract.mjs` | 文章身份、权限、澄清与累计执行守卫 |
+| `lib/agent-context-policy.mjs` | CJK估算、真实窗口预算、同稿历史、工具结果限窗 |
 | `lib/agent-tool-policy.mjs` | 通用文件工具的语义记忆围栏，含路径别名和自定义记忆目录 |
 | `lib/workspace-state.mjs` | 有边界的原子 JSON 状态读写；损坏数据报错并保留 |
 | `lib/pending-writes.mjs` | 工作区隔离的待确认队列、冲突检测与确认执行 |
@@ -56,7 +58,7 @@ Desktop 的静态纯模块由主仓 `npm run sync:agent-contract` 生成，校�
 
 `buildFocusContext` 只读库内真实文件，提供 bounded 行号窗口、内容 hash、最近的 `topic.md` 与未保存标记；不推断缺失正文。选区最多 4000 字符、磁盘窗口最多 60 行/6000 字符、专题首页最多 1800 字符。未保存缓冲区不持久化到聊天记录。
 
-基础上下文包含近期动态、未完成待办与活跃画像；画像用 Kernel `readProfileActiveBody` 折叠历史。检索、更多文件窗口、技能正文和共享参考由工具按需补充。会话压缩与 Desktop 使用相同预算公式，默认 maxMessages 60、keepRecent 24，随模型上下文窗口缩放。
+上下文按意图准备：纯寒暄不读取笔记；单篇任务先提供目标窗口、所选技能和可关闭的少量活跃画像，同稿最多两轮近期对话。工作区动态、待办与反思仅在相应任务时预取，完整记忆和参考由工具按需加载。窗口采用模型元数据与用户上限的较小值，未知容量按32K；系统、工具和回复均预留预算。每一步压缩增长的工具轨迹，任务和真实回执独立保留。
 
 执行写入前重新检查所有打开的 Markdown 编辑器，包含已失焦对象；文件、源/目标路径、目录后代以及待确认操作都会检查。发现磁盘与编辑器缓冲区不同则拒绝并提示先保存。该检查不提供跨进程文件锁；精确编辑保留 `expectedHash` 和匹配阶梯，整文件保存仍需谨慎处理外部并发修改。
 
@@ -68,7 +70,7 @@ Desktop 的静态纯模块由主仓 `npm run sync:agent-contract` 生成，校�
 
 Obsidian 不宣称支持渲染网页脚本、任意 shell 或全部 Desktop 工具。`list_recent_memories` 目前为活跃画像窗口；`list_recent_stream` 提供动态文件发现。参数和描述只公布实际支持的能力。
 
-默认每段 32 步、设置范围 3–80；目标协议决定是否继续，预算耗尽显示未完成。完成依据真实工具结果与路径回执，不凭一句 `[DONE]` 假定工作已完成。聊天记忆提案进入建议卡片，确认前明确 `wroteFiles:false`；尚未提供全部正式记忆工具的直接授权传递，详见整改记录。
+设置中的本轮调用上限默认为32、范围3–80；单篇文章另限16，工作区累计另限48。重试/续跑不能重置预算；预算耗尽或无进展时显示未完成。完成依据真实工具结果与路径回执，不凭一句 `[DONE]` 假定工作已完成。聊天记忆提案进入建议卡片，确认前明确 `wroteFiles:false`；尚未提供全部正式记忆工具的直接授权传递，详见整改记录。
 
 ### Provider
 
@@ -82,7 +84,7 @@ Obsidian 不宣称支持渲染网页脚本、任意 shell 或全部 Desktop 工�
 
 | 文件 | 内容与生命周期 |
 |---|---|
-| `.topmind/chat-session.json` | version 1：消息、目标台账、运行 id/状态与对象；工具完成后保存 checkpoint |
+| `.topmind/chat-session.json` | version 1：完整消息、目标台账、运行 id/状态与对象；工具完成后保存 checkpoint；模型压缩不裁剪持久历史 |
 | `.topmind/chat-history.json` / `chat-goal.json` | 只在新会话状态不存在时导入；保留旧文件，不继续双写 |
 | `.topmind/chat-proposals.json` | 聊天生成的记忆建议；重载恢复，确认/忽略后移除，不因刷新模型建议而丢失 |
 | `.topmind/pending-writes.json` | Kernel 共享操作队列；兼容旧 `{items}` 格式，区分 write/delete/archive |
@@ -133,14 +135,8 @@ npm run pack:verify
 
 迁移完成条件是实际宿主的原生工具消息、服务商协议、取消、长会话压缩、暂停恢复和写闸等价测试全部通过。安装一个框架包不构成这些能力已完成。当前保留兼容循环，但不再给它复制第二份工具 schema 和权限规则。
 
-## 内置独立写作包
+## 写作集成
 
-写作仓独立发布；显式 `npm run sync:skills` 更新 core/writing 两份资源快照和共享排版模块，日常 build 使用提交内容，不依赖姊妹仓或 Desktop。技能资源按激活包解析，`render_article` 生成本地 HTML/文本并返回诊断；图片 realpath 围栏与源稿 hash 防止越界和过期导出。
+写作资源经显式 `sync:skills` 更新，内置独立发布的验证快照；`render_article` 复用共享排版器，写入仍走Kernel。源稿与图片hash防止过期交付，iframe禁止脚本。执行代码随插件正常发行，不进行远程代码热更新。
 
-命令面板“写作与交付”打开原生弹窗，八个动作进入现有 AI 副驾；格式、主题、预览、复制和导出在同一处，原稿继续使用原生编辑器。导出经 Kernel，编辑器未保存时阻止读取旧稿，成功通知 Vault。HTML 使用禁止脚本的 iframe，缺图和扩展格式明确显示限制。执行代码随插件正常发行升级，不做远程代码热更新。
-
-## 写作入口与有限任务执行
-
-「写作与交付」可从 Ribbon、工作台工具栏、侧栏文章上下文、文件/编辑器菜单和命令面板打开，原生源稿选择器绑定目标。选类型仅展示设置，明确开始后才发送；预览/复制/导出不调用 AI。先解析任务再加载文章窗口，侧栏焦点不替代文章身份；非活动编辑器的未保存修改也会阻止执行。
-
-Kernel 快照中的 `agent-task-contract.mjs` 与 Desktop 同源，区分目标/参考/结果模式/实际能力，约束总预算与重复无进展。`request_clarification` 停止执行等待回答，续接时保留原目标。单篇任务不使用模型 PLAN/DONE 续跑，写入成功须有真实回执。详见 [文章任务执行整改](https://github.com/topmindspace/topmind/blob/main/docs/ARTICLE-TASK-EXECUTION-2026-10-27.md)。
+交互入口与布局见 [DESIGN.md](DESIGN.md)；两端的上下文层次、权限、预算、澄清及验证边界统一见 [文章任务执行说明](https://github.com/topmindspace/topmind/blob/main/docs/ARTICLE-TASK-EXECUTION-2026-10-27.md)。

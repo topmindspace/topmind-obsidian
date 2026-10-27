@@ -9,6 +9,7 @@
 // hygiene: secrets must not land in synced vault files). On load, if a backup
 // already exists it can still restore missing keys (last-known-good).
 
+import { captureChatFocus } from "./services/editor-context.ts";
 import { Plugin, WorkspaceLeaf, Notice, setIcon } from "obsidian";
 import { chmodSync } from "node:fs";
 import { DEFAULT_SETTINGS, migrateSettings, hasConfiguredProvider, isAiProviderType, type TopmindSettings } from "./types.ts";
@@ -209,7 +210,7 @@ export default class TopmindPlugin extends Plugin {
       void this.openWorkbench();
     });
     this.addRibbonIcon("file-pen", t("writing_title"), () => {
-      new WritingModal(this, this.app.workspace.getActiveFile()?.path || "").open();
+      new WritingModal(this, captureChatFocus(this.app.workspace)?.path || "").open();
     });
     this.addRibbonIcon("pencil", t("quick_capture_title"), () => {
       this.openQuickCapture();
@@ -259,7 +260,7 @@ export default class TopmindPlugin extends Plugin {
    */
   private registerCommands(): void {
     const defs: Array<{ id: string; name: string; run: () => void }> = [
-      { id: "writing-delivery", name: t("writing_title"), run: () => new WritingModal(this, this.app.workspace.getActiveFile()?.path || "").open() },
+      { id: "writing-delivery", name: t("writing_title"), run: () => new WritingModal(this, captureChatFocus(this.app.workspace)?.path || "").open() },
       { id: CMD_QUICK_CAPTURE, name: t("cmd_quick_capture"), run: () => this.openQuickCapture() },
       { id: CMD_OPEN_WORKBENCH, name: t("cmd_open_workbench"), run: () => { void this.openWorkbench(); } },
       { id: CMD_OPEN_SIDEBAR, name: t("cmd_open_sidebar"), run: () => { void this.openSidebar(); } },

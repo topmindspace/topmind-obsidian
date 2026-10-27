@@ -1,6 +1,5 @@
 /** Chat state belongs to one workspace and one run. Views only render it. */
 import { readWorkspaceState, writeWorkspaceState } from "#kernel/workspace-state.mjs";
-import { compactChatMessages, resolveChatCompactBudget } from "../utils.ts";
 import { persistableChatFocus, type ChatFocus } from "./editor-context.ts";
 import type { ChatProgressEvent } from "./chat-agent.ts";
 import type { TaskContract } from "#kernel/agent-task-contract.mjs";
@@ -67,7 +66,6 @@ export class ChatController {
   gate: { aborted: boolean; pause?: boolean } | null = null;
   private run: Run | null = null;
   private closed = false;
-  private contextLimit?: number | null;
   constructor(private options: ControllerOptions) {}
 
   load(): void {
@@ -93,9 +91,8 @@ export class ChatController {
   }
   save(): void {
     if (this.storageError) throw new Error(this.storageError);
-    const budget = resolveChatCompactBudget(this.contextLimit);
-    const messages = compactChatMessages(this.messages, { maxMessages: budget.maxMessages, keepRecent: budget.keepRecent })
-      .map(message => ({ ...message, ...(message.focus ? { focus: persistableChatFocus(message.focus) } : {}) }));
+    // Model compaction is transient. Do not replace durable history with a token-budget projection.
+    const messages = this.messages.map(message => ({ ...message, ...(message.focus ? { focus: persistableChatFocus(message.focus) } : {}) }));
     writeWorkspaceState(this.options.root(), FILE, { version: 1, messages, goal: this.goal, run: this.run });
   }
   clear(): void {
@@ -130,7 +127,7 @@ export class ChatController {
       this.messages.push({ role: "user", content: prompt, focus: persistableChatFocus(focus) });
     }
     const gate = { aborted: false, pause: false };
-    this.gate = gate; this.thinking = true; this.paused = false; this.reasoning = ""; this.startedAt = Date.now(); this.contextLimit = options.contextLimit;
+    this.gate = gate; this.thinking = true; this.paused = false; this.reasoning = ""; this.startedAt = Date.now();
     this.focus = focus;
     this.run = { id: `run-${Date.now()}-${Math.random().toString(36).slice(2)}`, status: "running", prompt, focus: persistableChatFocus(focus) };
     const id = this.run.id;

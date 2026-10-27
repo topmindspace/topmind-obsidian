@@ -1,3 +1,4 @@
+import { WRITING_THEMES } from "./generated/writing/article-renderer.mjs";
 // ── Shared type definitions ────────────────────────────────────────────────
 
 /** Narrow `unknown` to a plain object record (rejects arrays and null). */
@@ -116,6 +117,9 @@ export interface TopmindSettings {
   autoMaintainTodos: boolean;
   /** Agent tool→reason loop budget per chat turn (3–80, default 32). Desktop maxAgentSteps parity. */
   maxAgentSteps: number;
+  useMemory: boolean;
+  contextWindowTokens: number;
+  writingTheme: string;
 
   // ── Security & Archive ──
   backupKeep: number;
@@ -179,6 +183,9 @@ export const DEFAULT_SETTINGS: TopmindSettings = {
   autoSuggest: true,
   autoMaintainTodos: false,
   maxAgentSteps: 32,
+  useMemory: true,
+  contextWindowTokens: 0,
+  writingTheme: "minimal-ink",
 
   // Security
   backupKeep: 3,
@@ -309,6 +316,9 @@ export function migrateSettings(raw: Record<string, unknown>): TopmindSettings {
   merged.maxAgentSteps = clampInt(merged.maxAgentSteps, 3, 80, 32);
   merged.autoOpenWorkbench = merged.autoOpenWorkbench === true;
   merged.autoTag = merged.autoTag !== false;
+  if (!Object.prototype.hasOwnProperty.call(WRITING_THEMES, merged.writingTheme)) merged.writingTheme = "minimal-ink";
+  merged.useMemory = merged.useMemory !== false;
+  merged.contextWindowTokens = Number(merged.contextWindowTokens) >= 4096 ? clampInt(merged.contextWindowTokens, 4096, 2000000, 0) : 0;
   merged.autoSuggest = merged.autoSuggest !== false;
   merged.autoMaintainTodos = merged.autoMaintainTodos === true;
 

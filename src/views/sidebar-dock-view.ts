@@ -1096,6 +1096,7 @@ export class SidebarDockView extends ItemView {
     const focus = this.chatThinking ? this.chat.focus : captureChatFocus(this.app.workspace);
     const writing = bar.createEl("button", { cls: "tm-chip", text: t("writing_title"), attr: { type: "button" } });
     writing.addEventListener("click", () => new WritingModal(this.plugin, focus?.path || "").open());
+    if (this.plugin.settings.useMemory !== false) bar.createSpan({ text: t("chat_memory_context"), cls: "tm-chat-context-empty" });
     if (!focus) {
       bar.createSpan({ text: t("chat_context_no_object"), cls: "tm-chat-context-empty" });
       return;

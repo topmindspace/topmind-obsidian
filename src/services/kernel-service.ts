@@ -1,3 +1,5 @@
+import { classifyTurn } from "#kernel/agent-goal-protocol.mjs";
+import { clipContext, resolveContextWindow, needsActiveDocument } from "#kernel/agent-context-policy.mjs";
 import { runWorkspaceChatTurn, resolveChatDurableLocale, loadChatProfileContext, clampMaxAgentSteps, type ChatProgressEvent } from "./chat-agent.ts";
 // ── Kernel Service: wraps Kernel operations for Obsidian plugin ────────────
 //
@@ -976,9 +978,9 @@ export class KernelService {
 
     const currentFocus = captureChatFocus(this.app.workspace);
     let requestedFocus = opts.focus === undefined ? currentFocus : opts.focus;
-    const taskContract = resolveTaskContract({ userText: userMessage, focusPath: requestedFocus?.path, intent: requestedFocus?.taskIntent, priorTask: opts.priorGoal?.task, capabilities: { vision: false, imageGeneration: false, imageRendering: false } });
+    const taskContract = resolveTaskContract({ userText: userMessage, focusPath: requestedFocus?.path, intent: requestedFocus?.taskIntent, priorTask: opts.priorGoal?.task, memoryEnabled: this.settings.useMemory !== false, capabilities: { vision: false, imageGeneration: false, imageRendering: false } });
     if (taskContract.kind === "document" && taskContract.targetPath && taskContract.targetPath !== requestedFocus?.path) requestedFocus = { path: taskContract.targetPath };
-    const contextParts = taskContract.kind === "document" ? [] : await buildChatContext(userMessage, {
+    const contextParts = taskContract.kind === "document" ? (taskContract.memoryEnabled ? ["## User memory (read-only background, never article facts; current request wins)\n" + clipContext(loadChatProfileContext(getKernel(), this.getVaultPath(), this.settings.localeOverride || getLocale()), 600)] : []) : await buildChatContext(userMessage, {
       stream: async () => {
         const ctx = await this.getStreamContext();
         if (!ctx.current) return "";
@@ -987,11 +989,12 @@ export class KernelService {
       },
       todos: () => this.readTodos().filter((todo) => !todo.done).slice(0, 10)
         .map((todo) => `- ${todo.text}${todo.dueDate ? ` (due: ${todo.dueDate})` : ""}`).join("\n"),
-      profile: () => loadChatProfileContext(getKernel(), this.getVaultPath(), this.settings.localeOverride || getLocale() || "zh-CN"),
+      profile: () => this.settings.useMemory === false ? "" : loadChatProfileContext(getKernel(), this.getVaultPath(), this.settings.localeOverride || getLocale() || "zh-CN"),
       reflections: async () => (await this.loadRecentReflections()) || "",
     });
 
-    const focus = buildFocusContext(this.getVaultPath(), refreshBoundFocus(this.app.workspace, requestedFocus));
+    const includeFocus = taskContract.kind === "document" || needsActiveDocument(userMessage) || classifyTurn(userMessage) !== "light";
+    const focus = includeFocus ? buildFocusContext(this.getVaultPath(), refreshBoundFocus(this.app.workspace, requestedFocus)) : null;
     if (focus) contextParts.unshift(focus.prompt);
 
     const uiLocale = this.settings.localeOverride || getLocale() || "zh-CN";
@@ -1036,7 +1039,7 @@ export class KernelService {
       // omit writebackMode — runWorkspaceChatTurn reads topmind.yaml
       systemExtra: systemPrompt,
       maxSteps: clampMaxAgentSteps(this.settings.maxAgentSteps),
-      contextLimit: opts.contextLimit,
+      contextLimit: resolveContextWindow(opts.contextLimit, this.settings.contextWindowTokens),
       onProgress: opts.onProgress,
       shouldAbort: opts.shouldAbort,
       stopKind: opts.stopKind,
