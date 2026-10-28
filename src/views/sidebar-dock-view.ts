@@ -724,58 +724,11 @@ export class SidebarDockView extends ItemView {
     }
   }
 
-  private async acceptAllSuggestions(): Promise<void> {
-    const cards = this.plugin.kernelService.peekSuggestions();
-    if (cards.length === 0) return;
-    const n = new Notice(
-      t("notice_executing_progress", { current: 0, total: cards.length, title: cards[0]?.title || "" }),
-      0,
-    );
-    let ok = 0;
-    for (let i = 0; i < cards.length; i++) {
-      const card = cards[i];
-      n.setMessage(t("notice_executing_progress", {
-        current: i + 1,
-        total: cards.length,
-        title: card.title,
-      }));
-      const result = await this.plugin.kernelService.applySuggestion(card, { silent: true });
-      if (result.ok) ok += 1;
-    }
-    n.hide();
-    new Notice(t("notice_accept_all_done", { count: ok }));
-    await this.refreshActiveTab();
-  }
-
-  /** Action bar at top of suggestions tab: reconcile period + AI operations + force-refresh. */
+  /** Suggestions own review and refresh; organizing lives in the Stream view. */
   private renderSuggestionRefreshButton(container: HTMLElement): void {
     const refreshBar = container.createDiv({ cls: "tm-suggestion-refresh-bar" });
 
-    // 1. Organize period button — sort glyph (整理)
-    const organizeBtn = refreshBar.createEl("button", {
-      cls: "tm-btn-secondary tm-btn-sm",
-    });
-    setIcon(organizeBtn, "arrow-down-wide-narrow");
-    organizeBtn.createSpan({ text: t("stream_organize") });
-    organizeBtn.setAttribute("aria-label", t("stream_organize"));
-    organizeBtn.setAttribute("title", t("stream_organize"));
-    organizeBtn.addEventListener("click", () => { void (async () => {
-      new Notice(t("notice_organizing"));
-      const streamCtx = await this.plugin.kernelService.getStreamContext();
-      if (streamCtx.current) {
-        this.plugin.kernelService.reconcilePeriod(streamCtx.current.relPath);
-      }
-      const aiQueued = this.plugin.settings.autoMaintainTodos
-        && hasConfiguredProvider(this.plugin.settings.ai);
-      if (aiQueued) {
-        void this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar", true);
-      } else {
-        new Notice(t("notice_organize_done"));
-      }
-      void this.refreshActiveTab();
-    })(); });
-
-    // 2. AI operations dropdown button (if AI configured)
+    // Advanced workspace operations stay behind one menu.
     if (hasConfiguredProvider(this.plugin.settings.ai)) {
       const aiOpsBtn = refreshBar.createEl("button", {
         cls: "tm-btn-ghost tm-btn-icon tm-btn-sm clickable-icon",
@@ -803,22 +756,14 @@ export class SidebarDockView extends ItemView {
       });
     }
 
-    const acceptAllBtn = refreshBar.createEl("button", {
+
+    const refreshBtn = refreshBar.createEl("button", {
       cls: "tm-btn-secondary tm-btn-sm",
     });
-    setIcon(acceptAllBtn, "check");
-    acceptAllBtn.createSpan({ text: t("suggestions_accept_all") });
-    acceptAllBtn.setAttribute("aria-label", t("suggestions_accept_all"));
-    acceptAllBtn.setAttribute("title", t("suggestions_accept_all"));
-    acceptAllBtn.addEventListener("click", () => { void this.acceptAllSuggestions(); });
-
-    // 3. Force-refresh button
-    const refreshBtn = refreshBar.createEl("button", {
-      cls: "tm-btn-ghost tm-btn-icon tm-btn-sm clickable-icon",
-    });
     setIcon(refreshBtn, "refresh-cw");
-    refreshBtn.setAttribute("aria-label", t("cmd_refresh_suggestions"));
-    refreshBtn.setAttribute("title", t("cmd_refresh_suggestions"));
+    refreshBtn.createSpan({ text: t("sidebar_op_suggestions") });
+    refreshBtn.setAttribute("aria-label", t("sidebar_op_suggestions"));
+    refreshBtn.setAttribute("title", t("sidebar_op_suggestions"));
     refreshBtn.addEventListener("click", () => { void (async () => {
       refreshBtn.disabled = true;
       await this.renderSuggestionsTab(this.contentContainer, { force: true });
@@ -1709,83 +1654,6 @@ export class SidebarDockView extends ItemView {
     }
   }
 
-  // ── Bottom Actions ─────────────────────────────────────────────────────
-
-  private renderBottomActions(container: HTMLElement): void {
-    const actionsBar = container.createDiv({ cls: "tm-sidebar-bottom-actions" });
-    const aiConfigured = hasConfiguredProvider(this.plugin.settings.ai);
-
-    // 2 slots: capture (primary) · organize menu (merged — no separate AI 整理).
-    const captureBtn = actionsBar.createEl("button", {
-      cls: "tm-sidebar-action-btn tm-sidebar-capture-primary mod-cta",
-    });
-    const iconSpan = captureBtn.createSpan({ cls: "tm-action-icon-span" });
-    setIcon(iconSpan, "pencil");
-    captureBtn.createSpan({ text: t("sidebar_btn_capture"), cls: "tm-sidebar-action-label" });
-    captureBtn.setAttribute("aria-label", t("sidebar_btn_capture"));
-    captureBtn.setAttribute("title", t("sidebar_btn_capture"));
-    captureBtn.addEventListener("click", () => this.plugin.openQuickCapture());
-
-    const orgBtn = actionsBar.createEl("button", { cls: "tm-sidebar-action-btn" });
-    const orgIcon = orgBtn.createSpan({ cls: "tm-action-icon-span" });
-    setIcon(orgIcon, "arrow-down-wide-narrow");
-    orgBtn.createSpan({ text: t("sidebar_btn_organize"), cls: "tm-sidebar-action-label" });
-    orgBtn.setAttribute("aria-label", t("sidebar_btn_organize"));
-    orgBtn.setAttribute("title", t("sidebar_btn_organize"));
-    orgBtn.addEventListener("click", (evt: MouseEvent) => {
-      const menu = new Menu();
-      menu.addItem((item) => {
-        item.setTitle(t("stream_organize")).setIcon("arrow-down-wide-narrow").onClick(() => { void (async () => {
-          new Notice(t("notice_organizing"));
-          const streamCtx = await this.plugin.kernelService.getStreamContext();
-          if (streamCtx.current) this.plugin.kernelService.reconcilePeriod(streamCtx.current.relPath);
-          if (aiConfigured && this.plugin.settings.autoMaintainTodos) {
-            void this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar", true);
-          } else {
-            new Notice(t("notice_organize_done"));
-          }
-          void this.refreshActiveTab();
-        })(); });
-      });
-      if (aiConfigured) {
-        menu.addItem((item) => {
-          item.setTitle(t("sidebar_btn_todo")).setIcon("list-checks").onClick(() => {
-            void this.plugin.enqueueAiOperation("todo_maintain", "op_label_todo_maintain", "notice_todo_done", "sidebar");
-          });
-        });
-        menu.addItem((item) => {
-          item.setTitle(t("sidebar_btn_classify")).setIcon("tag").onClick(() => {
-            void this.plugin.enqueueAiOperation("topic_classify", "op_label_topic_classify", "notice_classify_done", "suggest");
-          });
-        });
-        menu.addItem((item) => {
-          item.setTitle(t("sidebar_btn_memory")).setIcon("user").onClick(() => {
-            void this.plugin.enqueueAiOperation("memory_organize", "op_label_memory_organize", "notice_memory_done", "all");
-          });
-        });
-      } else {
-        menu.addItem((item) => item.setTitle(t("chat_configure_ai")).setIcon("settings").onClick(() => this.openSettings()));
-      }
-      menu.showAtMouseEvent(evt);
-    });
-  }
-
-  private addActionButton(
-    parent: HTMLElement,
-    icon: string,
-    label: string,
-    handler: () => void | Promise<void>,
-  ): void {
-    const btn = parent.createEl("button", { cls: "tm-sidebar-action-btn" });
-    const iconSpan = btn.createSpan({ cls: "tm-action-icon-span" });
-    setIcon(iconSpan, icon);
-    btn.createSpan({ text: label, cls: "tm-sidebar-action-label" });
-    btn.setAttribute("aria-label", label);
-    btn.setAttribute("title", label);
-    btn.addEventListener("click", () => { void handler(); });
-  }
-
-  /** Enqueue an AI task with progress tracking */
   // ── Helpers ────────────────────────────────────────────────────────────
 
   private renderEmptyState(container: HTMLElement, title: string, hint: string, iconName?: string, action?: { label: string; onClick: () => void }): void {

@@ -1,0 +1,62 @@
+{
+  "pluginVersion": "4.23.1",
+  "host": {
+    "version": "1.12.7",
+    "runtime": {
+      "node": "22.22.1",
+      "electron": "39.8.3",
+      "chrome": "142.0.7444.265"
+    }
+  },
+  "model": "local mock; no real-provider calls",
+  "checks": {
+    "focusFrozen": true,
+    "sessionRestored": true,
+    "pendingDelete": true,
+    "todoAddedAndCompleted": true,
+    "summaryRequests": 3,
+    "quickTests": 1,
+    "keyboardTabFocus": true,
+    "backgroundDraftPreserved": true,
+    "polishPreservesNewerDraft": true,
+    "captureDestinationRespected": true,
+    "emptyCaptureRetained": true,
+    "narrowViewport": true,
+    "darkTheme": true,
+    "noHorizontalOverflow": true,
+    "streamHintNotVertical": true,
+    "longChatReadingPosition": true,
+    "explicitJumpToLatest": true,
+    "todoBatchAndFilter": true,
+    "completedTodoRestore": true,
+    "todoToggleTarget32px": true,
+    "suggestionResultsStayInSurface": true,
+    "suggestionRequestRejoined": true,
+    "suggestionNoBulkApply": true,
+    "inlineSelectionReview": true,
+    "readOnlyFooterHonest": true,
+    "ribbonWritingEntry": true,
+    "createdNoteOpened": "00-Inbox/Untitled-20261028-0908.md",
+    "writingWide": {
+      "x": 310,
+      "y": 55.046875,
+      "width": 660,
+      "height": 789.90625,
+      "contentWidth": 626,
+      "contentScrollWidth": 626,
+      "contentHeight": 745,
+      "contentScrollHeight": 745
+    },
+    "writingNarrow": {
+      "x": 50,
+      "y": 25.375,
+      "width": 400,
+      "height": 509.25,
+      "contentWidth": 366,
+      "contentScrollWidth": 366,
+      "contentHeight": 464,
+      "contentScrollHeight": 966
+    },
+    "pageErrors": []
+  }
+}

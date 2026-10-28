@@ -139,4 +139,6 @@ npm run pack:verify
 
 写作资源经显式 `sync:skills` 更新，内置独立发布的验证快照；`render_article` 复用共享排版器，写入仍走Kernel。源稿与图片hash防止过期交付，iframe禁止脚本。执行代码随插件正常发行，不进行远程代码热更新。
 
+动态工具栏的新笔记由 Kernel 创建，不绕过写回契约。Kernel 写盘后，`openCreatedMarkdownNote` 等待 Obsidian Vault 的 `create` 索引事件，再用新的主区域 leaf `openFile` 并 `revealLeaf`；索引未到达时显示“已创建但尚未显示”的提示，不虚报已打开，也不让工作台页签被替换。
+
 交互入口与布局见 [DESIGN.md](DESIGN.md)；两端的上下文层次、权限、预算、澄清及验证边界统一见 [文章任务执行说明](https://github.com/topmindspace/topmind/blob/main/docs/ARTICLE-TASK-EXECUTION-2026-10-27.md)。

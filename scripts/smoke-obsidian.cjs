@@ -209,11 +209,44 @@ let port;
   assert.equal(await page.evaluate(()=>window.__suggestionCalls),2);
   await page.evaluate(()=>window.__finishSuggestions([{id:'ui-review',kind:'open_profile',title:'Current review result',summary:'Only the current Suggestions surface is updated.',impact:'low'}]));
   await page.getByText('Current review result',{exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:/全部确认|Accept all/u}).count(),0);
   await page.evaluate(()=>{app.plugins.plugins['topmind-stream'].kernelService.generateSuggestions=window.__savedSuggestionGenerator;delete window.__savedSuggestionGenerator;delete window.__finishSuggestions;delete window.__suggestionCalls;});
 
 
   await page.evaluate(()=>app.plugins.plugins['topmind-stream'].openWorkbench());
   await page.locator('.tm-stream-workbench .tm-input-field').waitFor();
+  const ribbonLabels=await page.locator('.side-dock-ribbon-action').evaluateAll(els=>els.map(el=>el.getAttribute('aria-label')||el.getAttribute('title')||''));
+  assert.ok(ribbonLabels.some(label=>/写作与交付|Writing & delivery/u.test(label)),JSON.stringify(ribbonLabels));
+  const documentActions=page.locator('.tm-stream-workbench .tm-toolbar-actions');
+  assert.equal(await documentActions.locator('button').count(),2);
+  assert.ok(await documentActions.getByRole('button',{name:/新笔记|New Note/u}).isVisible());
+  assert.ok(await documentActions.getByRole('button',{name:/写作与交付|Writing & delivery/u}).isVisible());
+  await documentActions.getByRole('button',{name:/新笔记|New Note/u}).click();
+  await page.waitForFunction(()=>app.workspace.getActiveFile()?.path?.includes('/Untitled-'),null,{timeout:10000});
+  const createdPath=await page.evaluate(()=>app.workspace.getActiveFile()?.path);
+  assert.match(createdPath,/^00-Inbox\/Untitled-.*\.md$/u);
+  assert.ok(await page.evaluate(()=>app.workspace.getLeavesOfType('topmind-stream-workbench').length>0));
+  await page.locator('.side-dock-ribbon-action[aria-label="写作与交付"]').click();
+  const writing=page.locator('.tm-writing-modal');await writing.waitFor();
+  assert.match(await writing.innerText(),/Untitled-/u);
+  assert.equal(await writing.locator('details.tm-writing-more').first().evaluate(el=>el.open),false);
+  const writingMeasure=async()=>writing.evaluate(el=>{const box=el.getBoundingClientRect();const content=el.querySelector('.modal-content');return{x:box.x,y:box.y,width:box.width,height:box.height,contentWidth:content?.clientWidth,contentScrollWidth:content?.scrollWidth,contentHeight:content?.clientHeight,contentScrollHeight:content?.scrollHeight};});
+  const wideWriting=await writingMeasure();
+  assert.ok(wideWriting.width<=660 && wideWriting.x>=0 && wideWriting.y>=0,JSON.stringify(wideWriting));
+  await page.screenshot({path:path.join(artifacts,'writing-wide.png')});
+  await page.setViewportSize({width:500,height:560});
+  const narrowWriting=await writingMeasure();
+  assert.ok(narrowWriting.width<=500 && narrowWriting.height<=560 && narrowWriting.x>=0 && narrowWriting.y>=0,JSON.stringify(narrowWriting));
+  assert.ok(narrowWriting.contentScrollWidth<=narrowWriting.contentWidth+1,JSON.stringify(narrowWriting));
+  const startWriting=writing.getByRole('button',{name:/开始写作任务|Start writing task/u});
+  await startWriting.scrollIntoViewIfNeeded();assert.ok(await startWriting.isVisible());
+  await startWriting.focus();assert.equal(await startWriting.evaluate(el=>document.activeElement===el),true);
+  await page.screenshot({path:path.join(artifacts,'writing-narrow.png')});
+  await page.keyboard.press('Escape');await writing.waitFor({state:'hidden'});
+  await page.setViewportSize({width:1280,height:900});
+  await page.evaluate(()=>app.workspace.revealLeaf(app.workspace.getLeavesOfType('topmind-stream-workbench')[0]));
+  await page.locator('.tm-stream-workbench .tm-input-field').waitFor({state:'visible'});
+  console.log(JSON.stringify({stage:'writing-and-new-note',ribbonLabels,createdPath,wideWriting,narrowWriting}));
   await page.evaluate(()=>{const service=app.plugins.plugins['topmind-stream'].kernelService;window.__originalPolish=service.polishText;service.polishText=()=>new Promise(resolve=>{window.__finishPolish=resolve;});});
   const compose=page.locator('.tm-stream-workbench .tm-input-field');
   await compose.fill('original draft');await page.locator('.tm-btn-polish').click();
@@ -265,10 +298,27 @@ let port;
   await page.evaluate(()=>{document.body.classList.remove('theme-light');document.body.classList.add('theme-dark');});
   await page.waitForTimeout(100);await page.screenshot({path:path.join(artifacts,'dark.png')});
 
+  await page.evaluate(async()=>{
+    await app.workspace.openLinkText('00-Inbox/Focus-A.md','',true);
+    const leaf=app.workspace.getLeavesOfType('markdown').find(item=>item.view.file?.path==='00-Inbox/Focus-A.md');
+    await app.workspace.revealLeaf(leaf);
+    leaf.view.editor.setSelection({line:2,ch:0},{line:2,ch:14});
+    app.commands.executeCommandById('topmind-stream:review-selection');
+  });
+  await page.waitForFunction(()=>{
+    const view=app.workspace.getLeavesOfType('topmind-sidebar-dock')[0]?.view;
+    return view?.chatHistory?.at(-1)?.role==='assistant' && view.chatHistory.at(-1).focus?.taskIntent?.skillId==='topmind-revise' && !view.chatThinking;
+  },null,{timeout:20000});
+  const selectionReceipt=await page.evaluate(()=>app.workspace.getLeavesOfType('topmind-sidebar-dock')[0].view.chatHistory.at(-1));
+  assert.equal(selectionReceipt.focus.selection,'Current object');
+  assert.equal(selectionReceipt.focus.taskIntent.output,'review');
+  assert.equal(fs.readFileSync(path.join(vault,'00-Inbox/Focus-A.md'),'utf8'),'# Focus A\n\nCurrent object test selection.\n');
+  await page.screenshot({path:path.join(artifacts,'selection-review.png')});
+
   assert.equal(errors.length,0,JSON.stringify(errors));
   console.log(JSON.stringify({stage:'validated',requests:requests.length,target:receipt.focus.path,errors}));
   console.log(JSON.stringify({stage:'rendered',text:(await page.locator('body').innerText()).slice(-5000),errors}));
-  fs.writeFileSync(path.join(artifacts,'verification.json'),JSON.stringify({pluginVersion:loaded.manifest.version,host:actual,model:'local mock; no real-provider calls',checks:{focusFrozen:true,sessionRestored:true,pendingDelete:true,todoAddedAndCompleted:true,summaryRequests:requests.length,quickTests,keyboardTabFocus:true,backgroundDraftPreserved:true,polishPreservesNewerDraft:true,captureDestinationRespected:true,emptyCaptureRetained:true,narrowViewport:true,darkTheme:true,noHorizontalOverflow:true,streamHintNotVertical:true,longChatReadingPosition:true,explicitJumpToLatest:true,todoBatchAndFilter:true,completedTodoRestore:true,todoToggleTarget32px:true,suggestionResultsStayInSurface:true,suggestionRequestRejoined:true,readOnlyFooterHonest:true,pageErrors:errors}},null,2));
+  fs.writeFileSync(path.join(artifacts,'verification.json'),JSON.stringify({pluginVersion:loaded.manifest.version,host:{version:actual.version,runtime:actual.runtime},model:'local mock; no real-provider calls',checks:{focusFrozen:true,sessionRestored:true,pendingDelete:true,todoAddedAndCompleted:true,summaryRequests:requests.length,quickTests,keyboardTabFocus:true,backgroundDraftPreserved:true,polishPreservesNewerDraft:true,captureDestinationRespected:true,emptyCaptureRetained:true,narrowViewport:true,darkTheme:true,noHorizontalOverflow:true,streamHintNotVertical:true,longChatReadingPosition:true,explicitJumpToLatest:true,todoBatchAndFilter:true,completedTodoRestore:true,todoToggleTarget32px:true,suggestionResultsStayInSurface:true,suggestionRequestRejoined:true,suggestionNoBulkApply:true,inlineSelectionReview:true,readOnlyFooterHonest:true,ribbonWritingEntry:true,createdNoteOpened:createdPath,writingWide:wideWriting,writingNarrow:narrowWriting,pageErrors:errors}},null,2));
   console.log(JSON.stringify({stage:'artifacts',directory:artifacts}));
  } finally { if(testPage) console.log(JSON.stringify({stage:"final-dom",text:(await testPage.locator("body").innerText().catch(()=>"")).slice(-5000)})); if(browser) await browser.close(); child.kill(); server.closeAllConnections(); server.close(); }
 })().catch(e=>{console.error(e.stack); process.exitCode=1;});

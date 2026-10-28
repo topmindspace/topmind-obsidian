@@ -652,7 +652,7 @@ describe("suggestion cache and todo force (Desktop parity)", () => {
     assert.match(main, /enqueueAiOperation\("todo_maintain".*"sidebar", true\)/);
     const dock = fs.readFileSync(path.join(srcDir, "views", "sidebar-dock-view.ts"), "utf8");
     assert.match(dock, /peekSuggestions\(\)/);
-    assert.match(dock, /acceptAllSuggestions/);
+    assert.doesNotMatch(dock, /acceptAllSuggestions/);
     assert.match(dock, /softRefreshSuggestions/);
     const stream = fs.readFileSync(path.join(srcDir, "views", "stream-workbench-view.ts"), "utf8");
     assert.match(stream, /peekSuggestions\(\)/);

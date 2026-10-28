@@ -59,7 +59,8 @@ describe("Obsidian labeled-button chrome (shipped)", () => {
   test("icon-only and labeled buttons ship aria-label / title", () => {
     assert.match(workbench, /refreshStreamBtn\.setAttribute\("aria-label"/);
     assert.match(workbench, /refreshStreamBtn\.setAttribute\("title"/);
-    assert.match(workbench, /sidebarBtn\.setAttribute\("aria-label"/);
+    assert.match(workbench, /newNoteBtn\.setAttribute\("aria-label"/);
+    assert.match(workbench, /writingBtn.*"aria-label": t\("writing_title"\)/);
     assert.match(workbench, /newNoteBtn\.setAttribute\("title"/);
     // Header icon buttons were removed (user request); ribbon icons carry titles via API.
     assert.match(sidebar, /statusDiv\.setAttribute\("title"/);

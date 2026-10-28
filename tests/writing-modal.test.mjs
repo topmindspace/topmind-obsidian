@@ -13,8 +13,23 @@ test('selecting a writing type only displays the task setup and never opens AI',
   assert.ok(revise);
   revise.click();
   assert.equal(sideEffects, 0);
-  assert.match(modal.contentEl.querySelectorAll('p').map(p => p.textContent).join('\n'), /文章A.md/);
+  assert.match(modal.contentEl.querySelectorAll('div').map(el => el.textContent).join('\n'), /文章A.md/);
   assert.ok(modal.contentEl.querySelectorAll('button').some(button => /开始写作任务|Start writing task/.test(button.textContent)));
+});
+
+test('common writing choices are visible, secondary choices stay folded, and adaptation cannot edit the source', () => {
+  const modal = new WritingModal({ app: { workspace: {} }, kernelService: { getVaultPath: () => '/fixture' } }, 'A.md');
+  modal.onOpen();
+  const more = modal.contentEl.querySelector('details.tm-writing-more');
+  assert.equal(more.open, false);
+  const wechat = modal.contentEl.querySelectorAll('button').find(button => button.getAttribute('data-writing-action') === 'topmind-wechat-post');
+  assert.ok(wechat);
+  wechat.click();
+  assert.equal(modal.output, 'review');
+  assert.equal(modal.contentEl.querySelectorAll('select').length, 0);
+  const cover = modal.contentEl.querySelectorAll('button').find(button => button.getAttribute('data-writing-action') === 'topmind-cover');
+  cover.click();
+  assert.equal(modal.contentEl.querySelector('details.tm-writing-more').open, true);
 });
 
 test('writing defaults to the captured active article and keeps it until explicitly changed', () => {

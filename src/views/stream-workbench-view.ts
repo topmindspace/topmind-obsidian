@@ -1,22 +1,7 @@
 // ── Stream Workbench View: main workbench in Obsidian center area ──────────
 //
-// Design principles:
-// - Dense, information-rich layout (feed column ~44rem, tighter spacing)
-// - Quick input bar at top (always visible, always focused-ready)
-// - Toolbar with quick access to sidebar + settings + model info + AI task progress
-// - Stream section: period selector + day-grouped entry cards with append
-// - Suggest entry: count-only strip → AI Dock 建议 tab (single confirm home)
-// - All states (loading / empty / error / ready) are visually polished
-// - Day grouping: entries grouped by ## day headings within period notes
-// - Multi-task progress: AI operations show inline progress badge in toolbar
-//
-// UIUX (2026-08-11 refactor):
-// - Toolbar buttons: icon + text labels (with responsive hide on narrow)
-// - Card actions: icon-only with tooltips (compact, no overflow)
-// - Suggestion refresh: icon-only
-// - Loading states: spinner instead of "..." text
-// - Organize button: icon + text (secondary button with refresh-cw icon)
-// - Shared renderLayout() eliminates onOpen/refresh duplication
+// The center workbench owns quick capture, feed navigation, and two document
+// actions. Chat, suggestions and their AI controls live in the side dock.
 
 import { ItemView, WorkspaceLeaf, Notice, MarkdownRenderer, setIcon, Component } from "obsidian";
 import type TopmindPlugin from "../main";
@@ -34,7 +19,7 @@ import {
   splitStreamPreviewParts,
 } from "../utils";
 import { hasConfiguredProvider } from "../types";
-import { openSidebarDock, openPluginSettings } from "../services/view-openers";
+import { openSidebarDock, openCreatedMarkdownNote } from "../services/view-openers";
 import { aiTaskManager, type TaskProgress } from "../services/ai-task-manager";
 
 /** Format entry count for display (uses i18n, kept in view layer). */
@@ -331,35 +316,21 @@ export class StreamWorkbenchView extends ItemView {
     this.taskPanelEl = container.createDiv({ cls: "tm-task-panel" });
     this.taskPanelEl.hidden = true;
 
-    // IA: stream chrome owns view navigation only. AI status / model live in
-    // the sidebar header + chat switcher — never repeat them here.
-    // 我的情况 lives here as the single entry (not also in the section bar).
+    // Keep only the two document actions here. Chat and suggestions above
+    // already reveal the dock; Settings remain in Obsidian's plugin settings.
     const actionsDiv = toolbar.createDiv({ cls: "tm-toolbar-actions" });
-    const writingBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn", text: t("writing_title"), attr: { type: "button", title: t("writing_title") } });
-    writingBtn.addEventListener("click", () => new WritingModal(this.plugin, this.getChatFocus()?.path || "").open());
-
-    const sidebarBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn clickable-icon" });
-    setIcon(sidebarBtn, "panel-right");
-    sidebarBtn.setAttribute("aria-label", t("sidebar_open_sidebar"));
-    sidebarBtn.setAttribute("title", t("sidebar_open_sidebar"));
-    sidebarBtn.addEventListener("click", () => {
-      void this.openSidebar();
-    });
-
-    const settingsBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn clickable-icon" });
-    setIcon(settingsBtn, "settings");
-    settingsBtn.setAttribute("aria-label", t("sidebar_open_settings"));
-    settingsBtn.setAttribute("title", t("sidebar_open_settings"));
-    settingsBtn.addEventListener("click", () => this.openSettings());
-
-    const newNoteBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-btn clickable-icon" });
-    setIcon(newNoteBtn, "file-plus");
+    const newNoteBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-action tm-toolbar-action-primary", attr: { type: "button" } });
+    setIcon(newNoteBtn.createSpan(), "file-plus");
+    newNoteBtn.createSpan({ text: t("toolbar_btn_new_note") });
     newNoteBtn.setAttribute("aria-label", t("toolbar_btn_new_note"));
     newNoteBtn.setAttribute("title", t("toolbar_btn_new_note"));
     newNoteBtn.addEventListener("click", () => {
       void this.createNewNote();
     });
-
+    const writingBtn = actionsDiv.createEl("button", { cls: "tm-toolbar-action", attr: { type: "button", title: t("writing_title"), "aria-label": t("writing_title") } });
+    setIcon(writingBtn.createSpan(), "file-pen");
+    writingBtn.createSpan({ text: t("writing_toolbar") });
+    writingBtn.addEventListener("click", () => new WritingModal(this.plugin, this.getChatFocus()?.path || "").open());
   }
 
   private currentFeedLayout(): "list" | "card" {
@@ -399,11 +370,6 @@ export class StreamWorkbenchView extends ItemView {
         }
       })(); });
     }
-  }
-
-  /** Open plugin settings tab */
-  private openSettings(): void {
-    openPluginSettings(this.app, this.plugin.manifest.id);
   }
 
   /** Update AI task progress badge in toolbar */
@@ -506,9 +472,13 @@ export class StreamWorkbenchView extends ItemView {
     try {
       const created = this.plugin.kernelService.createInboxNote();
       if (!created.ok || !created.path) return;
-
-      await this.app.workspace.openLinkText(created.path, "", false);
-      new Notice(t("notice_new_note_created"));
+      try {
+        await openCreatedMarkdownNote(this.app, created.path);
+        new Notice(t("notice_new_note_created"));
+      } catch (openError) {
+        console.error("[topmind] created note could not be opened:", openError);
+        new Notice(t("notice_new_note_open_failed"));
+      }
     } catch (err) {
       console.error("[topmind] createNewNote failed:", err);
       new Notice(t("notice_new_note_failed"));

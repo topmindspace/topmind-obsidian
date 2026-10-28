@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.23.1 — 2026-10-28
+
+- Place Writing & delivery at a discoverable Ribbon position and keep New note and Writing as the two document actions in the workbench. Creating a note opens it in a new active tab after Obsidian indexes the file.
+- Show four common writing choices first; fold less common tasks and settings, constrain source edits to eligible text tasks, and size the modal for narrow windows with a reachable Start button.
+- Add selection-bound AI review from the editor menu and command palette. Simplify suggestions to individual review and move secondary actions into a menu.
+- Bundle core skills 4.15.9 and writing skills 0.9.1; add isolated Vault UI smoke evidence and regression tests.
+
 ## 4.23.0 — 2026-10-27
 
 - Redesign writing around a stable active-note header and separate Write/Layout preview tabs. Group actions, support source search and return-to-active, retain requirements across tabs, and add a default layout theme in settings.

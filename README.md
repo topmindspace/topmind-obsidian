@@ -10,7 +10,9 @@ Requires **Obsidian desktop 1.13.0 or later**. Mobile is not supported. The vers
 
 A reviewed release snapshot of [topmind-writing-skills](https://github.com/topmindspace/topmind-writing-skills) is bundled by default: revision, formatting, briefs, social posts, WeChat, X Articles, covers and posters. The writing repository keeps its own release cadence and version.
 
-Open **Writing & delivery** from the ribbon, workbench toolbar, AI note context, note/editor menu, settings or command palette (`topmind-stream:writing-delivery`). It loads the active note by default; search to choose another or return to the active note. **Write** groups revision, platform adaptation and visual concepts, with explicit requirements and suggestions/edit mode. **Start writing task** begins execution. **Layout preview** formats locally, then copies or exports to `out/` without calling AI. Set a default theme in plugin settings; existing drafts work in place.
+**Writing & delivery** is the top ribbon action. You can also open it from the Stream toolbar, note/editor menu, AI note context, settings or command palette (`topmind-stream:writing-delivery`). It binds the active note when opened; search to choose another or return to the active note. The first screen shows four common tasks: Revise, Brief, WeChat and X Article. Formatting, social posts, cover prompts and poster layouts live under **More writing options**. Additional requirements are optional; web access is under **More settings**. Selecting a task never sends it. **Start writing task** sends it to the AI copilot. Only revision and text formatting offer direct editing of the source; other adaptations return a result without replacing the draft.
+
+**Layout preview** formats locally, then copies or exports to `out/` without calling AI. The dialog uses a compact writing width and a wider preview width; narrow windows scroll to the primary action. Set a default theme in plugin settings; existing drafts work in place.
 
 Built-in HTML/text typography requires no Python. Preview and copy use the same output; changed sources or images require regeneration. Diagnostics identify missing images, diagram source, extended containers and table paste limitations. The current chat host has no image-input, image-generation or PNG-rendering tool. Cover/poster actions prepare prompts or HTML only. Publishing requires its own tool and authorization. Copying does not publish; wording scores do not decide editorial quality.
 
@@ -63,8 +65,10 @@ Notes stay local; AI requests send relevant context to your configured provider.
 | What you want to do | Where to go |
 |---|---|
 | Capture a thought | **Note it** in the command palette or the pencil icon; choose Stream or Inbox |
+| Create a standalone note | **Stream → New Note**; the created note opens in a new tab for editing |
 | Review the week | **Stream**; switch periods, filter, or expand long entries |
 | Ask AI about a note | Open the note → **Chat** → check **Send target** → enter your request |
+| Review selected text | Select text in a Markdown editor → right-click **Review selection with AI**; the copilot suggests changes without editing the note |
 | Add a todo | Type directly in **Todos**; check it off when done |
 | Review AI proposals | **Suggestions**; inspect the target and action, then accept or dismiss |
 | Check background work | **History** for queued, running, completed, or failed operations |
@@ -74,7 +78,7 @@ Try “Summarize this note,” “Find unfinished work from this week,” or “
 
 ### Current note and selection
 
-**Send target** above the composer names the object for your **next send**. Select text before sending to narrow the scope. Switching tabs after sending does not change that turn's target; each reply identifies its bound object.
+**Send target** above the composer names the object for your **next send**. Select text before sending to narrow the scope. Right-click **Review selection with AI** to submit that selection in one step, or bind a hotkey to the command. This shortcut is review-only and never edits the note. Switching tabs after sending does not change that turn's target; each reply identifies its bound object.
 
 With no note selected, Chat can still search the workspace. To edit a specific note, open it or name its path. Save unsaved editor changes before asking AI to edit; the plugin checks for conflicts.
 
@@ -112,9 +116,9 @@ Proactive organization and memory suggestions can be dismissed. Requested conten
 
 ## Commands and previews
 
-Search **Topmind** in Obsidian's command palette for Note it, Open Stream, Open sidebar, Reconcile this week, Refresh AI suggestions, AI tidy todos, Classify topics, Organize my profile, Open my profile, and Open Inbox. No default global hotkeys are assigned; bind your own in **Settings → Hotkeys**.
+Search **Topmind** in Obsidian's command palette for Writing & delivery, Review selection with AI, Note it, Open Stream, Open sidebar, Reconcile this week, Refresh AI suggestions, AI tidy todos, Classify topics, Organize my profile, Open my profile, and Open Inbox. No default global hotkeys are assigned; bind your own in **Settings → Hotkeys**.
 
-[Stream preview](docs/images/stream-timeline-en.png) · [My profile preview](docs/images/profile-memory-en.png) · [UX review](docs/UX-REVIEW-2026-10-25.md)
+[Stream preview](docs/images/stream-timeline-en.png) · [My profile preview](docs/images/profile-memory-en.png) · [Writing UX verification](docs/UX-REVIEW-2026-10-28.md) · [Earlier UX review](docs/UX-REVIEW-2026-10-25.md)
 
 ## Development and implementation
 

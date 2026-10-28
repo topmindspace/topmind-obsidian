@@ -3,7 +3,7 @@
 // Views and the plugin entry used to copy these three helpers. Keep one
 // implementation so "open Stream / open Copilot / open Settings" cannot drift.
 
-import { type App, type WorkspaceLeaf } from "obsidian";
+import { TFile, type App, type WorkspaceLeaf } from "obsidian";
 import {
   VIEW_TYPE_STREAM_WORKBENCH,
   VIEW_TYPE_SIDEBAR_DOCK,
@@ -39,6 +39,40 @@ export async function openSidebarDock(app: App): Promise<WorkspaceLeaf | null> {
   });
   await app.workspace.revealLeaf(leaf);
   return leaf;
+}
+
+/** Kernel writes the note on disk; wait for Obsidian to index it before opening. */
+export async function openCreatedMarkdownNote(app: App, relativePath: string): Promise<void> {
+  const indexed = () => {
+    const file = app.vault.getAbstractFileByPath(relativePath);
+    return file instanceof TFile ? file : null;
+  };
+  let file = indexed();
+  if (!file) {
+    file = await new Promise<TFile>((resolve, reject) => {
+      let settled = false;
+      let ref: ReturnType<typeof app.vault.on> | null = null;
+      let timer: number | null = null;
+      const finish = (found: TFile | null) => {
+        if (settled) return;
+        settled = true;
+        if (timer !== null) window.clearTimeout(timer);
+        if (ref) app.vault.offref(ref);
+        if (found) resolve(found);
+        else reject(new Error(`Obsidian has not indexed ${relativePath}`));
+      };
+      ref = app.vault.on("create", created => {
+        if (created.path === relativePath && created instanceof TFile) finish(created);
+      });
+      // Close the race between the first lookup and event subscription.
+      const appeared = indexed();
+      if (appeared) finish(appeared);
+      else timer = window.setTimeout(() => finish(indexed()), 5000);
+    });
+  }
+  const leaf = app.workspace.getLeaf(true);
+  await leaf.openFile(file);
+  await app.workspace.revealLeaf(leaf);
 }
 
 /**

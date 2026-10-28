@@ -3,7 +3,23 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { captureChatFocus, buildFocusContext, persistableChatFocus } from "../src/services/editor-context.ts";
+import { captureChatFocus, buildFocusContext, persistableChatFocus, selectionReviewFocus } from "../src/services/editor-context.ts";
+
+test('selection review binds the exact editor text and denies writes by default', () => {
+  const editor = {
+    getSelection: () => '  Selected paragraph  ',
+    getValue: () => '# Draft\nSelected paragraph',
+    getCursor: which => ({ line: which === 'to' ? 2 : 1 }),
+  };
+  const focus = selectionReviewFocus(editor, '00-Inbox/Draft.md');
+  assert.equal(focus.path, '00-Inbox/Draft.md');
+  assert.equal(focus.selection, 'Selected paragraph');
+  assert.equal(focus.startLine, 2);
+  assert.equal(focus.endLine, 3);
+  assert.deepEqual(focus.taskIntent, { targetPath: '00-Inbox/Draft.md', skillId: 'topmind-revise', output: 'review', allowWeb: false });
+  assert.equal(selectionReviewFocus({ ...editor, getSelection: () => '  ' }, '00-Inbox/Draft.md'), null);
+  assert.equal(selectionReviewFocus(editor, 'image.png'), null);
+});
 
 test("sidebar focus still captures the most recent main editor and its selection", () => {
   const focus = captureChatFocus({

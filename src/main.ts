@@ -9,8 +9,8 @@
 // hygiene: secrets must not land in synced vault files). On load, if a backup
 // already exists it can still restore missing keys (last-known-good).
 
-import { captureChatFocus } from "./services/editor-context.ts";
-import { Plugin, WorkspaceLeaf, Notice, setIcon } from "obsidian";
+import { captureChatFocus, selectionReviewFocus, type ChatFocus } from "./services/editor-context.ts";
+import { Plugin, WorkspaceLeaf, Notice, setIcon, type Editor } from "obsidian";
 import { chmodSync } from "node:fs";
 import { DEFAULT_SETTINGS, migrateSettings, hasConfiguredProvider, isAiProviderType, type TopmindSettings } from "./types.ts";
 import { isRecord, parseJsonUnknown } from "./utils.ts";
@@ -203,23 +203,27 @@ export default class TopmindPlugin extends Plugin {
       (leaf: WorkspaceLeaf) => new MemoryBrowseView(leaf, this),
     );
 
-    // ── Ribbon icon: quick capture (pen) ──
-    // Obsidian stacks later-registered ribbon icons on top.
-    // Register waves first so it sits LAST; pencil second so it sits FIRST.
+    // Obsidian stacks later-registered ribbon icons on top. Writing is the
+    // primary entry, followed by capture; Stream remains one click away.
     this.addRibbonIcon("waves", t("sidebar_open_workbench"), () => {
       void this.openWorkbench();
-    });
-    this.addRibbonIcon("file-pen", t("writing_title"), () => {
-      new WritingModal(this, captureChatFocus(this.app.workspace)?.path || "").open();
     });
     this.addRibbonIcon("pencil", t("quick_capture_title"), () => {
       this.openQuickCapture();
     });
+    this.addRibbonIcon("file-pen", t("writing_title"), () => {
+      new WritingModal(this, captureChatFocus(this.app.workspace)?.path || "").open();
+    });
 
     // ── Commands ──
     this.registerCommands();
-    this.registerEvent(this.app.workspace.on("editor-menu", (menu, _editor, view) => {
-      if (view.file?.path.endsWith(".md")) menu.addItem(item => item.setTitle(t("writing_title")).setIcon("file-pen").onClick(() => new WritingModal(this, view.file?.path || "").open()));
+    this.registerEvent(this.app.workspace.on("editor-menu", (menu, editor, view) => {
+      const path = view.file?.path;
+      if (!path?.endsWith(".md")) return;
+      if (editor.getSelection().trim()) {
+        menu.addItem(item => item.setTitle(t("selection_review_title")).setIcon("sparkles").onClick(() => { void this.reviewSelection(editor, path); }));
+      }
+      menu.addItem(item => item.setTitle(t("writing_title")).setIcon("file-pen").onClick(() => new WritingModal(this, path).open()));
     }));
     this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
       if (file.path.endsWith(".md")) menu.addItem(item => item.setTitle(t("writing_title")).setIcon("file-text").onClick(() => new WritingModal(this, file.path).open()));
@@ -279,6 +283,23 @@ export default class TopmindPlugin extends Plugin {
         callback: def.run,
       });
     }
+    this.addCommand({
+      id: "review-selection",
+      name: t("cmd_review_selection"),
+      editorCallback: (editor, view) => {
+        if (view.file?.path) void this.reviewSelection(editor, view.file.path);
+      },
+    });
+  }
+
+  private async reviewSelection(editor: Editor, path: string): Promise<void> {
+    const focus: ChatFocus | null = selectionReviewFocus(editor, path);
+    if (!focus) { new Notice(t("selection_review_select_text")); return; }
+    const leaf = await openSidebarDock(this.app);
+    if (!(leaf?.view instanceof SidebarDockView)) { new Notice(t("writing_sidebar_unavailable")); return; }
+    if (!hasConfiguredProvider(this.settings.ai)) { leaf.view.revealTab("chat"); return; }
+    if (leaf.view.isWritingBusy()) { new Notice(t("chat_working")); return; }
+    await leaf.view.startWriting(t("selection_review_prompt"), focus);
   }
 
   /**
@@ -304,6 +325,7 @@ export default class TopmindPlugin extends Plugin {
       CMD_OPEN_PROFILE,
       CMD_OPEN_INBOX,
       "writing-delivery",
+      "review-selection",
     ]) {
       try {
         commands?.removeCommand?.(`${this.manifest.id}:${id}`);

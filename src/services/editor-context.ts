@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import type { Workspace } from "obsidian";
+import type { Editor, Workspace } from "obsidian";
 import { resolveInsideVault } from "../bridge/vault-bridge.ts";
 import type { TaskIntent } from "#kernel/agent-task-contract.mjs";
 import { VIEW_TYPE_SIDEBAR_DOCK } from "../constants.ts";
@@ -47,6 +47,21 @@ export function captureChatFocus(workspace: Workspace): ChatFocus | null {
     path: file.path,
     ...(editor ? { editorText: editor.getValue(), startLine: editor.getCursor("from").line + 1 } : {}),
     ...(selection ? { selection: selection.slice(0, 4000), endLine: (editor?.getCursor("to").line || 0) + 1 } : {}),
+  };
+}
+
+/** Native editor selection action: bind the exact note and review-only intent. */
+export function selectionReviewFocus(editor: Editor, relativePath: string): ChatFocus | null {
+  if (!/\.md$/iu.test(relativePath)) return null;
+  const selection = editor.getSelection().trim();
+  if (!selection) return null;
+  return {
+    path: relativePath,
+    selection: selection.slice(0, 4000),
+    startLine: editor.getCursor("from").line + 1,
+    endLine: editor.getCursor("to").line + 1,
+    editorText: editor.getValue(),
+    taskIntent: { targetPath: relativePath, skillId: "topmind-revise", output: "review", allowWeb: false },
   };
 }
 
