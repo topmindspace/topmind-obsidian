@@ -118,11 +118,11 @@ AI设置可控制自动使用全局记忆和上下文窗口上限。写作先使
 
 在 Obsidian 命令面板搜索 **Topmind**：写作与交付、AI 审阅选中内容、记一下、打开动态、打开侧边栏、整理本周、刷新 AI 建议、AI 整理待办、专题分类、整理我的情况、打开我的情况、打开 Inbox。插件不设置默认全局快捷键，可在 **设置 → 快捷键** 自行绑定。
 
-[动态预览](docs/images/stream-timeline-zh.png) · [我的情况预览](docs/images/profile-memory-zh.png) · [写作体验验收](docs/UX-REVIEW-2026-10-28.md) · [此前体验检查](docs/UX-REVIEW-2026-10-25.md)
+[动态预览](docs/images/stream-timeline-zh.png) · [我的情况预览](docs/images/profile-memory-zh.png)
 
 ## 开发与实现
 
-内容、工具与权限边界见 [ARCHITECTURE.md](ARCHITECTURE.md)，交互约定见 [DESIGN.md](DESIGN.md)。运行时与未完成能力见[架构整改记录](docs/OBSIDIAN-REFACTOR-2026-10-25.md)。插件使用 Obsidian 原生编辑器，Desktop 使用自己的编辑器；两端共用 Kernel 内容契约，不搬入两套文件管理系统。
+内容、工具与权限边界见 [ARCHITECTURE.md](ARCHITECTURE.md)，交互约定见 [DESIGN.md](DESIGN.md)。生产对话仍是那里描述的兼容 JSON 工具循环。插件使用 Obsidian 原生编辑器，Desktop 使用自己的编辑器；两端共用 Kernel 内容契约，不搬入两套文件管理系统。
 
 完整验证在 Node 22.22.3 下运行，测试需要 TypeScript 类型擦除支持。`npm ci` 使用 lockfile，`npm run typecheck` 会同步可用的 Kernel 来源；正式 build 使用 vendored 快照。
 

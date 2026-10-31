@@ -75,7 +75,7 @@ const balanced: WorkspaceTemplate = {
   templateId: "balanced",
   version: "4.0.0",
   name: "平衡知识型",
-  description: "适合知识工作者：动态、专题，兼顾低摩擦记录与知识沉淀。",
+  description: "适合知识工作者：动态、专题，兼顾低摩擦记录与长期事实。",
   categories: {
     "00": { name: "Inbox", role: "buffer", required: true },
     "10": { name: "动态", role: "loose-stream", specialBehavior: "flat-default" },
@@ -97,7 +97,7 @@ const balancedEn: WorkspaceTemplate = {
   templateId: "balanced",
   name: "Balanced Knowledge",
   description:
-    "For knowledge workers: Stream, Topics, balancing low-friction capture with knowledge consolidation.",
+    "For knowledge workers: Stream and Topics, with low-friction capture and a place for long-term facts.",
   categories: {
     "00": { name: "Inbox" },
     "10": { name: "Stream" },
@@ -112,7 +112,7 @@ const periodic: WorkspaceTemplate = {
   templateId: "periodic",
   version: "4.0.0",
   name: "周期回顾型",
-  description: "同 balanced + 强周期回顾：动态、专题，强调周期复盘与记忆沉淀。",
+  description: "同 balanced + 强周期回顾：动态、专题，强调周期复盘，并记到我的情况。",
   categories: {
     "00": { name: "Inbox", role: "buffer", required: true },
     "10": { name: "动态", role: "loose-stream", specialBehavior: "flat-default" },

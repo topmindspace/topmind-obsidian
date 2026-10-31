@@ -111,6 +111,16 @@ test('publish refuses to overwrite a previous delivery snapshot', async t => {
   assert.match(fs.readFileSync(path.join(root, first.relativePath), 'utf8'), /original/);
 });
 
+test('publish does not clone creation identity into a second Markdown note', async t => {
+  const { root, ctx } = fixture(t);
+  const source = path.join(root, '00-Inbox/note.md');
+  fs.writeFileSync(source, '---\ncreation_id: 426ca86c-eabc-4cb1-86d2-9a59437fb532\n---\n\n# Original\n');
+  const result = await runAgentTool(ctx, { tool: 'publish_to_outputs', relativePath: '00-Inbox/note.md' });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /creation-metadata-copy-blocked/);
+  assert.equal(fs.readFileSync(source, 'utf8').includes('creation_id:'), true);
+});
+
 test('the proposal card applies through the existing Kernel confirmation path', async t => {
   const { root } = fixture(t);
   const card=createChatMemoryProposal({content:'Prefers concise and concrete replies',title:'Preference'},'memory/profile.md');

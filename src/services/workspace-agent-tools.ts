@@ -6,6 +6,7 @@
 
 import fs from "node:fs";
 import { normalizeAgentToolCall } from "#kernel/agent-tool-catalog.mjs";
+import { parseCreationFrontmatter } from "#kernel/creation-frontmatter.mjs";
 import { bundledSkills, bundledSkillResource } from "./skill-resources.ts";
 import { prepareWritingDelivery } from "./writing-delivery.ts";
 import path from "node:path";
@@ -1135,6 +1136,15 @@ export function publishToOutputs(
     if (leavesVault(ctx.workspaceRoot, destAbs)) return { ok: false, tool, error: "path-escapes-vault" };
     if (fs.existsSync(destAbs)) return { ok: false, tool, error: `dest exists: ${dest}` };
     const content = fs.readFileSync(abs, "utf8");
+    if (/\.md$/iu.test(rel)) {
+      const parsed = parseCreationFrontmatter(content);
+      const hasCreationMetadata = parsed.valid && Object.keys(parsed.fields).some((key) => key.startsWith("creation_"));
+      const uncertainCreationMetadata = parsed.exists && !parsed.valid &&
+        /(?:^|\n)creation_(?:id|variant_id|parent_id|target|source_sha256|cover)\s*:/u.test(content.slice(0, 256 * 1024));
+      if (hasCreationMetadata || uncertainCreationMetadata) {
+        return { ok: false, tool, error: "creation-metadata-copy-blocked: use an explicit delivery conversion" };
+      }
+    }
     const kernel = ctx.kernel;
     const contract = kernel.loadContract(ctx.workspaceRoot);
     const mode = ctx.writebackMode || "auto";

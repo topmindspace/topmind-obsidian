@@ -118,11 +118,11 @@ Proactive organization and memory suggestions can be dismissed. Requested conten
 
 Search **Topmind** in Obsidian's command palette for Writing & delivery, Review selection with AI, Note it, Open Stream, Open sidebar, Reconcile this week, Refresh AI suggestions, AI tidy todos, Classify topics, Organize my profile, Open my profile, and Open Inbox. No default global hotkeys are assigned; bind your own in **Settings → Hotkeys**.
 
-[Stream preview](docs/images/stream-timeline-en.png) · [My profile preview](docs/images/profile-memory-en.png) · [Writing UX verification](docs/UX-REVIEW-2026-10-28.md) · [Earlier UX review](docs/UX-REVIEW-2026-10-25.md)
+[Stream preview](docs/images/stream-timeline-en.png) · [My profile preview](docs/images/profile-memory-en.png)
 
 ## Development and implementation
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for data, tool, privacy and permission boundaries, and [DESIGN.md](DESIGN.md) for interaction decisions. The [refactor record](docs/OBSIDIAN-REFACTOR-2026-10-25.md) explains the runtime and remaining work. Obsidian keeps its native editor; Desktop has its own editor. Both use Kernel content contracts.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for data, tool, privacy and permission boundaries, and [DESIGN.md](DESIGN.md) for interaction decisions. The production chat runtime is the compatible JSON tool loop described there. Obsidian keeps its native editor; Desktop has its own editor. Both use Kernel content contracts.
 
 The full verification runs on Node 22.22.3; tests need TypeScript type-stripping support. `npm ci` uses the lockfile. `npm run typecheck` syncs an available Kernel source; production builds use the vendored snapshot.
 

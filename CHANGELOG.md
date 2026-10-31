@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.23.2 — 2026-10-31
+
+- 内置 Kernel 快照支持创作身份、变体和封面的只读检查，以及受写闸保护的显式关系写入。普通改稿不能改这些关系字段。
+- 核心技能快照升至 4.15.10，写作快照升至 0.9.2。长度与文章结果跟随独立写作包，插件不启用平台发布规则。
+- 说明文案不再把「沉淀」当成产品动词。现行架构和交互以 ARCHITECTURE.md 与 DESIGN.md 为准。
+
 ## 4.23.1 — 2026-10-28
 
 - Place Writing & delivery at a discoverable Ribbon position and keep New note and Writing as the two document actions in the workbench. Creating a note opens it in a new active tab after Obsidian indexes the file.

@@ -1,6 +1,6 @@
 # 4.20.0 整改记录：共享契约、持久会话与执行边界
 
-本轮在 4.19.0 审查基础上完成代码整改与本地发行包，未发布远端版本，也未安装进用户日常 Vault。此前审查的方案判断保留为[历史证据](OBSIDIAN-AUDIT-2026-10-25.md)，当前实现见 [ARCHITECTURE](../ARCHITECTURE.md)。
+本文只记录 4.20.0 的整改。其后版本已经发行。现行行为见 [ARCHITECTURE](../ARCHITECTURE.md) 与 [DESIGN](../DESIGN.md)。此前审查保留为[历史证据](OBSIDIAN-AUDIT-2026-10-25.md)。
 
 ## 结论与取舍
 

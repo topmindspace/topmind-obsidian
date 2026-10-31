@@ -34,6 +34,8 @@ const { snapshot } = buildHostPack(writingSource);
 fs.writeFileSync(path.join(root, 'src/data/writing-pack.json'), JSON.stringify(snapshot) + '\n');
 const runtimeDir = path.join(root, 'src/generated/writing');
 fs.mkdirSync(runtimeDir, { recursive: true });
-for (const name of ['article-renderer.mjs', 'article-renderer.d.mts']) fs.writeFileSync(path.join(runtimeDir, name), snapshot.resources[`runtime/${name}`]);
+for (const key of Object.keys(snapshot.resources).filter(name => /^runtime\/[^/]+\.(?:mjs|mts)$/u.test(name)).sort()) {
+  fs.writeFileSync(path.join(runtimeDir, key.slice('runtime/'.length)), snapshot.resources[key]);
+}
 console.log(`Synced independent writing pack ${snapshot.version}, ${snapshot.skills.length} skills (${snapshot.digest})`);
 console.log(`Synced ${skills.length} skills and ${Object.keys(resources).length} Markdown resources (${fs.statSync(output).size} bytes)`);

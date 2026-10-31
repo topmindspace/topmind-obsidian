@@ -72,11 +72,11 @@ export const enUS: typeof zhCN = {
   // ── Suggestions ──
   suggestions_title: "AI Suggestions",
   suggestions_empty: "No suggestions",
-  suggestions_empty_hint: "AI will show suggestions after organizing",
+  suggestions_empty_hint: "Log something on the stream first. Suggestions show up here after you organize.",
   suggestions_disabled: "AI suggestions disabled",
   suggestions_disabled_hint: "Enable \"Auto-prepare AI Suggestions\" in settings",
   suggestions_no_ai: "AI not configured",
-  suggestions_no_ai_hint: "Configure an AI provider to enable suggestions",
+  suggestions_no_ai_hint: "Open Settings and add a provider, then come back for suggestions.",
   suggestions_confirm: "Confirm",
   suggestions_open: "Open",
   suggestions_open_confirm: "Review",
@@ -204,6 +204,7 @@ export const enUS: typeof zhCN = {
   task_recent: "Recent tasks",
   task_clear_history: "Clear history",
   task_no_history: "No task history",
+  task_no_history_hint: "Say what you want in Chat. Finished tasks show up here.",
   task_result_failed: "Failed",
 
   // ── AI Operation Labels ──

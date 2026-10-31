@@ -684,7 +684,7 @@ export class StreamWorkbenchView extends ItemView {
     const action = emptyDiv.createDiv({ cls: "tm-empty-action" });
     const captureBtn = action.createEl("button", {
       text: t("quick_capture_title"),
-      cls: "tm-btn-primary mod-cta",
+      cls: "tm-btn-secondary",
     });
     captureBtn.addEventListener("click", () => {
       this.plugin.openQuickCapture();

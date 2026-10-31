@@ -28,7 +28,7 @@ export const zhCN = {
 
   // ── Plugin ──
   plugin_name: "Topmind Stream",
-  plugin_description: "Obsidian 的「主区域动态流 + 静默 AI 沉淀副驾」",
+  plugin_description: "Obsidian 的主区域动态流和 AI 副驾",
 
   // ── Views ──
   stream_workbench_title: "动态",
@@ -70,11 +70,11 @@ export const zhCN = {
   // ── Suggestions ──
   suggestions_title: "AI 建议",
   suggestions_empty: "暂无建议",
-  suggestions_empty_hint: "AI 会在整理后给出建议",
+  suggestions_empty_hint: "先在动态里记下。整理之后，建议会出现在这里。",
   suggestions_disabled: "AI 建议已关闭",
   suggestions_disabled_hint: "在设置中开启「自动准备 AI 建议」",
   suggestions_no_ai: "未配置 AI",
-  suggestions_no_ai_hint: "配置 AI 服务商后可使用建议功能",
+  suggestions_no_ai_hint: "打开设置，配置服务商后再来看建议。",
   suggestions_confirm: "确认执行",
   suggestions_open: "打开",
   suggestions_open_confirm: "打开确认",
@@ -202,6 +202,7 @@ export const zhCN = {
   task_recent: "最近任务",
   task_clear_history: "清空历史",
   task_no_history: "暂无任务记录",
+  task_no_history_hint: "在「对话」里说你想做的事，完成后会出现在这里。",
   task_result_failed: "失败",
 
   // ── AI Operation Labels ──

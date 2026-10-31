@@ -255,15 +255,22 @@ export function durableChatAnswerGuide(locale: "zh" | "en"): string {
 export function buildObsidianChatToolGuide(locale?: string | null, writebackMode?: "auto" | "confirm", turnKind: TurnKind = "task", allowedTools?: string[], documentTask = false): string {
   const lang = resolveChatPromptLocale(locale);
   const en = lang === "en";
-  return [
+  const parts = [
     en ? "Work toward the requested outcome within the host task contract. Stop on completion, a blocker, or host limits. Reads and writes require real tools." : "在宿主任务约束内完成用户所需结果。完成、遇到阻塞或达到宿主上限时停止；读写必须依据真实工具结果。",
     en ? "When native function tools are unavailable, emit one JSON object with tool plus arguments, without extra prose." : "没有原生函数工具时，每次只输出一个包含 tool 和参数的 JSON 对象，不混入其他文字。",
     formatAgentToolGuide({ locale: en ? "en-US" : "zh-CN", host: "obsidian", turnKind, allowedTools }),
     en ? "Use read_file before editing incomplete context. edit_file performs a unique-span edit using oldText; reuse returned contentHash. No shell tool is available." : "上下文不完整时先 read_file；edit_file 使用唯一片段编辑并复用 contentHash。没有 shell 工具。",
     describeWritebackModeForPrompt(writebackMode, lang),
     en ? "Memory changes use propose_memory_change to create a real review card. Pending review is not a completed write." : "记忆变更用 propose_memory_change 生成真实审阅卡片，待确认不等于写入完成。",
-    documentTask ? (en ? "Deliver the requested article result and stop. Do not emit PLAN/DONE markers or invent new tasks." : "交付所需文章结果后停止，不输出 PLAN/DONE 标记，不增加额外任务。") : buildGoalProtocolPrompt(en ? "en" : "zh"),
-  ].join("\n\n");
+  ];
+  if (documentTask) {
+    parts.push(en
+      ? "Deliver the requested article result and stop. Do not emit PLAN/DONE markers or invent new tasks."
+      : "交付所需文章结果后停止，不输出 PLAN/DONE 标记，不增加额外任务。");
+  } else if (turnKind !== "light") {
+    parts.push(buildGoalProtocolPrompt(en ? "en" : "zh"));
+  }
+  return parts.join("\n\n");
 }
 
 export async function runWorkspaceChatTurn(

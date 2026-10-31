@@ -107,5 +107,29 @@ describe("Obsidian labeled-button chrome (shipped)", () => {
     assert.match(think, /tm-loading-spinner-sm/);
     assert.match(think, /t\("chat_thinking"\)/);
   });
+
+  test("empty stream, history, and suggestions name one next step without a second solid action", () => {
+    const emptyStart = workbench.indexOf("private renderEmptyStream");
+    const empty = workbench.slice(emptyStart, workbench.indexOf("private updateEntryCount", emptyStart));
+    assert.match(empty, /tm-btn-secondary/);
+    assert.doesNotMatch(empty, /mod-cta|tm-btn-primary/);
+    assert.match(workbench, /cls: "tm-submit-btn mod-cta"/);
+    assert.match(sidebar, /t\("task_no_history_hint"\)/);
+    assert.doesNotMatch(sidebar, /t\("task_no_history"\),\s*""/);
+    const jargon = /UTR|引擎|protection|沉淀/u;
+    for (const [label, file] of [["zh", zh], ["en", en]]) {
+      for (const key of ["task_no_history_hint", "suggestions_empty_hint", "suggestions_no_ai_hint", "stream_empty_hint"]) {
+        const value = file.match(new RegExp(`${key}:\\s*"([^"]*)"`))?.[1] || "";
+        assert.ok(value.length > 8, `${label} ${key}`);
+        assert.doesNotMatch(value, jargon, `${label} ${key}`);
+      }
+    }
+    assert.match(zh, /task_no_history_hint:\s*"[^"]*对话/);
+    assert.match(en, /task_no_history_hint:\s*"[^"]*Chat/);
+    assert.match(zh, /suggestions_empty_hint:\s*"[^"]*记下/);
+    assert.match(en, /suggestions_empty_hint:\s*"[^"]*stream/);
+    assert.match(zh, /suggestions_no_ai_hint:\s*"[^"]*设置/);
+    assert.match(en, /suggestions_no_ai_hint:\s*"[^"]*Settings/);
+  });
 });
 

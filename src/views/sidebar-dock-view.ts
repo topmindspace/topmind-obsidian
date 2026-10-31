@@ -1563,7 +1563,7 @@ export class SidebarDockView extends ItemView {
     // Recent history
     const recent = progress.recent.slice().reverse(); // newest first
     if (recent.length === 0) {
-      this.renderEmptyState(section, t("task_no_history"), "", "history");
+      this.renderEmptyState(section, t("task_no_history"), t("task_no_history_hint"), "history");
     } else {
       const recentHeader = section.createDiv({ cls: "tm-history-section-header" });
       recentHeader.createSpan({ text: t("task_recent") });

@@ -69,6 +69,41 @@ describe("writeback + agent-step policy parity with Desktop", () => {
     assert.equal(ops.MAX_AUTO_CONTINUES, 2);
   });
 
+  test("non-document chat guide embeds the shipped goal protocol and confirm write floor", async () => {
+    const ops = await import(pathToFileURL(path.join(pluginSrc, "services/chat-agent.ts")).href);
+    const protocolMod = await import("#kernel/agent-goal-protocol.mjs");
+    const policy = await import("#kernel/agent-policy.mjs");
+    for (const loc of ["zh-CN", "en-US"]) {
+      const lang = loc.startsWith("en") ? "en" : "zh";
+      const goal = protocolMod.buildGoalProtocolPrompt(lang);
+      assert.ok(goal.length > 200, loc);
+      for (const mode of ["auto", "confirm"]) {
+        const guide = ops.buildObsidianChatToolGuide(loc, mode, "task", undefined, false);
+        assert.equal(guide.includes(goal), true, `${loc} ${mode}`);
+        assert.equal(policy.MODEL_A_FORBIDDEN_RE.test(guide), false, `${loc} ${mode}`);
+        if (mode === "confirm") {
+          const copy = policy.describeWritebackModeForPrompt("confirm", lang);
+          const needle = lang === "zh" ? "需要改文件" : "when files must change";
+          const floor = copy.slice(copy.indexOf(needle));
+          assert.ok(floor.length > 10, loc);
+          assert.equal(guide.includes(floor), true, floor);
+        }
+        const light = ops.buildObsidianChatToolGuide(loc, mode, "light", undefined, false);
+        assert.equal(light.includes("[PLAN]"), false, `${loc} ${mode} light`);
+        assert.equal(light.includes("[DONE]"), false, `${loc} ${mode} light`);
+        assert.equal(light.includes(goal), false, `${loc} ${mode} light`);
+        const query = ops.buildObsidianChatToolGuide(loc, mode, "query", undefined, false);
+        assert.equal(query.includes(goal), true, `${loc} ${mode} query`);
+      }
+      const documentGuide = ops.buildObsidianChatToolGuide(loc, "confirm", "task", undefined, true);
+      assert.equal(documentGuide.includes(goal), false, loc);
+      assert.match(documentGuide, lang === "en" ? /Do not emit PLAN\/DONE/ : /不增加额外任务/);
+    }
+    for (const forbidden of ["只读 — 只分析不写", "可粘贴草稿", "no write tools", "不注册写工具"]) {
+      assert.equal(policy.MODEL_A_FORBIDDEN_RE.test(forbidden), true, forbidden);
+    }
+  });
+
   test("tool guide keeps unique-span edits and explicit host stopping conditions", async () => {
     const ops = await import(
       pathToFileURL(path.join(pluginSrc, "services/chat-agent.ts")).href

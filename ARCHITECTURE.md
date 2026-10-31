@@ -131,7 +131,7 @@ npm run pack:verify
 
 ## Pi 演进决策
 
-[前次审查与 Pi 实验](docs/OBSIDIAN-AUDIT-2026-10-25.md) 是历史证据；[本轮整改](docs/OBSIDIAN-REFACTOR-2026-10-25.md) 记录新的交付。首选继续评估 Pi Agent Core，通过小型传输/事件适配接入现有共享契约与 ChatController；无需整体引入 coding CLI 的文件系统、认证和资源发现。
+生产运行时是兼容 JSON 工具循环，工具名称、schema 和写闸以 Kernel 为准。Pi Agent Core 仍只是迁移候选：要通过小型传输/事件适配接入现有共享契约与 ChatController，不引入 coding CLI 的文件系统、认证和资源发现。2026-10-25 的审查与整改记录是历史证据，不描述当前发行。
 
 迁移完成条件是实际宿主的原生工具消息、服务商协议、取消、长会话压缩、暂停恢复和写闸等价测试全部通过。安装一个框架包不构成这些能力已完成。当前保留兼容循环，但不再给它复制第二份工具 schema 和权限规则。
 
