@@ -11,12 +11,15 @@ export function bundledSkills() {
 
 /** Only reviewed snapshot resources are readable; relative links resolve from the activating skill. */
 export function bundledSkillResource(relative: string, skillId?: string): string | null {
-  if (!relative || path.isAbsolute(relative) || relative.includes("\\")) return null;
-  const root = path.resolve("/topmind-bundled-skills");
-  const selected = skillId && writing.skills.some(skill => skill.id === skillId) ? writing : pack;
+  const cleaned = relative.replace(/\\/gu, "/");
+  if (!cleaned || path.posix.isAbsolute(cleaned) || /^[A-Za-z]:/u.test(cleaned)) return null;
+  if (!skillId && cleaned.split("/").includes("..")) return null;
+  const normalized = path.posix.normalize(cleaned);
+  const prefix = normalized.split("/")[0];
+  const selected = writing.skills.some(skill => skill.id === (skillId || prefix)) ? writing : pack;
   if (skillId && !selected.skills.some(skill => skill.id === skillId)) return null;
-  const absolute = path.resolve(root, skillId || "", relative);
-  const key = path.relative(root, absolute).replace(/\\/gu, "/");
-  if (key === ".." || key.startsWith("../") || path.isAbsolute(key)) return null;
-  return (selected.resources as Record<string, string>)[key] ?? null;
+  const packRelative = !skillId || [skillId, "shared", "runtime"].includes(prefix);
+  const key = packRelative ? normalized : path.posix.join(skillId, cleaned);
+  const resources = selected.resources as Record<string, string>;
+  return Object.hasOwn(resources, key) ? resources[key] : null;
 }

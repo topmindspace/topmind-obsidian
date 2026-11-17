@@ -10,8 +10,10 @@ import { memoryFence } from "#kernel/agent-tool-policy.mjs";
 import { buildAgentToolCatalog, formatAgentToolGuide, normalizeAgentToolCall, filterAgentToolsForTurn } from "#kernel/agent-tool-catalog.mjs";
 import { classifyTurn, type TurnKind, applyGoalUpdate, assessGoalCompletion, buildContinuePrompt, buildGoalProtocolPrompt, buildTaskLedger, decideAutoContinue, harvestPathReceipts, rejectBareDone, resolveMaxAutoContinues, restoreSessionGoal, type GoalState } from "#kernel/agent-goal-protocol.mjs";
 import { runAgentTool, loadSkill } from "./workspace-agent-tools.ts";
-import { resolveTaskContract, createTaskExecutionGuard, taskContractPrompt, taskAllowsTool, taskStopMessage, documentTaskOutcome, type TaskIntent, type TaskContract } from "#kernel/agent-task-contract.mjs";
+import { resolveTaskContract, createTaskExecutionGuard, taskContractPrompt, taskAllowsTool, taskStopMessage, documentTaskOutcome, workspaceWriteOutcome, resumesWorkspaceTask, resumeExecutionPrompt, isTaskExecutionCheckpoint, type TaskIntent, type TaskContract, type TaskExecutionCheckpoint } from "#kernel/agent-task-contract.mjs";
+import { getPendingWriteReviews } from "#kernel/pending-writes.mjs";
 import { captureToWorkspace, readWorkspaceWindow, preciseEditWorkspace, resolveContractWritebackMode, appendStreamEntryToWorkspace } from "./kernel-workspace-ops.ts";
+import { explicitProfileChange } from "./chat-memory-proposal.ts";
 
 export type WorkspaceChatGenerate = (
   prompt: string,
@@ -20,7 +22,7 @@ export type WorkspaceChatGenerate = (
 
 export interface ChatProgressEvent {
   kind: "step" | "tool" | "continue" | "done" | "checkpoint";
-  goal?: { task?: TaskContract; goal: string; plan: string[]; criteria: string[]; openCriteria: string[]; pathReceipts: string[]; status: string; blockReason: string | null; autoContinues: number };
+  goal?: { task?: TaskContract; execution?: TaskExecutionCheckpoint; goal: string; plan: string[]; criteria: string[]; openCriteria: string[]; pathReceipts: string[]; modifiedPaths?: string[]; status: string; blockReason: string | null; autoContinues: number };
   step: number;
   maxSteps: number;
   tool?: string;
@@ -64,6 +66,7 @@ export interface WorkspaceChatTurnOpts {
    */
   priorGoal?: {
     task?: TaskContract;
+    execution?: TaskExecutionCheckpoint;
     goal?: string;
     plan?: string[];
     criteria?: string[];
@@ -87,74 +90,28 @@ function stripThinking(raw: string): string {
 }
 
 /**
- * Extract a single tool-call JSON from model output.
- * Accepts bare JSON, fenced JSON, or a JSON object embedded in prose.
- * Unknown tool names still return so the loop can feed an error and continue
- * (breaking on them would look like "agent finished").
+ * A tool call occupies the entire reply after removing provider reasoning.
+ * Keep code samples embedded in a final answer as visible reply content.
  */
 export function parseToolCall(text: string): Record<string, unknown> | null {
-  const cleaned = stripThinking(text);
-  if (!cleaned) return null;
-  const tryParse = (s: string): Record<string, unknown> | null => {
-    try {
-      const obj = parseJsonUnknown(s);
-      if (!isRecord(obj)) return null;
-      const tool = String(obj.tool || obj.name || "");
-      if (!tool) return null;
-      return obj;
-    } catch {
-      return null;
-    }
-  };
-  const direct = tryParse(cleaned);
-  if (direct) return direct;
-  const fence = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/iu);
-  if (fence) {
-    const inner = tryParse(fence[1].trim());
-    if (inner) return inner;
+  const source = text.trim();
+  const call = parseStandaloneToolCall(source);
+  if (call) return call;
+  const cleaned = stripThinking(source);
+  return cleaned !== source ? parseStandaloneToolCall(cleaned) : null;
+}
+
+function parseStandaloneToolCall(text: string): Record<string, unknown> | null {
+  if (!text.startsWith("{") && !text.startsWith("```")) return null;
+  const fence = text.match(/^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/iu);
+  try {
+    const call = parseJsonUnknown(fence?.[1] ?? text);
+    if (!isRecord(call)) return null;
+    if (typeof call.tool === "string" && call.tool.trim()) return call;
+    return call.tool === undefined && typeof call.name === "string" && isKnownTool(call.name) ? call : null;
+  } catch {
+    return null;
   }
-  // Prefer an object whose "tool" is known; fall back to any tool-shaped object.
-  const toolRe = /\{[^{}]*"tool"\s*:\s*"[^"]+"[^{}]*\}/gu;
-  const candidates: Array<Record<string, unknown>> = [];
-  let m: RegExpExecArray | null;
-  while ((m = toolRe.exec(cleaned))) {
-    const rec = tryParse(m[0]);
-    if (rec) candidates.push(rec);
-  }
-  if (candidates.length) {
-    const known = candidates.find((c) => KNOWN_TOOLS.has(String(c.tool || c.name || "")));
-    return known || candidates[0];
-  }
-  // Balanced-brace scan for nested args (oldText with braces, etc.).
-  const start = cleaned.indexOf("{");
-  if (start >= 0) {
-    let depth = 0;
-    let inStr = false;
-    let esc = false;
-    for (let i = start; i < cleaned.length; i++) {
-      const ch = cleaned[i];
-      if (esc) {
-        esc = false;
-        continue;
-      }
-      if (ch === "\\") {
-        esc = true;
-        continue;
-      }
-      if (ch === '"') inStr = !inStr;
-      if (inStr) continue;
-      if (ch === "{") depth += 1;
-      else if (ch === "}") {
-        depth -= 1;
-        if (depth === 0) {
-          const rec = tryParse(cleaned.slice(start, i + 1));
-          if (rec && (rec.tool || rec.name)) return rec;
-          break;
-        }
-      }
-    }
-  }
-  return null;
 }
 
 export function isKnownTool(name: unknown): boolean {
@@ -261,7 +218,7 @@ export function buildObsidianChatToolGuide(locale?: string | null, writebackMode
     formatAgentToolGuide({ locale: en ? "en-US" : "zh-CN", host: "obsidian", turnKind, allowedTools }),
     en ? "Use read_file before editing incomplete context. edit_file performs a unique-span edit using oldText; reuse returned contentHash. No shell tool is available." : "上下文不完整时先 read_file；edit_file 使用唯一片段编辑并复用 contentHash。没有 shell 工具。",
     describeWritebackModeForPrompt(writebackMode, lang),
-    en ? "Memory changes use propose_memory_change to create a real review card. Pending review is not a completed write." : "记忆变更用 propose_memory_change 生成真实审阅卡片，待确认不等于写入完成。",
+    en ? "For inferred memory changes, use propose_memory_change to create a review card. Explicit supported profile commands are applied by the host. Pending review does not change the profile." : "推测出的记忆变更用 propose_memory_change 生成审阅卡片。宿主直接处理受支持的明确画像指令，待确认时画像尚未修改。",
   ];
   if (documentTask) {
     parts.push(en
@@ -289,19 +246,38 @@ export async function runWorkspaceChatTurn(
   cancelled?: boolean;
   goal?: {
     task?: TaskContract;
+    execution?: TaskExecutionCheckpoint;
     goal: string;
     plan: string[];
     criteria: string[];
     openCriteria: string[];
     pathReceipts: string[];
+    modifiedPaths?: string[];
     status: string;
     blockReason: string | null;
     autoContinues: number;
   };
 }> {
-  const task = opts.taskContract || resolveTaskContract({ userText: opts.userMessage, focusPath: opts.focus?.path, intent: opts.focus?.taskIntent, priorTask: opts.priorGoal?.task, capabilities: { vision: false, imageGeneration: false, imageRendering: false } });
+  const articleReview = opts.taskContract?.kind === "document" && opts.taskContract.output === "review";
+  const profileChange = !opts.focus?.taskIntent && !articleReview && explicitProfileChange(opts.userMessage);
+  const resolvedTask = opts.taskContract || resolveTaskContract({ userText: opts.userMessage, focusPath: opts.focus?.path, intent: opts.focus?.taskIntent, priorTask: opts.priorGoal?.task, capabilities: { vision: false, imageGeneration: false, imageRendering: false } });
+  const task = profileChange ? { ...resolvedTask, kind: "workspace", targetPath: null, blockReason: null } : resolvedTask;
+  const resumes = resumesWorkspaceTask(opts.userMessage, opts.priorGoal?.task, opts.focus?.taskIntent);
+  const checkpoint = resumes && isTaskExecutionCheckpoint(opts.priorGoal?.execution) ? opts.priorGoal.execution : null;
+  const reviewIds = checkpoint?.reviews.map(entry => entry.id) || [];
+  let reviews: ReturnType<typeof getPendingWriteReviews> = [];
+  try { if (reviewIds.length) reviews = getPendingWriteReviews(workspaceRoot, reviewIds); }
+  catch { /* Missing evidence blocks a resume. */ }
   const toolLimit = Math.max(1, Math.min(task.kind === "document" ? 16 : 48, Number(opts.maxSteps) || AGENT_STEPS_DEFAULT));
-  const guard = createTaskExecutionGuard(task, { maxCalls: toolLimit, maxModelCalls: toolLimit + 4 });
+  const guard = createTaskExecutionGuard(task, {
+    maxCalls: toolLimit, maxModelCalls: toolLimit + 4,
+    checkpoint, reviews, priorAwaitingReview: resumes && opts.priorGoal?.blockReason === "awaiting_confirmation",
+    toWorkspacePath: (value) => {
+      if (typeof value !== "string" || !value) return null;
+      const rel = path.relative(workspaceRoot, path.resolve(workspaceRoot, value)).replace(/\\/gu, "/");
+      return rel && rel !== ".." && !rel.startsWith("../") && !path.isAbsolute(rel) ? rel : null;
+    },
+  });
   if (task.kind === "document" && opts.focus?.unsaved) guard.stop("unsaved-target");
   if (task.kind === "document" && task.targetPath && !guard.reason) {
     try {
@@ -311,12 +287,44 @@ export async function runWorkspaceChatTurn(
       if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel) || !fs.statSync(absolute).isFile()) guard.stop("target-unavailable");
     } catch { guard.stop("target-unavailable"); }
   }
-  const turnKind = task.kind === "document" ? task.output === "review" ? "query" : "task" : opts.focus?.path && needsActiveDocument(opts.userMessage) && classifyTurn(opts.userMessage) === "light" ? "query" : classifyTurn(opts.userMessage);
+  const turnKind = task.kind === "document" ? task.output === "review" ? "query" : "task"
+    : resumes ? classifyTurn(task.request)
+    : opts.focus?.path && needsActiveDocument(opts.userMessage) && classifyTurn(opts.userMessage) === "light" ? "query" : classifyTurn(opts.userMessage);
   const callable = Object.fromEntries(Object.entries(filterAgentToolsForTurn(buildAgentToolCatalog({ host: "obsidian" }), turnKind)).filter(([name]) => taskAllowsTool(task, name)));
   if (guard.reason) return {
     body: taskStopMessage(guard.reason, opts.locale, task.targetPath), reasoning: "", edits: [], steps: 0, toolCalls: [], autoContinues: 0, stepLimitHit: false,
-    goal: { goal: opts.userMessage.slice(0, 400), plan: [], criteria: [], openCriteria: [], pathReceipts: [], status: "blocked", blockReason: guard.reason, autoContinues: 0, task: { ...task, blockReason: guard.reason } },
+    goal: { goal: (resumes ? opts.priorGoal?.goal || task.request : opts.userMessage).slice(0, 400),
+      plan: resumes ? opts.priorGoal?.plan || [] : [], criteria: resumes ? opts.priorGoal?.criteria || [] : [], openCriteria: resumes ? opts.priorGoal?.openCriteria || [] : [],
+      pathReceipts: guard.priorPaths, status: "blocked", blockReason: guard.reason, autoContinues: 0, task: { ...task, blockReason: guard.reason }, execution: guard.execution },
   };
+  if (profileChange) {
+    const en = resolveChatPromptLocale(opts.locale) === "en";
+    const profilePath = kernel.globalProfileRelPath?.(workspaceRoot) || "memory/profile.md";
+    let evidence;
+    let error: string | null = null;
+    try {
+      if (opts.shouldAbort?.()) throw new Error("task-cancelled-before-write");
+      const conflict = opts.beforeWrite?.([profilePath]);
+      if (conflict) throw new Error(conflict);
+      const write = { workspaceRoot, actor: "ai" as const, confirmed: true };
+      evidence = profileChange.match
+        ? kernel.updateProfileEntry({ ...write, match: profileChange.match, content: profileChange.content, exactMatch: true })
+        : kernel.appendProfileEntry({ ...write, entry: profileChange.content });
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : String(cause);
+    }
+    const wrote = evidence?.wroteFiles === true && !evidence.pending && !evidence.needsConfirm;
+    const exists = !profileChange.match && evidence?.reason === "duplicate-fact";
+    const reason = error || evidence?.reason || "profile-write-unverified";
+    const body = wrote ? (en ? `Updated My Profile (${profilePath}).` : `已更新「我的情况」（${profilePath}）。`)
+      : exists ? (en ? "This fact is already in My Profile." : "「我的情况」里已有这条信息。")
+      : reason === "no-matching-fact" || reason === "ambiguous-profile-fact"
+        ? (en ? "The old fact must match exactly one active profile entry. Copy its full wording and try again." : "请复制唯一一条现行记忆的完整原文，再试一次。")
+        : (en ? `My Profile was not changed. ${reason}` : `「我的情况」未修改。${reason}`);
+    return { body, reasoning: "", edits: [], steps: 0, toolCalls: [], autoContinues: 0, stepLimitHit: false,
+      goal: { task, goal: opts.userMessage, plan: [], criteria: [], openCriteria: [], pathReceipts: wrote || exists ? [profilePath] : [],
+        modifiedPaths: wrote ? [profilePath] : [], status: wrote || exists ? "done" : "incomplete", blockReason: wrote || exists ? null : reason, autoContinues: 0 } };
+  }
   const originalKernel = kernel;
   let targetVersion = task.targetPath && task.kind === "document" ? fs.readFileSync(path.resolve(workspaceRoot, task.targetPath), "utf8") : null;
   kernel = { ...kernel, executeWrite: args => {
@@ -357,7 +365,7 @@ export async function runWorkspaceChatTurn(
   const skillContext = task.skillId ? loadSkill(agentCtx, { skillId: task.skillId }) : null;
   const preloadedSkill = skillContext?.ok ? `## Host-preloaded skill: ${task.skillId}\n${String(skillContext.content || "").slice(0,16000)}\nUse this skill directly; do not list skills to rediscover it.` : "";
 
-  const systemPrompt = `${opts.systemExtra || ""}\n\n${answerGuide}\n\n${toolGuide}\n\n${preloadedSkill}\n\n${taskContractPrompt(task)}`.trim();
+  const systemPrompt = [opts.systemExtra, answerGuide, toolGuide, preloadedSkill, taskContractPrompt(task), resumeExecutionPrompt(guard.priorPaths)].filter(Boolean).join("\n\n");
   const compactBudget = resolveContextBudget(opts.contextLimit, { fixedTokens: estimateTokens(systemPrompt) });
   const conversation: string[] = [`Current user request: ${task.kind === "document" ? task.request : opts.userMessage}`];
   const history = task.kind === "document" ? articleHistory(opts.history || [], task.targetPath) : compactChatMessages(opts.history || [], compactBudget);
@@ -373,14 +381,20 @@ export async function runWorkspaceChatTurn(
   let reasoningAcc = "";
   // "继续" and the host resume prompt keep the saved ledger. A new task does not.
   let goalState: GoalState = restoreSessionGoal(task.kind === "document" ? null : opts.priorGoal, task.kind === "document" ? task.request : opts.userMessage || "");
+  if (resumes) {
+    goalState = { ...goalState, status: "working", blockReason: null,
+      pathReceipts: [...new Set([...goalState.pathReceipts, ...guard.priorPaths])] };
+  }
 
   const goalPayload = () => ({
-    task: { ...task, blockReason: guard.reason },
+    task: { ...task, blockReason: goalState.blockReason || guard.reason },
+    execution: guard.execution,
     goal: goalState.goal || "",
     plan: goalState.plan || [],
     criteria: goalState.criteria || [],
     openCriteria: goalState.doneCriteria || [],
     pathReceipts: (goalState.pathReceipts || []).slice(-12),
+    modifiedPaths: guard.modifiedPaths.slice(-24),
     status: goalState.status || "idle",
     blockReason: goalState.blockReason || null,
     autoContinues,
@@ -414,8 +428,13 @@ export async function runWorkspaceChatTurn(
   };
 
   const execOneTool = async (call: Record<string, unknown>): Promise<string | null> => {
+    const guardedArgs = call;
     call = normalizeAgentToolCall(call);
     const tool = String(call.tool);
+    const report = (result: unknown) => {
+      guard.afterTool(tool, guardedArgs, result);
+      return toolResultForModel(result);
+    };
     if (opts.focus?.path && !call.relativePath && (["read_file", "edit_file", "append_stream_entry"].includes(tool))) {
       call = { ...call, relativePath: opts.focus.path };
     }
@@ -423,23 +442,23 @@ export async function runWorkspaceChatTurn(
       const affected = [call.relativePath, call.newPath, call.destRelativePath].map((p) => p ? path.relative(workspaceRoot, path.resolve(workspaceRoot, String(p))).replace(/\\/gu, "/") : "");
       if (affected.some((p) => p && (p === opts.focus?.path || opts.focus?.path.startsWith(`${p}/`)))) {
         toolCalls.push({ tool, ok: false, summary: opts.focus.path });
-        return toolResultForModel({ ok: false, error: "unsaved-editor-changes", relativePath: opts.focus.path, hint: "Save the editor buffer before editing this file. Do not bypass via another write tool." });
+        return report({ ok: false, error: "unsaved-editor-changes", relativePath: opts.focus.path, hint: "Save the editor buffer before editing this file. Do not bypass via another write tool." });
       }
     }
 
     if (!callable[tool] && isKnownTool(tool)) {
       toolCalls.push({ tool, ok: false });
-      return toolResultForModel({ ok: false, error: "tool-not-available-for-this-turn", hint: "This turn is conversational or read-only. Answer from read evidence; do not mutate the workspace." });
+      return report({ ok: false, error: "tool-not-available-for-this-turn", hint: "This turn is conversational or read-only. Answer from read evidence; do not mutate the workspace." });
     }
     if (callable[tool]?.effect === "write") {
       const paths = [call.relativePath, call.newPath, call.destRelativePath].filter((value): value is string => typeof value === "string" && !!value);
       if (tool === "save_note" && call.topicId && call.filename) paths.push(`${String(call.topicId)}/${String(call.filename)}`);
       if (["add_todo", "toggle_todo", "update_todo", "set_todo_due", "delete_todo"].includes(tool)) paths.push(kernel.resolveTodoRelPath?.(workspaceRoot) || "memory/todo.md");
       const conflict = opts.beforeWrite?.(paths);
-      if (conflict) { toolCalls.push({ tool, ok: false }); return toolResultForModel({ ok: false, error: conflict }); }
+      if (conflict) { toolCalls.push({ tool, ok: false }); return report({ ok: false, error: conflict }); }
     }
     if (!isKnownTool(tool)) {
-      return toolResultForModel({
+      return report({
         ok: false,
         error: `unknown tool: ${tool}`,
         hint: `Use only: ${[...KNOWN_TOOLS].join(", ")}. Re-emit a single JSON tool call.`,
@@ -450,16 +469,16 @@ export async function runWorkspaceChatTurn(
         if (!opts.onMemoryProposal) throw new Error("memory-proposal-host-unavailable");
         const proposal = opts.onMemoryProposal(call);
         toolCalls.push({ tool, ok: true, summary: proposal.targetPath, pending: true, needsConfirm: true });
-        return toolResultForModel({ ok: true, pending: true, wroteFiles: false, ...proposal, hint: "A reviewable card exists in Suggestions. No memory was changed. Tell the user to review it there." });
+        return report({ ok: true, pending: true, wroteFiles: false, ...proposal, hint: "A reviewable card exists in Suggestions. No memory was changed. Tell the user to review it there." });
       } catch (err) {
         toolCalls.push({ tool, ok: false });
-        return toolResultForModel({ ok: false, error: err instanceof Error ? err.message : String(err) });
+        return report({ ok: false, error: err instanceof Error ? err.message : String(err) });
       }
     }
     const fence = memoryFence(tool, call, { workspaceRoot });
     if (fence) {
       toolCalls.push({ tool, ok: false, summary: String(call.relativePath || call.targetTopicId || "") });
-      return toolResultForModel({ ...fence, hint: "Use propose_memory_change for a reviewable memory suggestion." });
+      return report({ ...fence, hint: "Use propose_memory_change for a reviewable memory suggestion." });
     }
     if (tool === "append_stream_entry") {
       const result = appendStreamEntryToWorkspace(kernel, workspaceRoot, kernel.loadContract(workspaceRoot), {
@@ -469,7 +488,7 @@ export async function runWorkspaceChatTurn(
         writebackMode: contractMode || opts.writebackMode,
       });
       toolCalls.push({ tool, ok: result.ok, summary: result.path, pending: result.pending, needsConfirm: result.needsConfirm });
-      return toolResultForModel(result);
+      return report(result);
     }
     if (tool === "read_file") {
       const read = readWorkspaceWindow(kernel, workspaceRoot, {
@@ -480,10 +499,10 @@ export async function runWorkspaceChatTurn(
         heading: typeof call.heading === "string" ? call.heading : undefined,
       });
       toolCalls.push({ tool, ok: Boolean(read.ok), summary: String(call.relativePath || "") });
-      if (!read.ok) return toolResultForModel(read);
+      if (!read.ok) return report(read);
       // Prefer numbered window; drop the raw twin so the model sees one body.
       const { numbered, ...windowRest } = read.window || ({} as Record<string, unknown>);
-      return toolResultForModel({
+      return report({
         ...windowRest,
         content: (numbered as string) || (read.window as { content?: string })?.content || "",
         contentHash: read.contentHash,
@@ -506,7 +525,7 @@ export async function runWorkspaceChatTurn(
       });
       edits.push({ ...edited, tool: "edit_file", relativePath: call.relativePath });
       toolCalls.push({ tool, ok: Boolean(edited.ok), summary: String(call.relativePath || "") });
-      let editNote = toolResultForModel(edited);
+      let editNote = report(edited);
       try {
         const { buildRetryHint } = await import("#kernel/tool-retry-hints.mjs");
         const hint = buildRetryHint("edit_file", JSON.stringify(edited), {
@@ -530,23 +549,23 @@ export async function runWorkspaceChatTurn(
         writebackMode: contractMode || opts.writebackMode,
       });
       toolCalls.push({ tool: "capture", ok: Boolean(captured.ok), summary: captured.path });
-      return toolResultForModel({ ...captured, tool: "capture" });
+      return report({ ...captured, tool: "capture" });
     }
     if (tool === "capture_url") {
       // Desktop parity: one-shot fetch + ingest with source URL attached.
       const url = String(call.url || "").trim();
       if (!/^https?:\/\//iu.test(url)) {
-        return toolResultForModel({ ok: false, tool, error: "only http(s) URLs are allowed" });
+        return report({ ok: false, tool, error: "only http(s) URLs are allowed" });
       }
       if (typeof agentCtx.fetchPage !== "function") {
-        return toolResultForModel({ ok: false, tool, error: "fetchPage not provided by host" });
+        return report({ ok: false, tool, error: "fetchPage not provided by host" });
       }
       try {
         const { fetchUrlForCapture } = await import("./capture-fetch.ts");
         const fetched = await fetchUrlForCapture(agentCtx.fetchPage, url);
         if (!fetched.ok || !String(fetched.text || "").trim()) {
           const { buildRetryHint } = await import("#kernel/tool-retry-hints.mjs");
-          return toolResultForModel({
+          return report({
             ok: false,
             tool,
             error: fetched.error || "page body empty",
@@ -564,9 +583,9 @@ export async function runWorkspaceChatTurn(
           writebackMode: contractMode || opts.writebackMode,
         });
         toolCalls.push({ tool: "capture_url", ok: Boolean(captured.ok), summary: captured.path || url });
-        return toolResultForModel({ ...captured, tool: "capture_url", url, title: useTitle });
+        return report({ ...captured, tool: "capture_url", url, title: useTitle });
       } catch (err) {
-        return toolResultForModel({
+        return report({
           ok: false,
           tool,
           error: err instanceof Error ? err.message : String(err),
@@ -576,7 +595,7 @@ export async function runWorkspaceChatTurn(
     }
     const result = await runAgentTool(agentCtx, call);
     if (!result) {
-      return toolResultForModel({ ok: false, tool, error: "tool not dispatched", hint: "Re-emit a single JSON tool call." });
+      return report({ ok: false, tool, error: "tool not dispatched", hint: "Re-emit a single JSON tool call." });
     }
     toolCalls.push({
       tool,
@@ -585,7 +604,7 @@ export async function runWorkspaceChatTurn(
       pending: Boolean(result.pending),
       needsConfirm: Boolean(result.needsConfirm || result.pending),
     });
-    return toolResultForModel(result);
+    return report(result);
   };
 
   // Transient generate failures must not kill the whole turn (Desktop parity:
@@ -643,6 +662,7 @@ export async function runWorkspaceChatTurn(
       emit({ kind: "step", step: stepCount, maxSteps, autoContinues, reasoning: reasoningAcc });
       const prompt = conversation.join("\n\n");
       let raw: unknown;
+      let requestFailed = false;
       try {
         raw = await opts.generate(prompt, {
           operation: "chat",
@@ -651,40 +671,26 @@ export async function runWorkspaceChatTurn(
           temperature: 0.4,
           shouldAbort: opts.shouldAbort,
         });
-        generateFailures = 0;
       } catch (err) {
         if (opts.shouldAbort?.() || (err instanceof Error && err.name === "AbortError")) {
           return finishAborted();
         }
-        generateFailures += 1;
-        const msg = err instanceof Error ? err.message : String(err);
-        emit({ kind: "step", step: stepCount, maxSteps, tool: "retry", autoContinues });
-        if (generateFailures >= MAX_GENERATE_FAILURES) {
-          lastRaw = chromeZh
-            ? `模型请求连续失败（${msg}）。已执行的工具结果与路径回执见上文；请稍后重试或检查服务商配置。`
-            : `Model request failed repeatedly (${msg}). Tool results and path receipts above; retry later or check provider settings.`;
-          finished = true;
-          brokeOnFinalText = true;
-          break;
-        }
-        conversation.push(
-          chromeZh
-            ? `[系统] 上一步模型请求失败：${msg}。请基于已有工具结果继续完成原目标；若无法继续，用简短中文说明卡点与已完成路径。`
-            : `[System] Previous model call failed: ${msg}. Continue from existing tool results; if stuck, reply briefly with the blocker and completed paths.`,
-        );
-        continue;
+        requestFailed = true;
       }
       lastRaw = String(raw || "");
       noteReasoning(lastRaw);
       if (opts.shouldAbort?.()) return finishAborted();
-      if (!lastRaw.trim()) {
-        // Empty completion — treat as soft failure and re-prompt once.
+      if (requestFailed || !stripThinking(lastRaw)) {
         generateFailures += 1;
         if (generateFailures >= MAX_GENERATE_FAILURES) {
-          finished = true;
-          brokeOnFinalText = true;
-          break;
+          const body = chromeZh
+            ? "模型连续两次未返回可用回复。请稍后重试或检查服务商配置。"
+            : "The model returned no usable reply twice. Retry later or check the provider settings.";
+          goalState = { ...goalState, status: "incomplete", blockReason: "model-response-unavailable" };
+          emit({ kind: "done", step: stepCount, maxSteps, autoContinues });
+          return { body, reasoning: reasoningAcc, edits, steps: stepCount, toolCalls, autoContinues, stepLimitHit, goal: goalPayload() };
         }
+        emit({ kind: "step", step: stepCount, maxSteps, tool: "retry", autoContinues });
         conversation.push(
           chromeZh
             ? "[系统] 上一轮回复为空。请继续完成原目标，或给出简短结论。"
@@ -692,10 +698,15 @@ export async function runWorkspaceChatTurn(
         );
         continue;
       }
+      generateFailures = 0;
       const call = parseToolCall(lastRaw);
       if (!call) {
         // Model produced prose — fold into goal ledger and decide if it may stop.
         goalState = applyGoalUpdate(goalState, { text: stripThinking(lastRaw) });
+        if (task.kind === "workspace" && guard.missingWrite && goalState.status !== "blocked") {
+          finished = true;
+          break;
+        }
         harvestPathReceipts(lastRaw, goalState.pathReceipts);
         goalState = rejectBareDone(goalState, {
           toolCallCount: toolCalls.length,
@@ -743,22 +754,23 @@ export async function runWorkspaceChatTurn(
       emit({ kind: "tool", step: stepCount, maxSteps, tool, autoContinues, reasoning: reasoningAcc });
       conversation.push(`Assistant: ${lastRaw}`);
       let toolNote: string | null;
-      const checked = guard.beforeTool(String(normalizeAgentToolCall(call).tool), normalizeAgentToolCall(call));
+      const normalized = normalizeAgentToolCall(call);
+      const checked = guard.beforeTool(String(normalized.tool), normalized);
       try {
         if (!checked.ok) toolNote = toolResultForModel({ ok: false, error: checked.error });
+        else if (checked.replay) toolNote = toolResultForModel({ ok: true, unchanged: true, wroteFiles: false, note: "Already completed in this task. Continue the remaining steps." });
         else toolNote = await execOneTool(checked.args || call);
       }
       catch (error) {
         toolCalls.push({ tool, ok: false });
-        toolNote = toolResultForModel({ ok: false, error: error instanceof Error ? error.message : String(error) });
+        const failure = { ok: false, error: error instanceof Error ? error.message : String(error) };
+        guard.afterTool(String(normalized.tool), checked.args || normalized, failure);
+        toolNote = toolResultForModel(failure);
       }
       conversation.push(`Tool result (${tool}):\n${toolNote || ""}`);
-      let outcome: unknown = toolNote;
-      try { outcome = JSON.parse(toolNote || "null"); } catch { /* bounded text outcome */ }
-      guard.afterTool(tool, checked.args || call, outcome);
-      if (guard.reason) { finished = true; break; }
-      if (toolNote && !toolCalls.at(-1)?.pending && !toolCalls.at(-1)?.needsConfirm) harvestPathReceipts(toolNote, goalState.pathReceipts);
+      if (toolNote && !guard.pending) harvestPathReceipts(toolNote, goalState.pathReceipts);
       emit({ kind: "checkpoint", step: stepCount, maxSteps, tool, autoContinues });
+      if (guard.reason || guard.pending) { finished = true; break; }
     }
 
     if (finished || brokeOnFinalText) break;
@@ -835,6 +847,12 @@ export async function runWorkspaceChatTurn(
     return { body: outcome.text, reasoning: reasoningAcc, edits, steps: stepCount, toolCalls, autoContinues, stepLimitHit,
       goal: { ...goalPayload(), task: { ...task, question: guard.question, blockReason: outcome.blockReason }, status: outcome.status, blockReason: outcome.blockReason } };
   }
+  const workspaceOutcome = turnKind === "query" ? null : workspaceWriteOutcome(guard, opts.locale, goalState.status === "blocked");
+  if (workspaceOutcome) {
+    goalState = { ...goalState, status: workspaceOutcome.status, blockReason: workspaceOutcome.blockReason, doneCriteria: [...goalState.criteria] };
+    emit({ kind: "done", step: stepCount, maxSteps, autoContinues });
+    return { body: workspaceOutcome.text, reasoning: reasoningAcc, edits, steps: stepCount, toolCalls, autoContinues, stepLimitHit, goal: goalPayload() };
+  }
   const split = typeof kernel.splitAssistantVisible === "function"
     ? kernel.splitAssistantVisible(lastRaw)
     : { body: String(lastRaw || "").trim(), reasoning: "" };
@@ -892,13 +910,6 @@ export async function runWorkspaceChatTurn(
     if (body && !body.includes("[INCOMPLETE")) body = `${body}${suffix}`;
     else if (!body) body = chromeZh ? `任务未完成。${suffix}` : `Task incomplete.${suffix}`;
   }
-  if (toolCalls.some(call => call.pending || call.needsConfirm)) {
-    goalState = { ...goalState, status: "blocked", blockReason: "awaiting_confirmation" };
-    const pendingNote = chromeZh
-      ? "待确认：建议和挂起操作尚未写入，请在侧栏「建议」中审阅后执行。"
-      : "Awaiting confirmation: proposals and pending operations have not been written. Review them in Suggestions.";
-    body = `${pendingNote}\n\n${body}`;
-  }
   if (guard.reason) {
     goalState = { ...goalState, status: "blocked", blockReason: guard.reason };
     body = guard.question || taskStopMessage(guard.reason, opts.locale, task.targetPath);
@@ -914,16 +925,6 @@ export async function runWorkspaceChatTurn(
     stepLimitHit,
     // Structured goal snapshot (Desktop goalSummary parity) — UI must render
     // the chip from this, never from a [DONE] regex on the body.
-    goal: {
-      task: { ...task, blockReason: guard.reason },
-      goal: goalState.goal || "",
-      plan: goalState.plan || [],
-      criteria: goalState.criteria || [],
-      openCriteria: goalState.doneCriteria || [],
-      pathReceipts: (goalState.pathReceipts || []).slice(-12),
-      status: goalState.status || "idle",
-      blockReason: goalState.blockReason || null,
-      autoContinues,
-    },
+    goal: goalPayload(),
   };
 }

@@ -54,14 +54,16 @@ describe("Obsidian agent loop — continuous work", () => {
     if (tmp && fs.existsSync(tmp)) fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  test("parseToolCall accepts discovery tools and embedded JSON", () => {
+  test("parseToolCall accepts standalone calls and preserves JSON examples in prose", () => {
     assert.equal(ops.parseToolCall(JSON.stringify({ tool: "search", query: "x" }))?.tool, "search");
     assert.equal(ops.parseToolCall(JSON.stringify({ tool: "workspace_overview" }))?.tool, "workspace_overview");
-    assert.equal(ops.parseToolCall('Here:\n```json\n{"tool":"list_todos"}\n```')?.tool, "list_todos");
-    assert.equal(
-      ops.parseToolCall('thinking…\n{"tool":"save_file","relativePath":"a.md","content":"x"}\n')?.tool,
-      "save_file",
-    );
+    assert.equal(ops.parseToolCall('<think>reasoning</think>\n```json\n{"tool":"list_todos"}\n```')?.tool, "list_todos");
+    assert.equal(ops.parseToolCall('Example:\n```json\n{"tool":"list_todos"}\n```'), null);
+    assert.equal(ops.parseToolCall('Example: {"tool":"list_todos"}'), null);
+    assert.equal(ops.parseToolCall('{"tool":{"name":"list_todos"}}'), null);
+    assert.equal(ops.parseToolCall('{"name":"example article"}'), null);
+    const literal = { tool: "search", query: "<think>literal tag</think>" };
+    assert.deepEqual(ops.parseToolCall(JSON.stringify(literal)), literal);
     assert.equal(ops.parseToolCall("just prose, no tool")?.tool ?? null, null);
     // Unknown tools still surface so the loop can error-continue (not "finish").
     assert.equal(ops.parseToolCall(JSON.stringify({ tool: "invent_tool" }))?.tool, "invent_tool");
@@ -158,6 +160,7 @@ describe("Obsidian agent loop — continuous work", () => {
     assert.ok(turn.toolCalls.some((t) => t.tool === "save_file" && t.ok));
     assert.match(turn.body, /Done/);
     assert.ok(fs.existsSync(path.join(tmp, "20-专题", "2026-主题", "followup.md")));
+    assert.deepEqual(turn.goal.modifiedPaths, ["20-专题/2026-主题/followup.md"]);
     assert.equal(turn.autoContinues, 0);
     assert.equal(turn.stepLimitHit, false);
   });
@@ -194,10 +197,42 @@ describe("Obsidian agent loop — continuous work", () => {
     assert.equal(calls, 2);
     assert.equal(turn.autoContinues, 0);
     assert.equal(turn.goal.status, "done");
+    assert.deepEqual(turn.goal.modifiedPaths, []);
     assert.equal(fs.readFileSync(path.join(tmp, "memory", "todo.md"), "utf8"), beforeTodo);
     assert.equal(turn.edits.length, 0);
     assert.doesNotMatch(turn.body, /\[INCOMPLETE/);
     assert.ok(turn.toolCalls.some((call) => call.tool === "list_todos" && call.ok));
+  });
+
+  test("a read reference cannot close a requested workspace write", async () => {
+    const file = "20-专题/2026-主题/note.md";
+    const before = fs.readFileSync(path.join(tmp, file), "utf8");
+    let calls = 0;
+    const turn = await ops.runWorkspaceChatTurn(kernel, tmp, {
+      userMessage: "Save the result to a workspace file.", locale: "en", autoContinue: false,
+      generate: async () => ++calls === 1
+        ? JSON.stringify({ tool: "read_file", relativePath: file })
+        : `Saved the result to ${file}. [DONE]`,
+    });
+    assert.equal(turn.goal.status, "incomplete");
+    assert.equal(turn.goal.blockReason, "no-write-evidence");
+    assert.deepEqual(turn.goal.modifiedPaths, []);
+    assert.equal(fs.readFileSync(path.join(tmp, file), "utf8"), before);
+  });
+
+  test("a failed precise edit never counts as a workspace modification", async () => {
+    const file = "20-专题/2026-主题/note.md";
+    const before = fs.readFileSync(path.join(tmp, file), "utf8");
+    let calls = 0;
+    const turn = await ops.runWorkspaceChatTurn(kernel, tmp, {
+      userMessage: "Replace the text in the source file.", locale: "en", autoContinue: false,
+      generate: async () => ++calls === 1
+        ? JSON.stringify({ tool: "edit_file", relativePath: file, oldText: "Missing text", newText: "Replacement" })
+        : `Edited ${file}. [DONE]`,
+    });
+    assert.equal(turn.goal.status, "incomplete");
+    assert.deepEqual(turn.goal.modifiedPaths, []);
+    assert.equal(fs.readFileSync(path.join(tmp, file), "utf8"), before);
   });
 
   test("pause keeps the task ledger and is not cancelled", async () => {

@@ -29,3 +29,18 @@ test('source and local image symlinks cannot leave the vault', async t => {
   const { delivery } = await prepareWritingDelivery(root, 'note.md', 'wechat', 'minimal-ink');
   assert.equal(delivery.images[0].status, 'missing'); assert.doesNotMatch(delivery.html, /c2VjcmV0/);
 });
+test('image checklist failure returns the saved article and the failed checklist path', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-writing-partial-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'topmind.yaml'), 'contract_version: 4\nwriteback:\n  mode: auto\n');
+  const raw = '# Offline index\n\n![Diagram](missing.png)\n';
+  fs.writeFileSync(path.join(root, 'note.md'), raw);
+  const checklistPath = 'out/note-wechat-images.md';
+  fs.mkdirSync(path.join(root, checklistPath), { recursive: true });
+  const { delivery, sourceHash } = await prepareWritingDelivery(root, 'note.md', 'wechat', 'minimal-ink');
+  const result = exportWritingDelivery({ kernel, workspaceRoot: root }, 'note.md', sourceHash, delivery);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.checklist, { relativePath: checklistPath, ok: false });
+  assert.equal(fs.readFileSync(path.join(root, result.relativePath), 'utf8'), delivery.html);
+  assert.equal(fs.readFileSync(path.join(root, 'note.md'), 'utf8'), raw);
+});

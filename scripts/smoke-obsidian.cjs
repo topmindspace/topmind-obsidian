@@ -31,6 +31,11 @@ fs.writeFileSync(path.join(vault, 'topmind.yaml'), 'contract_version: 4\nwriteba
 fs.mkdirSync(path.join(vault, '00-Inbox'), { recursive: true });
 fs.writeFileSync(path.join(vault, '00-Inbox/Focus-A.md'), '# Focus A\n\nCurrent object test selection.\n');
 fs.writeFileSync(path.join(vault, '00-Inbox/Focus-B.md'), '# Focus B\n\nOther object.\n');
+const longPath = '00-Inbox/Long-article.md';
+const longOriginal = '# Offline index\n\n> “Search stays on this device.”\n\nThe vendor measured 0.3 seconds on 10,000 notes.\n\n'
+  + 'An untouched body paragraph keeps its wording and reference.\n\n'.repeat(290)
+  + '![Index diagram](missing-index.png)\n\nDraft closing sentence.\n';
+fs.writeFileSync(path.join(vault, longPath), longOriginal);
 fs.mkdirSync(path.join(vault,'.topmind'),{recursive:true});
 fs.writeFileSync(path.join(vault,'00-Inbox/Pending-delete.md'),'delete only after explicit confirm');
 fs.writeFileSync(path.join(vault,'.topmind/pending-writes.json'),JSON.stringify({items:[{id:'ui-delete',relativePath:'00-Inbox/Pending-delete.md',content:'delete only after explicit confirm',toolName:'delete_path',operation:'delete',createdAt:new Date().toISOString()}]}));
@@ -39,6 +44,7 @@ let port;
  let firstRequest;
  const firstSeen = new Promise(resolve => { firstRequest = resolve; });
  const requests = [];
+ const scriptedReplies = [];
  let quickTests=0;
  const server = http.createServer((req,res) => {
   if(req.method!=='POST') {res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({data:[{id:'isolated-mock'}]}));return;}
@@ -48,7 +54,9 @@ let port;
     quickTests++;setTimeout(()=>{res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{message:{role:'assistant',content:'OK'}}]}));},150);return;
    }
    requests.push(body);
-   const content=requests.length===1 ? JSON.stringify({tool:'read_file'}) : '当前对象是 Focus A，内容为 Current object test selection。路径：00-Inbox/Focus-A.md';
+   const reply=scriptedReplies.shift();
+   const content=reply !== undefined ? (typeof reply==='string' ? reply : JSON.stringify(reply))
+    : requests.length===1 ? JSON.stringify({tool:'read_file'}) : '当前对象是 Focus A，内容为 Current object test selection。路径：00-Inbox/Focus-A.md';
    if(requests.length===1) firstRequest();
    setTimeout(()=>{res.writeHead(200,{'content-type':'application/json'}); res.end(JSON.stringify({choices:[{message:{role:'assistant',content}}]}));},requests.length===1?1000:0);
   });
@@ -85,6 +93,9 @@ let port;
   assert.ok(loaded.ids.includes('topmind-stream'),JSON.stringify(loaded));
   console.log(JSON.stringify({ stage:'loaded',loaded }));
   assert.equal(loaded.manifest.version,JSON.parse(fs.readFileSync(path.join(repo,'manifest.json'),'utf8')).version);
+  const trust=page.getByRole('button',{name:/信任仓库作者并启用插件|Trust .*enable plugins/iu});
+  await trust.waitFor({timeout:1800}).catch(error=>{if(error.name!=='TimeoutError')throw error;});
+  if(await trust.isVisible()) {await trust.click();await trust.waitFor({state:'hidden'});}
   await page.setViewportSize({width:1280,height:900});
   await page.evaluate(async()=>{const plugin=app.plugins.plugins['topmind-stream'];plugin.kernelService.initWorkspace();await plugin.openSidebar();});
   await page.locator('.tm-sidebar-dock').waitFor();
@@ -226,10 +237,35 @@ let port;
   const createdPath=await page.evaluate(()=>app.workspace.getActiveFile()?.path);
   assert.match(createdPath,/^00-Inbox\/Untitled-.*\.md$/u);
   assert.ok(await page.evaluate(()=>app.workspace.getLeavesOfType('topmind-stream-workbench').length>0));
+  const writing=page.locator('.tm-writing-modal');
+  const focusVault=async()=>{
+    await page.evaluate(()=>{
+      require('@electron/remote').getCurrentWindow().focus();
+      // CDP can target this Vault without delivering a macOS focus transition.
+      if(activeWindow!==window)window.dispatchEvent(new FocusEvent('focus'));
+    });
+    await page.waitForFunction(()=>activeWindow===window,null,{timeout:4000});
+  };
+  const openWriting=async()=>{
+    await focusVault();
+    assert.equal(await page.evaluate(()=>app.commands.executeCommandById('topmind-stream:writing-delivery')),true);
+    await writing.waitFor();
+  };
+  await focusVault();
   await page.locator('.side-dock-ribbon-action[aria-label="写作与交付"]').click();
-  const writing=page.locator('.tm-writing-modal');await writing.waitFor();
+  await writing.waitFor();
+  const writingOpenedFromRibbon=true;
   assert.match(await writing.innerText(),/Untitled-/u);
   assert.equal(await writing.locator('details.tm-writing-more').first().evaluate(el=>el.open),false);
+  const briefsChoice=writing.locator('[data-writing-action="topmind-briefs"]');
+  const requestsBeforeChoice=requests.length;
+  await briefsChoice.locator('.tm-writing-choice-desc').click();
+  assert.equal(await briefsChoice.getAttribute('aria-pressed'),'true');
+  assert.equal(await briefsChoice.evaluate(el=>document.activeElement===el),true);
+  const reviseChoice=writing.locator('[data-writing-action="topmind-revise"]');
+  await reviseChoice.press('Space');
+  assert.equal(await reviseChoice.getAttribute('aria-pressed'),'true');
+  assert.equal(requests.length,requestsBeforeChoice);
   const writingMeasure=async()=>writing.evaluate(el=>{const box=el.getBoundingClientRect();const content=el.querySelector('.modal-content');return{x:box.x,y:box.y,width:box.width,height:box.height,contentWidth:content?.clientWidth,contentScrollWidth:content?.scrollWidth,contentHeight:content?.clientHeight,contentScrollHeight:content?.scrollHeight};});
   const wideWriting=await writingMeasure();
   assert.ok(wideWriting.width<=660 && wideWriting.x>=0 && wideWriting.y>=0,JSON.stringify(wideWriting));
@@ -246,13 +282,16 @@ let port;
   await page.setViewportSize({width:1280,height:900});
   await page.evaluate(()=>app.workspace.revealLeaf(app.workspace.getLeavesOfType('topmind-stream-workbench')[0]));
   await page.locator('.tm-stream-workbench .tm-input-field').waitFor({state:'visible'});
-  console.log(JSON.stringify({stage:'writing-and-new-note',ribbonLabels,createdPath,wideWriting,narrowWriting}));
+  console.log(JSON.stringify({stage:'writing-and-new-note',ribbonLabels,writingOpenedFromRibbon,createdPath,wideWriting,narrowWriting}));
   await page.evaluate(()=>{const service=app.plugins.plugins['topmind-stream'].kernelService;window.__originalPolish=service.polishText;service.polishText=()=>new Promise(resolve=>{window.__finishPolish=resolve;});});
   const compose=page.locator('.tm-stream-workbench .tm-input-field');
   await compose.fill('original draft');await page.locator('.tm-btn-polish').click();
   await compose.fill('newer draft kept');await page.evaluate(()=>window.__finishPolish('stale polished text'));
   await page.waitForFunction(()=>!document.querySelector('.tm-btn-polish')?.disabled);
   assert.equal(await compose.inputValue(),'newer draft kept');
+  const stalePolishNotice=page.locator('.notice-message').filter({hasText:/输入已变化|Your draft changed/u});
+  await stalePolishNotice.click();
+  await stalePolishNotice.waitFor({state:'hidden'});
   await page.evaluate(()=>{app.plugins.plugins['topmind-stream'].kernelService.polishText=window.__originalPolish;delete window.__originalPolish;delete window.__finishPolish;});
   await page.screenshot({path:path.join(artifacts,'stream.png')});
   await page.evaluate(()=>app.plugins.plugins['topmind-stream'].openQuickCapture());
@@ -315,10 +354,171 @@ let port;
   assert.equal(fs.readFileSync(path.join(vault,'00-Inbox/Focus-A.md'),'utf8'),'# Focus A\n\nCurrent object test selection.\n');
   await page.screenshot({path:path.join(artifacts,'selection-review.png')});
 
+  const beforeMemoryRequests=requests.length;
+  await input.fill('记住：我在周日上午阅读长文');
+  await input.press('Enter');
+  await page.waitForFunction(()=>{
+    const view=app.workspace.getLeavesOfType('topmind-sidebar-dock')[0]?.view;
+    const result=view?.chatHistory?.at(-1);
+    return result?.role==='assistant' && result.goal?.modifiedPaths?.includes('memory/profile.md') && !view.chatThinking;
+  },null,{timeout:10000});
+  assert.equal(requests.length,beforeMemoryRequests);
+  assert.match(fs.readFileSync(path.join(vault,'memory/profile.md'),'utf8'),/我在周日上午阅读长文/u);
+  const memoryMessage=page.locator('.tm-chat-message.tm-chat-ai').last();
+  assert.equal(await memoryMessage.locator('.tm-chat-object').count(),0);
+  const memoryFooter=memoryMessage.locator('.tm-goal-footer');
+  assert.match(await memoryFooter.innerText(),/已修改文件|Changed files/u);
+  await memoryFooter.scrollIntoViewIfNeeded();
+  await page.screenshot({path:path.join(artifacts,'direct-memory.png')});
+
+  const setChatTab=tab=>page.evaluate(async id=>{
+    const view=app.workspace.getLeavesOfType('topmind-sidebar-dock')[0].view;
+    view.activeTab=id;await view.renderActiveTab();
+  },tab);
+  const latest=()=>page.evaluate(()=>app.workspace.getLeavesOfType('topmind-sidebar-dock')[0].view.chatHistory.at(-1));
+  const send=async(text)=>{
+    const turns=await page.evaluate(()=>app.workspace.getLeavesOfType('topmind-sidebar-dock')[0].view.chatHistory.length);
+    await input.fill(text);await input.press('Enter');
+    await page.waitForFunction(previous=>{
+      const view=app.workspace.getLeavesOfType('topmind-sidebar-dock')[0]?.view;
+      return view?.chatHistory.length>previous && view.chatHistory.at(-1)?.role==='assistant' && !view.chatThinking;
+    },turns,{timeout:20000});
+    return latest();
+  };
+  await page.evaluate(relative=>app.workspace.openLinkText(relative,'',true),longPath);
+  await openWriting();
+  assert.match(await writing.innerText(),/Long-article\.md/u);
+  await writing.locator('select').first().selectOption('edit');
+  await writing.locator('textarea').fill('只替换结尾一句，保留引语、实测数字及其余段落。');
+  const beforeEdit=requests.length;
+  scriptedReplies.push({tool:'read_file',relativePath:longPath,around:'Draft closing sentence.',limit:30},
+    {tool:'edit_file',relativePath:longPath,oldText:'Draft closing sentence.',newText:'Only the closing sentence changed.'},
+    '只改了结尾。');
+  await writing.getByRole('button',{name:/开始写作任务|Start writing task/u}).click();
+  await page.waitForFunction(()=>{
+    const view=app.workspace.getLeavesOfType('topmind-sidebar-dock')[0]?.view;
+    const msg=view?.chatHistory.at(-1);
+    return msg?.role==='assistant' && msg.focus?.path==='00-Inbox/Long-article.md' && !view.chatThinking;
+  },null,{timeout:20000});
+  const edited=longOriginal.replace('Draft closing sentence.','Only the closing sentence changed.');
+  assert.equal(fs.readFileSync(path.join(vault,longPath),'utf8'),edited);
+  assert.deepEqual((await latest()).goal.modifiedPaths,[longPath]);
+  assert.ok(requests[beforeEdit+1].messages.some(message=>/\d+\|Draft closing sentence\./u.test(String(message.content))));
+  assert.equal(scriptedReplies.length,0);
+
+  const beforePreview=requests.length;
+  await openWriting();
+  await writing.getByRole('tab',{name:/排版预览|Layout preview/u}).click();
+  const formatControl=writing.locator('[data-writing-format]');
+  await formatControl.focus();
+  await formatControl.selectOption('text');
+  assert.equal(await formatControl.evaluate(el=>el===document.activeElement),true);
+  await formatControl.selectOption('wechat');
+  const themeControl=writing.locator('[data-writing-theme]');
+  await themeControl.selectOption('graphite');
+  assert.equal(await themeControl.evaluate(el=>el===document.activeElement),true);
+  await themeControl.selectOption('minimal-ink');
+  await writing.getByRole('button',{name:/生成预览|Generate preview/u}).click();
+  const frame=writing.locator('iframe');await frame.waitFor();
+  const html=await frame.getAttribute('srcdoc');
+  assert.match(html,/\[Index diagram\]/u);
+  const imageDetails=writing.locator('[data-writing-images]');
+  assert.ok(await imageDetails.evaluate(details=>details.open));
+  assert.match(await imageDetails.innerText(),/缺失或无法读取|Missing or unreadable/u);
+  assert.ok(await imageDetails.getByText('missing-index.png',{exact:true}).isVisible());
+  const exportButton=writing.getByRole('button',{name:/导出文件|Export file/u});
+  assert.ok(await writing.locator('[data-writing-checks]').evaluate((section,button)=>
+    !!(section.compareDocumentPosition(button)&Node.DOCUMENT_POSITION_FOLLOWING),await exportButton.elementHandle()));
+  await exportButton.click();
+  const exportPath='00-Inbox/out/Long-article-wechat.html';
+  await writing.getByRole('status').filter({hasText:exportPath}).waitFor();
+  assert.equal(fs.readFileSync(path.join(vault,exportPath),'utf8'),html);
+  assert.match(fs.readFileSync(path.join(vault,'00-Inbox/out/Long-article-wechat-images.md'),'utf8'),/missing · missing-index\.png/u);
+  assert.equal(fs.readFileSync(path.join(vault,longPath),'utf8'),edited);
+  assert.equal(requests.length,beforePreview);
+  await page.screenshot({path:path.join(artifacts,'missing-image-export.png')});
+  const checklistPath='00-Inbox/out/Long-article-wechat-images.md';
+  fs.renameSync(path.join(vault,checklistPath),path.join(artifacts,'initial-checklist.md'));
+  fs.mkdirSync(path.join(vault,checklistPath));
+  await exportButton.click();
+  const partial=writing.getByRole('status').filter({hasText:/正文已导出|Article exported/u});
+  await partial.waitFor();
+  assert.ok((await partial.innerText()).includes(exportPath));
+  assert.ok((await partial.innerText()).includes(checklistPath));
+  assert.ok(await partial.evaluate(status=>{
+    const visibleArea=status.closest('.modal-content').getBoundingClientRect();
+    const bounds=status.getBoundingClientRect();
+    return bounds.top>=visibleArea.top-1 && bounds.bottom<=visibleArea.bottom+1;
+  }));
+  assert.equal(fs.readFileSync(path.join(vault,exportPath),'utf8'),html);
+  assert.equal(fs.readFileSync(path.join(vault,longPath),'utf8'),edited);
+  await page.screenshot({path:path.join(artifacts,'partial-export.png')});
+  fs.rmdirSync(path.join(vault,checklistPath));
+  fs.writeFileSync(path.join(vault,'00-Inbox/missing-index.png'),Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lfsAAAAASUVORK5CYII=','base64'));
+  await exportButton.click();
+  await writing.getByRole('status').filter({hasText:/图片已改变|images changed/u}).waitFor();
+  assert.equal(await exportButton.isDisabled(),true);
+  assert.equal(await frame.count(),0);
+  assert.equal(fs.readFileSync(path.join(vault,exportPath),'utf8'),html);
+  await writing.getByRole('button',{name:/生成预览|Generate preview/u}).click();
+  await frame.waitFor();
+  assert.match(await frame.getAttribute('srcdoc'),/src="data:image\/png;base64,/u);
+  assert.equal(await writing.locator('[data-writing-checks]').count(),0);
+  await page.keyboard.press('Escape');await writing.waitFor({state:'hidden'});
+
+  await setChatTab('chat');
+  const todoFile=path.join(vault,'memory/todo.md');
+  const todoBefore=fs.readFileSync(todoFile,'utf8');
+  assert.match(todoBefore,/Task 45/u);
+  scriptedReplies.push({tool:'save_file',relativePath:'00-Inbox/Unexpected.md',content:'Unrequested write'},
+    {tool:'list_todos',limit:60},'待办包括 Task 45。来源：memory/todo.md。');
+  const lookup=await send('What are my current todos?');
+  assert.ok(lookup.toolCalls.some(call=>call.tool==='save_file' && !call.ok));
+  assert.ok(lookup.toolCalls.some(call=>call.tool==='list_todos' && call.ok));
+  assert.match(lookup.content,/Task 45.*memory\/todo\.md/u);
+  assert.deepEqual(lookup.goal?.modifiedPaths || [],[]);
+  assert.equal(fs.existsSync(path.join(vault,'00-Inbox/Unexpected.md')),false);
+  assert.equal(fs.readFileSync(todoFile,'utf8'),todoBefore);
+
+  const yamlPath=path.join(vault,'topmind.yaml');
+  fs.writeFileSync(yamlPath,fs.readFileSync(yamlPath,'utf8').replace(/mode: auto/u,'mode: confirm'));
+  const removed='00-Inbox/Focus-B.md';
+  const beforeDelete=fs.readFileSync(path.join(vault,removed),'utf8');
+  const resumeOutput='00-Inbox/Resume-result.md';
+  scriptedReplies.push({tool:'delete_path',relativePath:removed});
+  const pending=await send('请删除 Focus-B.md，然后保存续跑结果。');
+  assert.equal(pending.goal.blockReason,'awaiting_confirmation');
+  assert.equal(fs.readFileSync(path.join(vault,removed),'utf8'),beforeDelete);
+  const beforeWait=requests.length;
+  const waiting=await send('继续');
+  assert.equal(waiting.goal.blockReason,'awaiting_confirmation');
+  assert.equal(requests.length,beforeWait);
+  await setChatTab('suggestions');
+  const liveCard=page.locator('.tm-pending-write-card').filter({hasText:'Focus-B.md'});
+  await liveCard.getByRole('button',{name:/确认删除|Confirm deletion/u}).click();
+  await liveCard.waitFor({state:'hidden'});
+  assert.equal(fs.existsSync(path.join(vault,removed)),false);
+  fs.writeFileSync(path.join(vault,removed),'Replacement note at the same path.\n');
+  await setChatTab('chat');
+  scriptedReplies.push({tool:'delete_path',relativePath:removed},
+    {tool:'save_file',relativePath:resumeOutput,content:'Continued after confirmation.'},
+    '续跑结果已保存。 [DONE]');
+  const resumed=await send('继续');
+  assert.equal(resumed.goal.status,'done');
+  assert.deepEqual(resumed.goal.modifiedPaths,[resumeOutput]);
+  assert.equal(fs.readFileSync(path.join(vault,removed),'utf8'),'Replacement note at the same path.\n');
+  assert.equal(fs.readFileSync(path.join(vault,resumeOutput),'utf8'),'Continued after confirmation.');
+  assert.equal(scriptedReplies.length,0);
+  const resumedFooter=page.locator('.tm-chat-message.tm-chat-ai').last().locator('.tm-goal-footer');
+  assert.match(await resumedFooter.innerText(),/Resume-result\.md/u);
+  await resumedFooter.scrollIntoViewIfNeeded();
+  await page.screenshot({path:path.join(artifacts,'resume-after-confirmation.png')});
+  console.log(JSON.stringify({stage:'host-replay',longEdit:longPath,exportPath,queryWriteBlocked:true,confirmedResume:resumeOutput}));
+
   assert.equal(errors.length,0,JSON.stringify(errors));
   console.log(JSON.stringify({stage:'validated',requests:requests.length,target:receipt.focus.path,errors}));
   console.log(JSON.stringify({stage:'rendered',text:(await page.locator('body').innerText()).slice(-5000),errors}));
-  fs.writeFileSync(path.join(artifacts,'verification.json'),JSON.stringify({pluginVersion:loaded.manifest.version,host:{version:actual.version,runtime:actual.runtime},model:'local mock; no real-provider calls',checks:{focusFrozen:true,sessionRestored:true,pendingDelete:true,todoAddedAndCompleted:true,summaryRequests:requests.length,quickTests,keyboardTabFocus:true,backgroundDraftPreserved:true,polishPreservesNewerDraft:true,captureDestinationRespected:true,emptyCaptureRetained:true,narrowViewport:true,darkTheme:true,noHorizontalOverflow:true,streamHintNotVertical:true,longChatReadingPosition:true,explicitJumpToLatest:true,todoBatchAndFilter:true,completedTodoRestore:true,todoToggleTarget32px:true,suggestionResultsStayInSurface:true,suggestionRequestRejoined:true,suggestionNoBulkApply:true,inlineSelectionReview:true,readOnlyFooterHonest:true,ribbonWritingEntry:true,createdNoteOpened:createdPath,writingWide:wideWriting,writingNarrow:narrowWriting,pageErrors:errors}},null,2));
+  fs.writeFileSync(path.join(artifacts,'verification.json'),JSON.stringify({pluginVersion:loaded.manifest.version,host:{version:actual.version,runtime:actual.runtime},model:'local mock; no real-provider calls',checks:{focusFrozen:true,sessionRestored:true,pendingDelete:true,todoAddedAndCompleted:true,summaryRequests:requests.length,quickTests,keyboardTabFocus:true,backgroundDraftPreserved:true,polishPreservesNewerDraft:true,captureDestinationRespected:true,emptyCaptureRetained:true,narrowViewport:true,darkTheme:true,noHorizontalOverflow:true,streamHintNotVertical:true,longChatReadingPosition:true,explicitJumpToLatest:true,todoBatchAndFilter:true,completedTodoRestore:true,todoToggleTarget32px:true,suggestionResultsStayInSurface:true,suggestionRequestRejoined:true,suggestionNoBulkApply:true,inlineSelectionReview:true,readOnlyFooterHonest:true,ribbonWritingEntry:writingOpenedFromRibbon,createdNoteOpened:createdPath,writingWide:wideWriting,writingNarrow:narrowWriting,hostReplay:{longEdit:longPath,exportPath,checklistPath,partialExport:true,queryWriteBlocked:true,confirmedResume:resumeOutput},pageErrors:errors}},null,2));
   console.log(JSON.stringify({stage:'artifacts',directory:artifacts}));
  } finally { if(testPage) console.log(JSON.stringify({stage:"final-dom",text:(await testPage.locator("body").innerText().catch(()=>"")).slice(-5000)})); if(browser) await browser.close(); child.kill(); server.closeAllConnections(); server.close(); }
 })().catch(e=>{console.error(e.stack); process.exitCode=1;});

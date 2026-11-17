@@ -18,6 +18,7 @@ import { confirmAction } from "./confirm-modal";
 import { openStreamWorkbench, openPluginSettings } from "../services/view-openers";
 import { captureChatFocus, type ChatFocus } from "../services/editor-context";
 import { ChatController, type ChatMessage } from "../services/chat-session";
+import { explicitProfileChange } from "../services/chat-memory-proposal";
 import { WritingModal } from "./writing-modal";
 import { buildResultFooter } from "#kernel/agent-goal-protocol.mjs";
 
@@ -1367,7 +1368,7 @@ export class SidebarDockView extends ItemView {
 
     if (pendingTools) footer.createDiv({ cls: "tm-goal-footer-summary", text: t("chat_result_pending", { count: pendingTools }) });
 
-    const row = (labelKey: "chat_result_changes" | "chat_result_verified" | "chat_result_assumed" | "chat_result_could_not") => {
+    const row = (labelKey: "chat_result_changes" | "chat_result_references" | "chat_result_verified" | "chat_result_assumed" | "chat_result_could_not") => {
       const r = footer.createDiv({ cls: "tm-goal-footer-row" });
       r.createSpan({ cls: "tm-goal-footer-label", text: t(labelKey) });
       return r.createDiv({ cls: "tm-goal-footer-vals" });
@@ -1396,6 +1397,7 @@ export class SidebarDockView extends ItemView {
     };
 
     if (model.changes.length) fill(row("chat_result_changes"), model.changes, true);
+    if (model.references.length) fill(row("chat_result_references"), model.references, true);
     if (model.verified.length) fill(row("chat_result_verified"), model.verified);
     if (model.assumed.length) fill(row("chat_result_assumed"), model.assumed);
     if (model.couldNot.length) fill(row("chat_result_could_not"), model.couldNot);
@@ -1497,7 +1499,7 @@ export class SidebarDockView extends ItemView {
 
   private async sendChatMessageText(text: string, boundFocus?: ChatFocus | null): Promise<void> {
     const focus = boundFocus === undefined ? captureChatFocus(this.app.workspace) : boundFocus;
-    await this.executeChat(text, focus);
+    await this.executeChat(text, !focus?.taskIntent && explicitProfileChange(text) ? null : focus);
   }
 
   private async executeChat(text: string, focus: ChatFocus | null, retry = false): Promise<void> {

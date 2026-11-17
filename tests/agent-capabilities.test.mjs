@@ -23,6 +23,55 @@ async function turn(root, call, options = {}) {
   const result = await runWorkspaceChatTurn(kernel, root, { userMessage: '请修改指定的工作区内容', maxSteps: 3, autoContinue: false, generate: async prompt => { prompts.push(prompt); return index++ === 0 ? JSON.stringify(call) : '检查结果如上。'; }, ...options });
   return { result, prompts };
 }
+
+test("the compatibility loop returns a code example without invoking its tool", async t => {
+  const { root } = fixture(t);
+  const example = 'A request for the todo tool looks like this:\n\n```json\n{"tool":"list_todos"}\n```';
+  let requests = 0;
+  const result = await runWorkspaceChatTurn(kernel, root, {
+    userMessage: "Show an example of a todo request.", autoContinue: false,
+    generate: async () => { requests++; return example; },
+  });
+  assert.equal(requests, 1);
+  assert.deepEqual(result.toolCalls, []);
+  assert.equal(result.body, example);
+});
+
+test("empty and reasoning-only replies consume the same bounded retry budget", async t => {
+  const { root } = fixture(t);
+  let requests = 0;
+  const result = await runWorkspaceChatTurn(kernel, root, {
+    userMessage: "Summarize this note.", locale: "en", focus: { path: "00-Inbox/note.md" },
+    generate: async () => ++requests === 1 ? "" : "<think>working</think>",
+  });
+  assert.equal(requests, 2);
+  assert.equal(result.goal.status, "incomplete");
+  assert.match(result.body, /no usable reply twice/);
+  assert.deepEqual(result.goal.modifiedPaths, []);
+});
+
+test("the real skill tools resolve explicit and pack-relative writing resources with a bounded response", async t => {
+  const { ctx } = fixture(t);
+  const resource = (path, skillId) => runAgentTool(ctx, { tool: "load_skill_resource", path, skillId });
+  const relative = await resource("references/workspace.md", "topmind-wechat-post");
+  assert.equal(relative.ok, true);
+  assert.match(relative.content, /源稿/u);
+  assert.deepEqual(await resource("topmind-wechat-post/references/workspace.md"), relative);
+  assert.deepEqual(await resource("topmind-wechat-post/references/workspace.md", "topmind-wechat-post"), relative);
+  const shared = await resource("shared/capability-degradation.md", "topmind");
+  assert.equal(shared.ok, true);
+  assert.deepEqual(await resource("../shared/capability-degradation.md", "topmind"), shared);
+  assert.equal((await resource("../../outside.md", "topmind-wechat-post")).ok, false);
+  assert.equal((await resource("constructor")).ok, false);
+  assert.equal((await resource("references/workspace.md", "topmind")).ok, false);
+  const runtime = await resource("runtime/article-renderer.mjs", "topmind-wechat-post");
+  assert.equal(runtime.ok, true);
+  assert.equal(runtime.truncated, true);
+  assert.ok(runtime.content.length < 12100);
+  const loaded = await runAgentTool(ctx, { tool: "load_skill", skillId: "topmind-wechat-post" });
+  assert.match(loaded.content, /^# Topmind 内置写作能力/u);
+  assert.match(loaded.content, /name: topmind-wechat-post/u);
+});
 test('unqualified read binds to the frozen object, and dirty editors reject alias writes', async t => {
   const { root } = fixture(t);
   const read = await turn(root, { tool: 'read_file' }, { focus: { path: '00-Inbox/note.md' } });
@@ -44,13 +93,94 @@ test('chat memory proposals create reviewable Kernel-compatible cards without wr
   assert.equal(card.kind, 'promote_memory');
   assert.equal(card.payload.action, 'append_profile');
   assert.equal(card.payload.entry, 'Prefers concise replies');
-  assert.match(prompts[1], /wroteFiles.*false/);
+  assert.equal(prompts.length, 1, 'a staged suggestion ends the agent run');
+  assert.deepEqual(result.goal.modifiedPaths, []);
   assert.equal(result.toolCalls[0].needsConfirm, true);
   assert.equal(result.goal.status, "blocked");
   assert.equal(result.goal.blockReason, "awaiting_confirmation");
   assert.match(result.body, /待确认|Awaiting confirmation/);
   assert.equal(fs.existsSync(path.join(root, 'memory/profile.md')), false);
   assert.throws(() => createChatMemoryProposal({ action: 'update_profile', content: 'x' }, 'memory/profile.md'), /match/);
+});
+test('a pending deletion stops the agent and preserves prior real changes', async t => {
+  const { root } = fixture(t);
+  fs.writeFileSync(path.join(root, 'topmind.yaml'), 'contract_version: 4\nwriteback:\n  mode: confirm\n');
+  const removed = '00-Inbox/note.md';
+  const created = '00-Inbox/delivery.md';
+  const script = [
+    { tool: 'save_file', relativePath: created, content: 'Deliverable.' },
+    { tool: 'delete_path', relativePath: removed },
+  ];
+  let requests = 0;
+  const result = await runWorkspaceChatTurn(kernel, root, {
+    userMessage: 'Save a deliverable, then delete the old note.', locale: 'en',
+    generate: async () => JSON.stringify(script[requests++]),
+  });
+  assert.equal(result.goal.status, 'blocked');
+  assert.equal(result.goal.blockReason, 'awaiting_confirmation');
+  assert.deepEqual(result.goal.modifiedPaths, [created]);
+  assert.equal(requests, 2);
+  assert.equal(fs.readFileSync(path.join(root, created), 'utf8'), 'Deliverable.');
+  assert.ok(fs.existsSync(path.join(root, removed)));
+  assert.deepEqual(kernel.listPendingWrites(root).map(item => item.relativePath), [removed]);
+  const waiting = await runWorkspaceChatTurn(kernel, root, { userMessage: '继续', priorGoal: result.goal,
+    generate: async () => assert.fail('a pending review must stop before the model') });
+  assert.equal(waiting.goal.blockReason, 'awaiting_confirmation');
+  assert.equal(kernel.acceptPendingWrite(root, kernel.listPendingWrites(root)[0].id).ok, true);
+  fs.writeFileSync(path.join(root, removed), 'A new note at the same path.');
+  let resumeStep = 0;
+  const resumed = await runWorkspaceChatTurn(kernel, root, { userMessage: '继续', locale: 'en', priorGoal: waiting.goal,
+    generate: async () => resumeStep++ === 0 ? JSON.stringify({ tool: 'delete_path', relativePath: removed }) : 'Reviewed deletion completed. [DONE]' });
+  assert.equal(resumed.goal.status, 'done', resumed.body);
+  assert.deepEqual(resumed.goal.modifiedPaths, []);
+  assert.equal(fs.readFileSync(path.join(root, removed), 'utf8'), 'A new note at the same path.');
+  assert.deepEqual(kernel.listPendingWrites(root), []);
+});
+
+test('an explicit profile fact is saved directly, deduplicated and protected from a dirty editor', async t => {
+  const { root } = fixture(t);
+  const generate = async () => assert.fail('literal profile changes need no model');
+  const remember = (userMessage, options = {}) => runWorkspaceChatTurn(kernel, root, { userMessage, generate, ...options });
+  const added = await remember('记住：我偏好深色界面');
+  const profile = path.join(root, 'memory/profile.md');
+  const saved = fs.readFileSync(profile, 'utf8');
+  assert.equal(added.goal.status, 'done');
+  assert.deepEqual(added.goal.modifiedPaths, ['memory/profile.md']);
+  assert.match(saved, /我偏好深色界面/u);
+  const duplicate = await remember('记住：我偏好深色界面');
+  assert.equal(duplicate.goal.status, 'done');
+  assert.deepEqual(duplicate.goal.modifiedPaths, []);
+  assert.equal(fs.readFileSync(profile, 'utf8'), saved);
+  const dirty = await remember('Remember that I read long articles on Sundays.', { beforeWrite: files => {
+    assert.deepEqual(files, ['memory/profile.md']);
+    return 'unsaved-editor-changes';
+  } });
+  assert.equal(dirty.goal.status, 'incomplete');
+  assert.equal(fs.readFileSync(profile, 'utf8'), saved);
+  const fuzzy = await remember('更新我的情况：把「深色界面」改成「我偏好浅色界面」');
+  assert.equal(fuzzy.goal.status, 'incomplete');
+  assert.equal(fs.readFileSync(profile, 'utf8'), saved);
+  const exact = await remember('更新我的情况：把「我偏好深色界面」改成「我偏好浅色界面」');
+  assert.equal(exact.goal.status, 'done');
+  assert.match(kernel.readProfileActiveBody(root), /我偏好浅色界面/u);
+  assert.doesNotMatch(kernel.readProfileActiveBody(root), /我偏好深色界面/u);
+});
+
+test('one successful write does not hide an independent failed write', async t => {
+  const { root } = fixture(t);
+  let step = 0;
+  const script = [
+    JSON.stringify({ tool: 'save_file', relativePath: '00-Inbox/result.md', content: 'Result.' }),
+    JSON.stringify({ tool: 'edit_file', relativePath: '00-Inbox/note.md', oldText: 'missing', newText: 'replacement' }),
+    'All files finished. [DONE]',
+  ];
+  const result = await runWorkspaceChatTurn(kernel, root, {
+    userMessage: 'Save the result and replace text in the other file.', generate: async () => script[step++],
+  });
+  assert.equal(result.goal.status, 'incomplete');
+  assert.equal(result.goal.blockReason, 'partial-write');
+  assert.deepEqual(result.goal.modifiedPaths, ['00-Inbox/result.md']);
+  assert.match(fs.readFileSync(path.join(root, '00-Inbox/note.md'), 'utf8'), /original/);
 });
 test('todo edit, due date and delete tools execute through the real Kernel and preserve dates', async t => {
   const { ctx } = fixture(t);
@@ -141,10 +271,25 @@ test('in-vault memory aliases and case variants cannot bypass the proposal fence
  assert.deepEqual(fs.readdirSync(path.join(root,'memory')),[]);
 });
 
-test('read-only lookup turns reject attempted writes at execution, not just in the prompt',async t=>{
- const {root}=fixture(t);let calls=0;
- const result=await runWorkspaceChatTurn(kernel,root,{userMessage:'What are my current todos?',maxSteps:2,autoContinue:false,generate:async()=>++calls===1?JSON.stringify({tool:'save_file',relativePath:'00-Inbox/rogue.md',content:'no'}):'No tasks.'});
- assert.equal(fs.existsSync(path.join(root,'00-Inbox/rogue.md')),false);assert.equal(result.toolCalls[0].ok,false);
+test('read-only lookup rejects an attempted write and still returns the supported answer', async t => {
+  const { root } = fixture(t);
+  const todoFile = path.join(root, 'memory/todo.md');
+  const source = '# Todos\n\n- [ ] Review the index.\n';
+  fs.writeFileSync(todoFile, source);
+  const script = [
+    JSON.stringify({ tool: 'save_file', relativePath: '00-Inbox/rogue.md', content: 'Unrequested write.' }),
+    JSON.stringify({ tool: 'list_todos' }),
+    'Review the index. Source: memory/todo.md.',
+  ];
+  const result = await runWorkspaceChatTurn(kernel, root, {
+    userMessage: 'What are my current todos?', maxSteps: 3, autoContinue: false,
+    generate: async () => script.shift(),
+  });
+  assert.equal(fs.existsSync(path.join(root, '00-Inbox/rogue.md')), false);
+  assert.equal(fs.readFileSync(todoFile, 'utf8'), source);
+  assert.deepEqual(result.toolCalls.map(call => [call.tool, call.ok]), [['save_file', false], ['list_todos', true]]);
+  assert.equal(result.body, 'Review the index. Source: memory/todo.md.');
+  assert.deepEqual(result.goal.modifiedPaths, []);
 });
 
 test('a write guard failure is returned to the model without executing the mutation',async t=>{

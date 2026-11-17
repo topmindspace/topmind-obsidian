@@ -1182,9 +1182,14 @@ export function listSkills(_ctx: AgentToolContext): AgentToolResult {
 export function loadSkill(_ctx: AgentToolContext, opts: { skillId?: string }): AgentToolResult {
   const id = String(opts.skillId || "");
   const content = bundledSkillResource("SKILL.md", id);
-  return content === null
-    ? { tool: "load_skill", ok: false, error: `skill not found: ${id}` }
-    : { tool: "load_skill", ok: true, skillId: id, content: `${content}\n\n${bundledSkillResource("../runtime/host-guide.md", id) || ""}`, truncated: false };
+  if (content === null) return { tool: "load_skill", ok: false, error: `skill not found: ${id}` };
+  const guide = bundledSkillResource("runtime/host-guide.md", id);
+  return { tool: "load_skill", ok: true, skillId: id, ...clipSkillText(guide ? `${guide}\n\n${content}` : content, 14000) };
+}
+
+function clipSkillText(content: string, limit: number) {
+  const truncated = content.length > limit;
+  return { content: truncated ? `${content.slice(0, limit)}\n\n…(truncated)` : content, truncated };
 }
 
 /**
@@ -1270,7 +1275,7 @@ export async function runAgentTool(
       return String(call.question || "").trim() ? { tool, ok: true, needsUser: true, question: String(call.question).trim(), choices: call.choices } : { tool, ok: false, error: "question-required" };
     case "load_skill_resource": {
       const content = bundledSkillResource(String(call.path || call.relativePath || ""), typeof call.skillId === "string" ? call.skillId : undefined);
-      return content === null ? { tool, ok: false, error: "skill-resource-not-found" } : { tool, ok: true, content, truncated: false };
+      return content === null ? { tool, ok: false, error: "skill-resource-not-found" } : { tool, ok: true, ...clipSkillText(content, 12000) };
     }
     case "delete_path":
       // Never accept model-supplied confirmed — AI cannot self-approve deletes.

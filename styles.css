@@ -5552,9 +5552,11 @@ body .workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-heade
 .tm-writing-tabs [aria-selected=true] { color:var(--text-normal); border-bottom:2px solid var(--interactive-accent); }
 .tm-writing-intro { margin:0 0 var(--size-4-3); color:var(--text-muted); }
 .tm-writing-actions-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--size-4-2); margin-bottom:var(--size-4-3); }
-.tm-writing-choice { min-width:0; padding:var(--size-4-2) var(--size-4-3); border:1px solid var(--background-modifier-border); border-radius:var(--tm-radius-card); }
-.tm-writing-choice:has(button[aria-pressed=true]) { border-color:var(--interactive-accent); background:var(--background-secondary); }
-.tm-writing-choice button { display:block; width:100%; min-height:var(--tm-hit); text-align:left; background:transparent; border:0; box-shadow:none; padding:0; color:var(--text-normal); font-weight:var(--font-semibold,600); }
+.tm-writing-actions-grid .tm-writing-choice { display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-start; gap:var(--size-4-1); height:auto; min-width:0; min-height:var(--tm-hit); white-space:normal; text-align:left; background:transparent; box-shadow:none; padding:var(--size-4-3); border:1px solid var(--background-modifier-border); border-radius:var(--tm-radius-card); }
+.tm-writing-actions-grid .tm-writing-choice:hover { background:var(--background-modifier-hover); }
+.tm-writing-actions-grid .tm-writing-choice[aria-pressed=true] { border-color:var(--interactive-accent); background:var(--background-secondary); }
+.tm-writing-actions-grid .tm-writing-choice:focus-visible { outline:2px solid var(--tm-text-accent); outline-offset:2px; }
+.tm-writing-choice-title { color:var(--text-normal); font-weight:var(--font-semibold,600); }
 .tm-writing-choice-desc { color:var(--text-muted); font-size:var(--font-ui-small); line-height:1.4; overflow-wrap:anywhere; }
 .tm-writing-more { margin:var(--size-4-2) 0; }
 .tm-writing-more summary { cursor:pointer; color:var(--text-muted); min-height:var(--tm-hit); display:list-item; padding:var(--size-4-2) 0; }
@@ -5566,7 +5568,15 @@ body .workspace-leaf-content[data-type="topmind-sidebar-dock"] .tm-sidebar-heade
 .tm-writing-panel textarea { min-height:4rem; width:100%; resize:vertical; }
 .tm-writing-preview { width:100%; height:min(52vh,560px); border:1px solid var(--background-modifier-border); border-radius:var(--tm-radius-card); background:var(--background-primary); }
 .tm-writing-text { white-space:pre-wrap; overflow-wrap:anywhere; }
-.tm-writing-status { min-height:1.5em; overflow-wrap:anywhere; }
+.tm-writing-generate { min-height:var(--tm-hit); margin:var(--size-4-2) 0; }
+.tm-writing-checks { margin-top:var(--size-4-2); padding:var(--size-4-3); border:1px solid var(--background-modifier-border); border-radius:var(--tm-radius-card); background:var(--background-secondary); color:var(--text-muted); font-size:var(--font-ui-small); }
+.tm-writing-checks p, .tm-writing-checks ul { margin:0; }
+.tm-writing-checks p, .tm-writing-images .tm-writing-missing { color:var(--text-warning); }
+.tm-writing-images { padding-inline-start:var(--size-4-4); font-size:var(--font-ui-small); }
+.tm-writing-images li > span { margin-inline-end:var(--size-4-2); }
+.tm-writing-images code, .tm-writing-status { overflow-wrap:anywhere; }
+.tm-writing-status[data-kind=error] { color:var(--text-error); }
+.tm-writing-status:empty { display:none; }
 @media (max-width:560px) { .tm-writing-source-card { align-items:flex-start; flex-direction:column; } .tm-writing-source-actions { justify-content:flex-start; } .tm-writing-actions-grid { grid-template-columns:1fr; } .tm-writing-panel .setting-item { align-items:stretch; flex-direction:column; gap:var(--size-4-2); } .tm-writing-panel .setting-item-control { width:100%; justify-content:stretch; } .tm-writing-panel .setting-item-control textarea, .tm-writing-panel .setting-item-control select { width:100%; } }
 
 /* Stream header: two legible document actions instead of four mystery icons. */

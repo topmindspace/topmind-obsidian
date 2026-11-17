@@ -20,9 +20,10 @@ test("plugin version sources and changelog name the shipped release", () => {
   assert.equal(lock.version, pkg.version);
   assert.equal(lock.packages[""].version, pkg.version);
   const changelog = fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
-  assert.match(changelog, new RegExp(`^## ${pkg.version} — `, "mu"));
+  assert.match(changelog, new RegExp(`^## ${pkg.version.replaceAll(".", "\\.")} — `, "mu"));
+  const currentEntries = changelog.split(/^## /mu).slice(1, changelog.includes("\n## Unreleased\n") ? 3 : 2).join("\n");
   const skills = readJson("src/data/skill-pack.json").version;
   const writing = readJson("src/data/writing-pack.json").version;
-  assert.match(changelog, new RegExp(`核心技能快照升至 ${skills}`, "u"));
-  assert.match(changelog, new RegExp(`写作快照升至 ${writing}`, "u"));
+  assert.match(currentEntries, new RegExp(`核心技能快照升至 ${skills.replaceAll(".", "\\.")}`, "u"));
+  assert.match(currentEntries, new RegExp(`写作快照升至 ${writing.replaceAll(".", "\\.")}`, "u"));
 });

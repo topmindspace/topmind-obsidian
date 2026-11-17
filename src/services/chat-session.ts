@@ -2,12 +2,13 @@
 import { readWorkspaceState, writeWorkspaceState } from "#kernel/workspace-state.mjs";
 import { persistableChatFocus, type ChatFocus } from "./editor-context.ts";
 import type { ChatProgressEvent } from "./chat-agent.ts";
-import type { TaskContract } from "#kernel/agent-task-contract.mjs";
+import { isTaskExecutionCheckpoint, type TaskContract, type TaskExecutionCheckpoint } from "#kernel/agent-task-contract.mjs";
 
 export interface ChatGoal {
   task?: TaskContract;
+  execution?: TaskExecutionCheckpoint;
   goal?: string; plan?: string[]; criteria?: string[]; openCriteria?: string[];
-  pathReceipts?: string[]; status?: string; blockReason?: string | null;
+  pathReceipts?: string[]; modifiedPaths?: string[]; status?: string; blockReason?: string | null;
   autoContinues?: number; checksRun?: string[]; assumptions?: string[];
 }
 export interface ChatMessage {
@@ -38,8 +39,9 @@ function record(value: unknown): value is Record<string, unknown> { return !!val
 function validateGoal(value: unknown): value is ChatGoal | null {
   if (value === null) return true;
   if (!record(value)) return false;
-  return ["plan", "criteria", "openCriteria", "pathReceipts", "checksRun", "assumptions"].every(key => value[key] === undefined || (Array.isArray(value[key]) && value[key].every(item => typeof item === "string")))
-    && ["goal", "status", "blockReason"].every(key => value[key] == null || typeof value[key] === "string");
+  return ["plan", "criteria", "openCriteria", "pathReceipts", "modifiedPaths", "checksRun", "assumptions"].every(key => value[key] === undefined || (Array.isArray(value[key]) && value[key].every(item => typeof item === "string")))
+    && ["goal", "status", "blockReason"].every(key => value[key] == null || typeof value[key] === "string")
+    && (value.execution === undefined || isTaskExecutionCheckpoint(value.execution));
 }
 function validateMessages(value: unknown): value is ChatMessage[] {
   return Array.isArray(value) && value.every(message => record(message) && ["user", "assistant"].includes(String(message.role)) && typeof message.content === "string"

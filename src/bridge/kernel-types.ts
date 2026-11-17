@@ -350,6 +350,8 @@ export interface KernelApi {
   resolveMemoryDir?(workspaceRoot: string): string;
   resolveMemoryLayerPath?(workspaceRoot: string, layer: string, identifier?: string): string;
   globalProfileRelPath?(workspaceRoot: string): string;
+  appendProfileEntry(opts: { workspaceRoot: string; entry: string; actor: "ai"; confirmed: boolean }): ApplySuggestionResult;
+  updateProfileEntry(opts: { workspaceRoot: string; match: string; content: string; exactMatch: boolean; actor: "ai"; confirmed: boolean }): ApplySuggestionResult;
   readProfileActiveBody?(
     workspaceRoot: string,
     opts?: { historySection?: string; locale?: string },

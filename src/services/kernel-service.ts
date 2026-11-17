@@ -51,7 +51,7 @@ import { t, getLocale } from "../i18n";
 import { buildChatContext } from "./chat-context.ts";
 import { readWorkspaceState, writeWorkspaceState } from "#kernel/workspace-state.mjs";
 import { cancellableOperationProvider } from "./operation-provider";
-import { createChatMemoryProposal } from "./chat-memory-proposal";
+import { createChatMemoryProposal, explicitProfileChange } from "./chat-memory-proposal";
 import { buildFocusContext, captureChatFocus, refreshBoundFocus, editorWriteConflict, type ChatFocus } from "./editor-context.ts";
 import { resolveTaskContract, type TaskContract } from "#kernel/agent-task-contract.mjs";
 import { hasConfiguredProvider, getProviderKey } from "../types.ts";
@@ -950,11 +950,16 @@ export class KernelService {
       criteria: string[];
       openCriteria: string[];
       pathReceipts: string[];
+      modifiedPaths?: string[];
       status: string;
       blockReason: string | null;
       autoContinues: number;
     };
   }> {
+    const currentFocus = captureChatFocus(this.app.workspace);
+    let requestedFocus = opts.focus === undefined ? currentFocus : opts.focus;
+    const taskContract = resolveTaskContract({ userText: userMessage, focusPath: requestedFocus?.path, intent: requestedFocus?.taskIntent, priorTask: opts.priorGoal?.task, memoryEnabled: this.settings.useMemory !== false, capabilities: { vision: false, imageGeneration: false, imageRendering: false } });
+    const directProfile = !requestedFocus?.taskIntent && explicitProfileChange(userMessage);
     let aiProvider: AiProvider | null = null;
     try {
       const ctx = this.getContext();
@@ -966,21 +971,17 @@ export class KernelService {
       // Context creation failed — fall through to manual creation
     }
 
-    if (!aiProvider) {
+    if (!aiProvider && !directProfile) {
       aiProvider = createAiProvider(this.settings);
     }
 
-    if (!aiProvider) {
+    if (!aiProvider && !directProfile) {
       throw new Error(t("settings_ai_test_no_key"));
     }
-    // Capture for the generate closure — `let` narrowing does not survive capture.
-    const activeAi: AiProvider = aiProvider;
+    const activeAi = aiProvider;
 
-    const currentFocus = captureChatFocus(this.app.workspace);
-    let requestedFocus = opts.focus === undefined ? currentFocus : opts.focus;
-    const taskContract = resolveTaskContract({ userText: userMessage, focusPath: requestedFocus?.path, intent: requestedFocus?.taskIntent, priorTask: opts.priorGoal?.task, memoryEnabled: this.settings.useMemory !== false, capabilities: { vision: false, imageGeneration: false, imageRendering: false } });
-    if (taskContract.kind === "document" && taskContract.targetPath && taskContract.targetPath !== requestedFocus?.path) requestedFocus = { path: taskContract.targetPath };
-    const contextParts = taskContract.kind === "document" ? (taskContract.memoryEnabled ? ["## User memory (read-only background, never article facts; current request wins)\n" + clipContext(loadChatProfileContext(getKernel(), this.getVaultPath(), this.settings.localeOverride || getLocale()), 600)] : []) : await buildChatContext(userMessage, {
+    if (!directProfile && taskContract.kind === "document" && taskContract.targetPath && taskContract.targetPath !== requestedFocus?.path) requestedFocus = { path: taskContract.targetPath };
+    const contextParts = directProfile ? [] : taskContract.kind === "document" ? (taskContract.memoryEnabled ? ["## User memory (read-only background, never article facts; current request wins)\n" + clipContext(loadChatProfileContext(getKernel(), this.getVaultPath(), this.settings.localeOverride || getLocale()), 600)] : []) : await buildChatContext(userMessage, {
       stream: async () => {
         const ctx = await this.getStreamContext();
         if (!ctx.current) return "";
@@ -993,7 +994,7 @@ export class KernelService {
       reflections: async () => (await this.loadRecentReflections()) || "",
     });
 
-    const includeFocus = taskContract.kind === "document" || needsActiveDocument(userMessage) || classifyTurn(userMessage) !== "light";
+    const includeFocus = !directProfile && (taskContract.kind === "document" || needsActiveDocument(userMessage) || classifyTurn(userMessage) !== "light");
     const focus = includeFocus ? buildFocusContext(this.getVaultPath(), refreshBoundFocus(this.app.workspace, requestedFocus)) : null;
     if (focus) contextParts.unshift(focus.prompt);
 
@@ -1034,7 +1035,10 @@ export class KernelService {
         this.suggestionDropped.delete(card.id);
         return { id: card.id, targetPath: target };
       },
-      generate: (prompt, context) => activeAi.generate(prompt, context),
+      generate: (prompt, context) => {
+        if (!activeAi) throw new Error(t("settings_ai_test_no_key"));
+        return activeAi.generate(prompt, context);
+      },
       locale: uiLocale,
       // omit writebackMode — runWorkspaceChatTurn reads topmind.yaml
       systemExtra: systemPrompt,
@@ -1065,9 +1069,7 @@ export class KernelService {
     });
 
     // Agent writes already hit disk via the write gate — poke vault listeners now.
-    this.notifyFilesChanged(
-      turn.toolCalls.filter((t) => t.ok && ["edit_file", "save_file", "save_note", "capture", "capture_url", "append_stream_entry", "add_todo", "toggle_todo", "update_todo", "set_todo_due", "delete_todo"].includes(t.tool)).map((t) => t.summary),
-    );
+    this.notifyFilesChanged(turn.goal?.modifiedPaths || []);
 
     return {
       content: turn.body || "...",

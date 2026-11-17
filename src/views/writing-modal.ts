@@ -23,6 +23,12 @@ export class WritingModal extends Modal {
   constructor(private plugin: TopmindPlugin, private source = "") { super(plugin.app); this.source ||= captureChatFocus(this.app.workspace)?.path || ""; const preferred = plugin.settings?.writingTheme; if (preferred && Object.prototype.hasOwnProperty.call(WRITING_THEMES, preferred)) this.theme = preferred as WritingTheme; }
   onOpen(): void { this.render(); }
   onClose(): void { this.generation++; this.contentEl.empty(); }
+
+  private renderAndFocus(selector: string): void {
+    this.render();
+    this.contentEl.querySelector<HTMLElement>(selector)?.focus();
+  }
+
   private render(): void {
     const generation = ++this.generation;
     const { contentEl } = this;
@@ -39,21 +45,21 @@ export class WritingModal extends Modal {
     const sourceActions = sourceCard.createDiv({ cls: "tm-writing-source-actions" });
     if (activePath && this.source !== activePath) {
       const activeButton = sourceActions.createEl("button", { text: t("writing_use_active"), cls: "tm-chip" });
-      activeButton.addEventListener("click", () => { this.source = activePath; this.render(); });
+      activeButton.addEventListener("click", () => { this.source = activePath; this.renderAndFocus("[data-writing-choose-source]"); });
     }
-    const chooseSource = sourceActions.createEl("button", { text: t("writing_choose_source"), cls: "tm-chip" });
+    const chooseSource = sourceActions.createEl("button", { text: t("writing_choose_source"), cls: "tm-chip", attr: { "data-writing-choose-source": "" } });
     chooseSource.addEventListener("click", () => {
       const owner = this;
       new class extends FuzzySuggestModal<TFile> {
         getItems(): TFile[] { return owner.app.vault.getMarkdownFiles(); }
         getItemText(file: TFile): string { return file.path; }
-        onChooseItem(file: TFile): void { owner.source = file.path; owner.render(); }
+        onChooseItem(file: TFile): void { owner.source = file.path; owner.renderAndFocus("[data-writing-choose-source]"); }
       }(this.app).open();
     });
     const tabs = contentEl.createDiv({ cls: "tm-writing-tabs", attr: { role: "tablist", "aria-label": t("writing_title") } });
     for (const id of ["write", "preview"] as const) {
       const button = tabs.createEl("button", { text: t(id === "write" ? "writing_ai_task" : "writing_local_delivery"), attr: { role: "tab", id: `tm-writing-tab-${id}`, "aria-selected": String(this.tab === id), "aria-controls": "tm-writing-panel", tabindex: this.tab === id ? "0" : "-1" } });
-      const choose = (next: "write" | "preview") => { this.tab = next; this.render(); this.contentEl.querySelector<HTMLElement>(`#tm-writing-tab-${next}`)?.focus(); };
+      const choose = (next: "write" | "preview") => { this.tab = next; this.renderAndFocus(`#tm-writing-tab-${next}`); };
       button.addEventListener("click", () => choose(id));
       button.addEventListener("keydown", event => {
         if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); choose(event.key === "Home" ? "write" : event.key === "End" ? "preview" : id === "write" ? "preview" : "write"); }
@@ -65,17 +71,18 @@ export class WritingModal extends Modal {
     const primaryIds = ["topmind-revise", "topmind-briefs", "topmind-wechat-post", "topmind-x-article"];
     const moreIds = ["topmind-format", "topmind-viral-posts", "topmind-cover", "topmind-poster"];
     const renderChoice = (parent: HTMLElement, action: (typeof WRITING_ACTIONS)[number]) => {
-      const choice = parent.createDiv({ cls: "tm-writing-choice" });
-      const button = choice.createEl("button", {
-        text: getLocale().startsWith("zh") ? action.zh : action.en,
-        attr: { type: "button", "aria-pressed": String(this.actionId === action.id), "data-writing-action": action.id },
+      const titleId = `tm-writing-title-${action.id}`;
+      const descriptionId = `tm-writing-description-${action.id}`;
+      const button = parent.createEl("button", {
+        cls: "tm-writing-choice",
+        attr: { type: "button", "aria-pressed": String(this.actionId === action.id), "aria-labelledby": titleId, "aria-describedby": descriptionId, "data-writing-action": action.id },
       });
-      choice.createDiv({ text: t(`writing_action_${action.id}` as Parameters<typeof t>[0]), cls: "tm-writing-choice-desc" });
+      button.createSpan({ text: getLocale().startsWith("zh") ? action.zh : action.en, cls: "tm-writing-choice-title", attr: { id: titleId } });
+      button.createSpan({ text: t(`writing_action_${action.id}` as Parameters<typeof t>[0]), cls: "tm-writing-choice-desc", attr: { id: descriptionId } });
       button.addEventListener("click", () => {
         this.actionId = action.id;
         if (!["topmind-revise", "topmind-format"].includes(action.id)) this.output = "review";
-        this.render();
-        this.contentEl.querySelector<HTMLElement>(`[data-writing-action="${action.id}"]`)?.focus();
+        this.renderAndFocus(`[data-writing-action="${action.id}"]`);
       });
     };
     const primary = panel.createDiv({ cls: "tm-writing-actions-grid" });
@@ -108,52 +115,107 @@ export class WritingModal extends Modal {
     }
     panel.createEl("p", { text: t("writing_preview_hint"), cls: "tm-writing-source" });
 
-    new Setting(panel).setName(t("writing_format")).addDropdown(dropdown => dropdown.addOptions({ wechat: t("writing_wechat"), x: "X Article", text: t("writing_text") }).setValue(this.platform).onChange(value => { this.platform = value as WritingPlatform; this.render(); }));
-    new Setting(panel).setName(t("writing_theme")).addDropdown(dropdown => dropdown.addOptions(Object.fromEntries(Object.keys(WRITING_THEMES).map(id => [id, t(`writing_theme_${id}` as Parameters<typeof t>[0])]))).setValue(this.theme).onChange(value => { this.theme = value as WritingTheme; this.render(); }));
+    new Setting(panel).setName(t("writing_format")).addDropdown(dropdown => {
+      dropdown.selectEl.setAttribute("data-writing-format", "");
+      dropdown.addOptions({ wechat: t("writing_wechat"), x: "X Article", text: t("writing_text") })
+        .setValue(this.platform).onChange(value => { this.platform = value as WritingPlatform; this.renderAndFocus("[data-writing-format]"); });
+    });
+    new Setting(panel).setName(t("writing_theme")).addDropdown(dropdown => {
+      dropdown.selectEl.setAttribute("data-writing-theme", "");
+      dropdown.addOptions(Object.fromEntries(Object.keys(WRITING_THEMES).map(id => [id, t(`writing_theme_${id}` as Parameters<typeof t>[0])])))
+        .setValue(this.theme).onChange(value => { this.theme = value as WritingTheme; this.renderAndFocus("[data-writing-theme]"); });
+    });
+    const preview = panel.createEl("button", { text: t("writing_preview"), cls: "mod-cta tm-writing-generate" });
+    const diagnostics = panel.createDiv();
     const controls = panel.createDiv({ cls: "tm-writing-actions" });
-    const preview = controls.createEl("button", { text: t("writing_preview"), cls: "mod-cta" });
-    const copy = controls.createEl("button", { text: t("writing_copy") }); copy.disabled = true;
-    const exportButton = controls.createEl("button", { text: t("writing_export") }); exportButton.disabled = true;
+    const copy = controls.createEl("button", { text: t("writing_copy") });
+    const exportButton = controls.createEl("button", { text: t("writing_export") });
     const status = panel.createEl("p", { attr: { role: "status" }, cls: "tm-writing-status" });
     const container = panel.createDiv();
     let prepared: Awaited<ReturnType<typeof prepareWritingDelivery>> | null = null;
+    let busy = false;
     const root = this.plugin.kernelService.getVaultPath();
-    const check = () => { const conflict = editorWriteConflict(this.app.workspace, root, [this.source]); if (conflict) throw new Error(conflict); };
-    preview.disabled = !this.source;
-    preview.addEventListener("click", () => { void (async () => {
-      preview.disabled = true; copy.disabled = true; exportButton.disabled = true;
-      try {
-        check(); const next = await prepareWritingDelivery(root, this.source, this.platform, this.theme);
-        if (generation !== this.generation) return;
-        prepared = next; container.empty();
-        if (this.platform === "text") container.createEl("pre", { text: next.delivery.text, cls: "tm-writing-text" });
-        else { const frame = container.createEl("iframe", { attr: { title: t("writing_preview"), sandbox: "" }, cls: "tm-writing-preview" }); frame.srcdoc = next.delivery.html; }
-        status.textContent = next.delivery.diagnostics.length ? t("writing_review", { count: next.delivery.diagnostics.length }) : t("writing_ready");
-        if (next.delivery.images.length) container.createEl("pre", { text: next.delivery.checklist, cls: "tm-writing-text" });
-        copy.disabled = false; exportButton.disabled = false;
-      } catch (error) { status.textContent = error instanceof Error ? error.message : String(error); }
-      finally { preview.disabled = false; }
-    })(); });
-    const current = async () => {
-      if (!prepared) throw new Error("preview-required"); check();
-      const next = await prepareWritingDelivery(root, this.source, this.platform, this.theme);
-      if (generation !== this.generation) throw new Error(t("writing_stale"));
-      if (next.sourceHash !== prepared.sourceHash || next.delivery.html !== prepared.delivery.html) throw new Error(t("writing_stale"));
-      return prepared;
+    const source = this.source;
+    const { platform, theme } = this;
+    const check = () => { const conflict = editorWriteConflict(this.app.workspace, root, [source]); if (conflict) throw new Error(conflict); };
+    const syncControls = () => {
+      preview.disabled = busy || !source;
+      copy.disabled = busy || !prepared;
+      exportButton.disabled = copy.disabled;
     };
-    copy.addEventListener("click", () => { void (async () => {
-      try { const item = await current();
-        if (this.platform === "text") await navigator.clipboard.writeText(item.delivery.text);
+    const setStatus = (text: string, kind = "success") => { status.textContent = text; status.dataset.kind = kind; };
+    const clearPreview = () => { prepared = null; diagnostics.empty(); container.empty(); };
+    const perform = async (operation: () => Promise<void>) => {
+      if (busy) return;
+      busy = true; syncControls(); setStatus("");
+      try { await operation(); }
+      catch (error) {
+        if (generation === this.generation) setStatus(error instanceof Error ? error.message : String(error), "error");
+      } finally { busy = false; syncControls(); }
+    };
+    syncControls();
+    preview.addEventListener("click", () => { void perform(async () => {
+      clearPreview(); check();
+      const next = await prepareWritingDelivery(root, source, platform, theme);
+      if (generation !== this.generation) return;
+      prepared = next;
+      const { delivery } = next;
+      if (delivery.diagnostics.length) {
+        const checks = diagnostics.createDiv({ cls: "tm-writing-checks", attr: { "data-writing-checks": "" } });
+        checks.createEl("p", { text: t("writing_review", { count: delivery.diagnostics.length }) });
+        const list = checks.createEl("ul");
+        for (const code of new Set(delivery.diagnostics.map(item => item.code))) {
+          list.createEl("li", { text: t(`writing_diagnostic_${code}` as Parameters<typeof t>[0]) });
+        }
+      } else setStatus(t("writing_ready"));
+      if (delivery.images.length) {
+        const details = diagnostics.createEl("details", { cls: "tm-writing-more", attr: { "data-writing-images": "" } });
+        details.open = delivery.images.some(image => image.status === "missing");
+        details.createEl("summary", { text: t("writing_images", { count: delivery.images.length }) });
+        const list = details.createEl("ul", { cls: "tm-writing-images" });
+        for (const image of delivery.images) {
+          const row = list.createEl("li");
+          row.createSpan({ text: t(`writing_image_${image.status}` as Parameters<typeof t>[0]), cls: image.status === "missing" ? "tm-writing-missing" : "" });
+          row.createEl("code", { text: image.source });
+        }
+      }
+      if (platform === "text") container.createEl("pre", { text: delivery.text, cls: "tm-writing-text" });
+      else { const frame = container.createEl("iframe", { attr: { title: t("writing_preview"), sandbox: "" }, cls: "tm-writing-preview" }); frame.srcdoc = delivery.html; }
+    }); });
+    const current = async () => {
+      const item = prepared;
+      if (!item) return null;
+      check();
+      const next = await prepareWritingDelivery(root, source, platform, theme);
+      if (generation !== this.generation) return null;
+      if (next.sourceHash !== item.sourceHash || next.delivery.html !== item.delivery.html) {
+        clearPreview();
+        throw new Error(t("writing_stale"));
+      }
+      check();
+      return item;
+    };
+    copy.addEventListener("click", () => { void perform(async () => {
+        const item = await current();
+        if (!item) return;
+        if (platform === "text") await navigator.clipboard.writeText(item.delivery.text);
         else await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([item.delivery.body], { type: "text/html" }), "text/plain": new Blob([item.delivery.text], { type: "text/plain" }) })]);
-        status.textContent = t("writing_copied");
-      } catch (error) { status.textContent = error instanceof Error ? error.message : String(error); }
-    })(); });
-    exportButton.addEventListener("click", () => { void (async () => {
-      try { const item = await current();
-        const result = exportWritingDelivery({ kernel: getKernel(), workspaceRoot: root }, this.source, item.sourceHash, item.delivery);
-        status.textContent = result.relativePath; this.plugin.kernelService.notifyFilesChanged([result.relativePath]); new Notice(t("writing_exported"));
-      } catch (error) { status.textContent = error instanceof Error ? error.message : String(error); }
-    })(); });
+        if (generation === this.generation) setStatus(t("writing_copied"));
+    }); });
+    exportButton.addEventListener("click", () => { void perform(async () => {
+        const item = await current();
+        if (!item) return;
+        const result = exportWritingDelivery({ kernel: getKernel(), workspaceRoot: root }, source, item.sourceHash, item.delivery);
+        const checklist = result.checklist;
+        const changedPaths = checklist?.ok ? [result.relativePath, checklist.relativePath] : [result.relativePath];
+        this.plugin.kernelService.notifyFilesChanged(changedPaths);
+        if (checklist && !checklist.ok) {
+          setStatus(t("writing_export_partial", { path: result.relativePath, checklistPath: checklist.relativePath }), "error");
+        } else {
+          setStatus(checklist ? t("writing_export_with_checklist", { path: result.relativePath, checklistPath: checklist.relativePath }) : t("writing_export_path", { path: result.relativePath }));
+        }
+        status.scrollIntoView({ block: "nearest" });
+    }); });
     panel.createEl("p", { text: t("writing_boundary"), cls: "tm-writing-source" });
   }
   private async startAction(): Promise<void> {

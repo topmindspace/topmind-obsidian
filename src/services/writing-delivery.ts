@@ -30,9 +30,9 @@ export function exportWritingDelivery(ctx: AgentToolContext, source: string, sou
   const relativePath = `${directory === "." ? "" : `${directory}/`}out/${name}-${delivery.platform}.${delivery.platform === "text" ? "txt" : "html"}`;
   const result = saveFile({ ...ctx, actor: "user" }, { relativePath, content: delivery.platform === "text" ? delivery.text : delivery.html });
   if (!result.ok) throw new Error(String(result.error || "export-failed"));
-  if (delivery.images.length) {
-    const checklist = saveFile({ ...ctx, actor: "user" }, { relativePath: relativePath.replace(/\.[^.]+$/u, "-images.md"), content: delivery.checklist });
-    if (!checklist.ok) throw new Error(`HTML saved: ${relativePath}; image checklist failed`);
-  }
-  return { ...result, relativePath };
+  const checklistPath = relativePath.replace(/\.[^.]+$/u, "-images.md");
+  const checklist = delivery.images.length
+    ? saveFile({ ...ctx, actor: "user" }, { relativePath: checklistPath, content: delivery.checklist })
+    : null;
+  return { ...result, relativePath, checklist: checklist ? { relativePath: checklistPath, ok: checklist.ok } : null };
 }

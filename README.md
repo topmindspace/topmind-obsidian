@@ -14,6 +14,8 @@ A reviewed release snapshot of [topmind-writing-skills](https://github.com/topmi
 
 **Layout preview** formats locally, then copies or exports to `out/` without calling AI. The dialog uses a compact writing width and a wider preview width; narrow windows scroll to the primary action. Set a default theme in plugin settings; existing drafts work in place.
 
+For a finished draft, go straight to **Layout preview**, choose the platform and theme, then review the image and layout report before copying or exporting. Use the arrow keys to switch tabs. After changing the note, format, or theme, focus returns to the relevant control.
+
 Built-in HTML/text typography requires no Python. Preview and copy use the same output; changed sources or images require regeneration. Diagnostics identify missing images, diagram source, extended containers and table paste limitations. The current chat host has no image-input, image-generation or PNG-rendering tool. Cover/poster actions prepare prompts or HTML only. Publishing requires its own tool and authorization. Copying does not publish; wording scores do not decide editorial quality.
 
 AI settings include automatic global memory and a context window ceiling. A small read-only memory window and recent same-note exchanges support writing; other resources are loaded as needed. Current instructions take priority. Context compaction preserves the task and completed writes, and does not truncate saved conversation history.
@@ -105,6 +107,8 @@ Proactive organization and memory suggestions can be dismissed. Requested conten
 **Do I need an AI key to take notes?** No. Capture, browsing, and manual todos work without it.
 
 **A selected model fails the connection test.** Check that the provider, Base URL, key, and model ID belong to the same service, then test again in Settings. Connectivity does not prove support for every task.
+
+**The model stops after empty replies.** Completed tool results stay in the conversation. Check the provider and model in AI settings before retrying the task.
 
 **No suggestions appear.** Check AI configuration and the automatic-suggestions option. Manual refresh may make a model request. Pending review cards remain available regardless of that option.
 

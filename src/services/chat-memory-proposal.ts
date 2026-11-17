@@ -1,6 +1,21 @@
 import { createHash } from "node:crypto";
 import type { SuggestionCard } from "../types";
 
+type ExplicitProfileChange = { content: string; match?: string };
+
+/** Bind only literal facts or replacements named in the current user message. */
+export function explicitProfileChange(userMessage: string): ExplicitProfileChange | null {
+  const text = userMessage.trim();
+  if (!text || text.length > 2000 || /[\r\n]/u.test(text)) return null;
+  const replacement = text.match(/^(?:请\s*)?更新我的情况[：:]\s*把[「“]([^」”]+)[」”]\s*改(?:成|为)[「“]([^」”]+)[」”][。.]?$/u)
+    || text.match(/^(?:please\s+)?update my profile:\s*replace "([^"]+)" with "([^"]+)"[.]?$/iu);
+  if (replacement && replacement[1].trim() && replacement[2].trim()) return { match: replacement[1].trim(), content: replacement[2].trim() };
+  const append = text.match(/^(?:请\s*)?记住(?:[：:]\s*|\s*(?=我))(.+)$/u)
+    || text.match(/^(?:please\s+)?remember that\s+(.+)$/iu);
+  const content = append?.[1]?.trim();
+  return content ? { content } : null;
+}
+
 /** A chat can propose a profile change; only the existing suggestion apply path writes it. */
 export function createChatMemoryProposal(call: Record<string, unknown>, targetPath: string): SuggestionCard {
   const action = String(call.action || "append_profile");

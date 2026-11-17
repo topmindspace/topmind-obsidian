@@ -42,7 +42,14 @@ declare module "node:fs" {
 declare module "node:path" {
   export function join(...parts: string[]): string;
   export function extname(path: string): string;
-  export const posix: { dirname(path: string): string; basename(path: string, suffix?: string): string; extname(path: string): string };
+  export const posix: {
+    dirname(path: string): string;
+    basename(path: string, suffix?: string): string;
+    extname(path: string): string;
+    isAbsolute(path: string): boolean;
+    normalize(path: string): string;
+    join(...parts: string[]): string;
+  };
   export function dirname(path: string): string;
   export function basename(path: string): string;
   export function resolve(...parts: string[]): string;

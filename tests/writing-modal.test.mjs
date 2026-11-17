@@ -9,8 +9,9 @@ test('selecting a writing type only displays the task setup and never opens AI',
   const app = { workspace: { getLeavesOfType: () => { sideEffects++; return []; } } };
   const modal = new WritingModal({ app, kernelService: { getVaultPath: () => '/fixture' } }, '文章A.md');
   modal.onOpen();
-  const revise = modal.contentEl.querySelectorAll('button').find(button => button.textContent === '改稿');
+  const revise = modal.contentEl.querySelectorAll('button').find(button => button.getAttribute('data-writing-action') === 'topmind-revise');
   assert.ok(revise);
+  assert.ok(revise.querySelectorAll('span').some(span => span.getAttribute('id') === revise.getAttribute('aria-describedby')));
   revise.click();
   assert.equal(sideEffects, 0);
   assert.match(modal.contentEl.querySelectorAll('div').map(el => el.textContent).join('\n'), /文章A.md/);
