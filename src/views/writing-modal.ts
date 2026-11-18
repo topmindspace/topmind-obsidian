@@ -2,7 +2,7 @@ import { Modal, Notice, Setting, FuzzySuggestModal, type TFile } from "obsidian"
 import type TopmindPlugin from "../main.ts";
 import { getLocale, t } from "../i18n/index.ts";
 import { getKernel } from "../bridge/kernel-loader.ts";
-import { prepareWritingDelivery, exportWritingDelivery } from "../services/writing-delivery.ts";
+import { prepareWritingDelivery, exportWritingDelivery, isWritingDeliveryCurrent } from "../services/writing-delivery.ts";
 import { captureChatFocus, editorWriteConflict } from "../services/editor-context.ts";
 import { WRITING_ACTIONS, WRITING_THEMES, type WritingPlatform, type WritingTheme } from "../generated/writing/article-renderer.mjs";
 import { openSidebarDock } from "../services/view-openers.ts";
@@ -182,13 +182,11 @@ export class WritingModal extends Modal {
       if (platform === "text") container.createEl("pre", { text: delivery.text, cls: "tm-writing-text" });
       else { const frame = container.createEl("iframe", { attr: { title: t("writing_preview"), sandbox: "" }, cls: "tm-writing-preview" }); frame.srcdoc = delivery.html; }
     }); });
-    const current = async () => {
+    const current = () => {
       const item = prepared;
       if (!item) return null;
       check();
-      const next = await prepareWritingDelivery(root, source, platform, theme);
-      if (generation !== this.generation) return null;
-      if (next.sourceHash !== item.sourceHash || next.delivery.html !== item.delivery.html) {
+      if (!isWritingDeliveryCurrent(root, source, item)) {
         clearPreview();
         throw new Error(t("writing_stale"));
       }
@@ -196,14 +194,14 @@ export class WritingModal extends Modal {
       return item;
     };
     copy.addEventListener("click", () => { void perform(async () => {
-        const item = await current();
+        const item = current();
         if (!item) return;
         if (platform === "text") await navigator.clipboard.writeText(item.delivery.text);
         else await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([item.delivery.body], { type: "text/html" }), "text/plain": new Blob([item.delivery.text], { type: "text/plain" }) })]);
         if (generation === this.generation) setStatus(t("writing_copied"));
     }); });
     exportButton.addEventListener("click", () => { void perform(async () => {
-        const item = await current();
+        const item = current();
         if (!item) return;
         const result = exportWritingDelivery({ kernel: getKernel(), workspaceRoot: root }, source, item.sourceHash, item.delivery);
         const checklist = result.checklist;

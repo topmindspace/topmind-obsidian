@@ -20,7 +20,7 @@ interface NodeStats {
 }
 
 interface NodeHash {
-  update(data: string, encoding?: string): NodeHash;
+  update(data: string | Uint8Array, encoding?: string): NodeHash;
   digest(encoding: "hex"): string;
 }
 

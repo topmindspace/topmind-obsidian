@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import * as kernel from '../lib/kernel-api.mjs';
-import { prepareWritingDelivery, exportWritingDelivery } from '../src/services/writing-delivery.ts';
+import { prepareWritingDelivery, exportWritingDelivery, isWritingDeliveryCurrent } from '../src/services/writing-delivery.ts';
 test('writing exports via the real Kernel, preserves source and rejects stale content', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-writing-vault-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -43,4 +43,23 @@ test('image checklist failure returns the saved article and the failed checklist
   assert.deepEqual(result.checklist, { relativePath: checklistPath, ok: false });
   assert.equal(fs.readFileSync(path.join(root, result.relativePath), 'utf8'), delivery.html);
   assert.equal(fs.readFileSync(path.join(root, 'note.md'), 'utf8'), raw);
+});
+test('preview freshness detects an available, modified or removed image by byte hash', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-writing-fresh-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'note.md'), '# Title\n\n![Local diagram](diagram.png)');
+  const missing = await prepareWritingDelivery(root, 'note.md', 'wechat', 'minimal-ink');
+  assert.equal(isWritingDeliveryCurrent(root, 'note.md', missing), true);
+  const image = path.join(root, 'diagram.png');
+  fs.writeFileSync(image, Buffer.from('first'));
+  assert.equal(isWritingDeliveryCurrent(root, 'note.md', missing), false);
+  const ready = await prepareWritingDelivery(root, 'note.md', 'wechat', 'minimal-ink');
+  assert.equal(isWritingDeliveryCurrent(root, 'note.md', ready), true);
+  fs.writeFileSync(image, Buffer.from('other'));
+  assert.equal(isWritingDeliveryCurrent(root, 'note.md', ready), false);
+  fs.rmSync(image);
+  assert.equal(isWritingDeliveryCurrent(root, 'note.md', ready), false);
+  assert.equal(isWritingDeliveryCurrent(root, 'note.md', missing), true);
+  fs.writeFileSync(path.join(root, 'note.md'), 'updated');
+  assert.equal(isWritingDeliveryCurrent(root, 'note.md', missing), false);
 });

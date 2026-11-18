@@ -5,23 +5,51 @@ import { resolveInsideVault } from "../bridge/vault-bridge.ts";
 import { resolvesOutsideVaultSync } from "#kernel/vault-walk.mjs";
 import { prepareArticle, type ArticleDelivery, type WritingPlatform, type WritingTheme } from "../generated/writing/article-renderer.mjs";
 import { saveFile, type AgentToolContext } from "./workspace-agent-tools.ts";
-const hash = (text: string) => createHash("sha256").update(text).digest("hex");
+const hash = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
 function sourceInside(root: string, relative: string): string {
   const absolute = resolveInsideVault(root, relative);
   if (resolvesOutsideVaultSync(root, absolute)) throw new Error("path-outside-workspace");
   return absolute;
 }
+function readLocalImage(root: string, relative: string) {
+  const absolute = sourceInside(root, relative);
+  const stat = fs.statSync(absolute);
+  if (!stat.isFile()) throw new Error("unsupported-image");
+  if (stat.size > 20 * 1024 * 1024) throw new Error("image-too-large");
+  const ext = path.extname(absolute).slice(1).toLowerCase();
+  if (!["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) throw new Error("unsupported-image");
+  return { bytes: fs.readFileSync(absolute), mime: ext === "jpg" ? "jpeg" : ext };
+}
+
 export async function prepareWritingDelivery(root: string, source: string, platform: WritingPlatform, theme: WritingTheme) {
   if (!/\.md$/iu.test(source)) throw new Error("markdown-source-required");
   const raw = fs.readFileSync(sourceInside(root, source), "utf8");
+  const imageHashes = new Map<string, string | null>();
   const delivery = await prepareArticle({ sourcePath: source, markdown: raw, platform, theme }, async relative => {
-    const absolute = sourceInside(root, relative);
-    if (fs.statSync(absolute).size > 20 * 1024 * 1024) throw new Error("image-too-large");
-    const ext = path.extname(absolute).slice(1).toLowerCase();
-    if (!["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) throw new Error("unsupported-image");
-    return `data:image/${ext === "jpg" ? "jpeg" : ext};base64,${fs.readFileSync(absolute).toString("base64")}`;
+    try {
+      const { bytes, mime } = readLocalImage(root, relative);
+      imageHashes.set(relative, hash(bytes));
+      return `data:image/${mime};base64,${bytes.toString("base64")}`;
+    } catch (error) {
+      imageHashes.set(relative, null);
+      throw error;
+    }
   });
-  return { delivery, sourceHash: hash(raw) };
+  return { delivery, sourceHash: hash(raw), imageHashes };
+}
+
+export function isWritingDeliveryCurrent(root: string, source: string, preview: Awaited<ReturnType<typeof prepareWritingDelivery>>) {
+  try {
+    if (hash(fs.readFileSync(sourceInside(root, source), "utf8")) !== preview.sourceHash) return false;
+  } catch {
+    return false;
+  }
+  for (const [relative, expected] of preview.imageHashes) {
+    let current: string | null = null;
+    try { current = hash(readLocalImage(root, relative).bytes); } catch { /* Unavailable to the renderer. */ }
+    if (current !== expected) return false;
+  }
+  return true;
 }
 export function exportWritingDelivery(ctx: AgentToolContext, source: string, sourceHash: string, delivery: ArticleDelivery) {
   if (hash(fs.readFileSync(sourceInside(ctx.workspaceRoot, source), "utf8")) !== sourceHash) throw new Error("source-changed-regenerate");
